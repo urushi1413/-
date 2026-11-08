@@ -1,0 +1,545 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rule Counter</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<!-- iOS は manifest の icons を読まないため、ホーム画面用に専用で指定する -->
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-title" content="Counter">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#e8590c">
+<style>
+  :root { --fg:#2a2420; --muted:#8a7f78; --bg:#fbf7f4; --card:#fff; --line:#ece4de; --accent:#e8590c; --accent-soft:#fde8dc; --good:#2f9e44; }
+  @media (prefers-color-scheme: dark) {
+    :root { --fg:#f1ebe6; --muted:#a39890; --bg:#1b1715; --card:#26211e; --line:#3a332f; --accent:#ff7a33; --accent-soft:#3d2619; --good:#51cf66; }
+  }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body { margin:0; font-family:system-ui, -apple-system, sans-serif; color:var(--fg); background:var(--bg); }
+  main { max-width:480px; margin:0 auto; padding:max(16px, env(safe-area-inset-top)) 16px calc(84px + env(safe-area-inset-bottom)); }
+  section { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:16px; margin-bottom:14px; }
+  h2 { font-size:13px; color:var(--muted); margin:0 0 12px; font-weight:normal; }
+  button { font:inherit; cursor:pointer; color:var(--fg); }
+  input, select { font:inherit; color:var(--fg); background:var(--card); border:1px solid var(--line); border-radius:8px; padding:8px; min-width:0; }
+  [hidden] { display:none !important; }
+
+  /* ルールの切り替え */
+  .pills { display:flex; gap:6px; overflow-x:auto; margin-bottom:12px; scrollbar-width:none; }
+  .pills::-webkit-scrollbar { display:none; }
+  .pills button { flex:0 0 auto; padding:6px 14px; border:1px solid var(--line); border-radius:999px; background:var(--card); font-size:14px; }
+  .pills button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:bold; }
+
+  .datenav { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .datenav button { width:40px; height:40px; border:none; background:none; font-size:22px; color:var(--muted); }
+  .datenav button:disabled { opacity:.25; }
+  .datenav div { text-align:center; }
+  .datenav strong { font-size:18px; display:block; }
+  .datenav small { font-size:12px; color:var(--muted); }
+  .datenav small.back { color:var(--accent); text-decoration:underline; cursor:pointer; }
+
+  /* やっちゃったボタン */
+  .tapwrap { text-align:center; padding:8px 0 4px; }
+  .rule-name { font-size:15px; color:var(--muted); margin-bottom:12px; }
+  .tap { width:220px; height:220px; max-width:70vw; max-height:70vw; border-radius:50%; border:none; background:var(--accent); color:#fff;
+         box-shadow:0 8px 0 rgba(0,0,0,.18), 0 12px 24px rgba(232,89,12,.25); display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+         transition:transform .08s, box-shadow .08s; user-select:none; -webkit-user-select:none; touch-action:manipulation; }
+  .tap:active { transform:translateY(6px); box-shadow:0 2px 0 rgba(0,0,0,.18), 0 4px 10px rgba(232,89,12,.25); }
+  .tap b { font-size:72px; line-height:1; font-variant-numeric:tabular-nums; }
+  .tap span { font-size:15px; margin-top:6px; opacity:.9; }
+  .tap.pop b { animation:pop .25s; }
+  @keyframes pop { 40% { transform:scale(1.25); } }
+  .tap.zero { background:var(--good); box-shadow:0 8px 0 rgba(0,0,0,.18), 0 12px 24px rgba(47,158,68,.25); }
+  .undo { margin-top:14px; border:none; background:none; color:var(--muted); font-size:13px; text-decoration:underline; min-height:24px; }
+  .times { display:flex; flex-wrap:wrap; gap:4px; justify-content:center; margin-top:8px; }
+  .times span { font-size:12px; color:var(--muted); background:var(--bg); border-radius:6px; padding:2px 6px; font-variant-numeric:tabular-nums; }
+
+  /* 罰 */
+  .debt-rows { display:grid; grid-template-columns:1fr auto; gap:4px 12px; font-size:14px; }
+  .debt-rows span:nth-child(even) { text-align:right; font-variant-numeric:tabular-nums; }
+  .debt-rows .muted { color:var(--muted); }
+  .remain { text-align:center; margin:14px 0 12px; }
+  .remain small { display:block; font-size:12px; color:var(--muted); }
+  .remain b { font-size:44px; font-variant-numeric:tabular-nums; }
+  .remain em { font-style:normal; font-size:16px; margin-left:4px; }
+  .remain.clear b { font-size:22px; color:var(--good); }
+  .pay { display:flex; gap:8px; }
+  .pay button { flex:1; padding:12px 0; border-radius:10px; border:1px solid var(--line); background:var(--card); }
+  .pay button.main { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:bold; }
+  .pay button.small { flex:0 0 48px; }
+  .pay button:disabled { opacity:.35; }
+  .note { font-size:12px; color:var(--muted); margin:10px 0 0; text-align:center; }
+
+  /* 記録 */
+  .tiles { display:grid; grid-template-columns:repeat(4, 1fr); gap:4px; text-align:center; }
+  .tiles b { display:block; font-size:22px; font-variant-numeric:tabular-nums; }
+  .tiles small { font-size:11px; color:var(--muted); }
+  .tiles .up { color:var(--accent); } .tiles .down { color:var(--good); }
+  .bars { display:flex; align-items:flex-end; height:120px; gap:2px; }
+  .bars > div { flex:1; height:100%; display:flex; flex-direction:column; justify-content:flex-end; align-items:center; cursor:pointer; }
+  .bars i { display:block; width:100%; background:var(--accent); border-radius:3px 3px 0 0; }
+  .bars .z { width:5px; height:5px; border-radius:50%; background:var(--good); margin-bottom:1px; }
+  .bars .nodata { background:var(--line); height:2px; }
+  .bars .today i { background:var(--fg); }
+  .axis { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); margin-top:4px; }
+  .hours { height:80px; }
+  .hours > div { cursor:default; }
+  .legend { font-size:12px; color:var(--muted); margin:8px 0 0; }
+  .legend .dot { display:inline-block; width:7px; height:7px; border-radius:50%; background:var(--good); margin-right:4px; }
+  .totals { display:grid; grid-template-columns:1fr auto; gap:6px 12px; font-size:14px; }
+  .totals span:nth-child(even) { text-align:right; font-weight:bold; font-variant-numeric:tabular-nums; }
+
+  /* 設定 */
+  .rule-edit { border-bottom:1px solid var(--line); padding:12px 0; }
+  .rule-edit:first-of-type { padding-top:0; }
+  .rule-edit:last-of-type { border-bottom:none; }
+  .rule-edit label { display:block; font-size:12px; color:var(--muted); margin-bottom:8px; }
+  .rule-edit label input { display:block; width:100%; margin-top:4px; }
+  .row { display:flex; gap:8px; align-items:flex-end; }
+  .row label { flex:1; }
+  .row label.per { flex:0 0 90px; }
+  .del { border:none; background:none; color:var(--muted); font-size:13px; text-decoration:underline; padding:0; }
+  .btn { width:100%; padding:10px 0; border-radius:10px; border:1px dashed var(--accent); background:none; color:var(--accent); }
+  .setting { display:flex; justify-content:space-between; align-items:center; gap:12px; font-size:14px; }
+  .backup { display:flex; gap:8px; }
+  .backup button { flex:1; padding:10px 0; border-radius:10px; border:1px solid var(--line); background:var(--card); }
+  .hint { font-size:12px; color:var(--muted); margin:8px 0 0; }
+
+  .tabs { position:fixed; left:0; right:0; bottom:0; z-index:5; display:flex; justify-content:center; gap:8px; padding:8px 16px calc(8px + env(safe-area-inset-bottom));
+          background:color-mix(in srgb, var(--bg) 92%, transparent); border-top:1px solid var(--line); -webkit-backdrop-filter:blur(8px); backdrop-filter:blur(8px); }
+  .tabs button { flex:1; max-width:140px; padding:10px 0; border:none; border-radius:999px; background:none; color:var(--muted); font-size:14px; }
+  .tabs button.on { background:var(--accent-soft); color:var(--accent); font-weight:bold; }
+  .toast { position:fixed; left:50%; bottom:calc(80px + env(safe-area-inset-bottom)); transform:translate(-50%, 20px); max-width:90vw; background:#222; color:#fff; padding:10px 16px; border-radius:20px; font-size:14px; opacity:0; transition:.2s; pointer-events:none; z-index:10; }
+  .toast.show { opacity:1; transform:translate(-50%, 0); }
+</style>
+</head>
+<body>
+<main>
+  <!-- 今日 -->
+  <div id="viewToday">
+    <div class="pills" id="pillsToday"></div>
+    <div class="datenav">
+      <button id="prevDay" aria-label="前の日">‹</button>
+      <div><strong id="dateLabel"></strong><small id="dateSub"></small></div>
+      <button id="nextDay" aria-label="次の日">›</button>
+    </div>
+    <section class="tapwrap">
+      <div class="rule-name" id="ruleName"></div>
+      <button class="tap" id="tap"><b id="count">0</b><span>やっちゃった</span></button>
+      <div><button class="undo" id="undo"></button></div>
+      <div class="times" id="times"></div>
+    </section>
+    <section id="debtBox">
+      <h2>罰</h2>
+      <div class="debt-rows" id="debtRows"></div>
+      <div class="remain" id="remain"></div>
+      <div class="pay">
+        <button class="small" id="payMinus" aria-label="消化を1セット戻す">−</button>
+        <button class="main" id="paySet"></button>
+        <button id="payAll">全部やった</button>
+      </div>
+    </section>
+  </div>
+
+  <!-- 記録 -->
+  <div id="viewStats" hidden>
+    <div class="pills" id="pillsStats"></div>
+    <section>
+      <div class="tiles" id="tiles"></div>
+    </section>
+    <section>
+      <h2>30日の違反回数</h2>
+      <div class="bars" id="bars30"></div>
+      <div class="axis" id="axis30"></div>
+      <p class="legend"><span class="dot"></span>違反ゼロの日　バーをタップでその日へ</p>
+    </section>
+    <section>
+      <h2>やりがちな時間帯（30日）</h2>
+      <div class="bars hours" id="hours"></div>
+      <div class="axis" id="hoursAxis"></div>
+      <p class="legend" id="hoursNote"></p>
+    </section>
+    <section>
+      <h2>累計</h2>
+      <div class="totals" id="totals"></div>
+    </section>
+  </div>
+
+  <!-- 設定 -->
+  <div id="viewSettings" hidden>
+    <section>
+      <h2>自分ルール</h2>
+      <div id="ruleList"></div>
+      <button class="btn" id="addRule">＋ ルールを追加</button>
+      <p class="hint">罰の量を変えると、今日以降の分に効きます。過去の日の罰はそのままです。</p>
+    </section>
+    <section>
+      <div class="setting">
+        <span>日付が変わる時刻</span>
+        <select id="dayStart"></select>
+      </div>
+      <p class="hint">夜更かししても、この時刻までは前の日として数えます。</p>
+    </section>
+    <section>
+      <h2>バックアップ</h2>
+      <div class="backup">
+        <button id="exportBtn">書き出す</button>
+        <button id="importBtn">読み込む</button>
+      </div>
+      <input type="file" id="importFile" accept="application/json,.json" hidden>
+      <p class="hint">データはこの端末のブラウザにだけ保存されています。機種変更の前などに書き出してください。</p>
+    </section>
+  </div>
+</main>
+
+<nav class="tabs">
+  <button data-view="viewToday" class="on">今日</button>
+  <button data-view="viewStats">記録</button>
+  <button data-view="viewSettings">設定</button>
+</nav>
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // 保存形式:
+  // rules: [{ id, name, penalty, per }]  per = 違反1回あたりの罰の量
+  // days:  { 'YYYY-MM-DD': { ルールID: { t: [タップ時刻(ms)。後から足した分は 0], paid: 消化した量, per: その日の罰の量 } } }
+  const KEY = 'rule-counter.v1';
+  const $ = id => document.getElementById(id);
+  const WD = ['日', '月', '火', '水', '木', '金', '土'];
+
+  function uid() { return Math.random().toString(36).slice(2, 10); }
+  function fresh() {
+    const id = uid();
+    return { rules: [{ id, name: '顔を触らない', penalty: 'スクワット', per: 10 }], days: {}, settings: { dayStart: 4 }, sel: id };
+  }
+  function load() {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY));
+      if (s && Array.isArray(s.rules)) return s;
+    } catch {}
+    return fresh();
+  }
+  let state = load();
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); }
+    catch { toast('保存できませんでした'); }
+  }
+
+  // ---- 日付 ----
+  // toISOString() は UTC になり日付がずれるため、ローカル日付で組み立てる
+  const pad = n => String(n).padStart(2, '0');
+  function toKey(d) { return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; }
+  function keyOfMs(ms) { return toKey(new Date(ms - state.settings.dayStart * 3600e3)); }
+  function todayKey() { return keyOfMs(Date.now()); }
+  function keyDate(k) { const [y, m, d] = k.split('-').map(Number); return new Date(y, m - 1, d); }
+  function addDays(k, n) { const d = keyDate(k); d.setDate(d.getDate() + n); return toKey(d); }
+  function label(k) { const d = keyDate(k); return `${d.getMonth() + 1}/${d.getDate()}(${WD[d.getDay()]})`; }
+  function hm(ms) { const d = new Date(ms); return `${d.getHours()}:${pad(d.getMinutes())}`; }
+
+  // ---- データ ----
+  function rule() { return state.rules.find(r => r.id === state.sel) || state.rules[0]; }
+  function entry(k, r, create) {
+    let e = state.days[k]?.[r.id];
+    if (!e && create) {
+      state.days[k] ??= {};
+      e = state.days[k][r.id] = { t: [], paid: 0, per: r.per };
+    }
+    return e;
+  }
+  function count(k, r) { return entry(k, r)?.t.length || 0; }
+  function owedOf(e) { return e.t.length * e.per; }
+  // 日をまたいで残っている罰（全日の 罰 − 消化 の合計）
+  function balance(r, beforeKey) {
+    let sum = 0;
+    for (const k in state.days) {
+      if (beforeKey && k >= beforeKey) continue;
+      const e = state.days[k][r.id];
+      if (e) sum += owedOf(e) - e.paid;
+    }
+    return Math.max(0, sum);
+  }
+  function firstKey(r) {
+    let first = null;
+    for (const k in state.days) if (state.days[k][r.id] && (!first || k < first)) first = k;
+    return first;
+  }
+
+  // ---- 画面: 今日 ----
+  let viewKey = todayKey();
+
+  function renderPills(box, onPick) {
+    box.hidden = state.rules.length < 2;
+    box.innerHTML = '';
+    for (const r of state.rules) {
+      const b = document.createElement('button');
+      b.textContent = r.name || '(名前なし)';
+      b.className = r.id === rule().id ? 'on' : '';
+      b.onclick = () => { state.sel = r.id; save(); onPick(); };
+      box.append(b);
+    }
+  }
+
+  function renderToday() {
+    const r = rule(), today = todayKey(), isToday = viewKey === today;
+    renderPills($('pillsToday'), renderToday);
+    $('dateLabel').textContent = label(viewKey);
+    $('dateSub').textContent = isToday ? '今日' : '今日に戻る';
+    $('dateSub').className = isToday ? '' : 'back';
+    $('nextDay').disabled = isToday;
+    $('ruleName').textContent = r.name || '(名前なし)';
+
+    const e = entry(viewKey, r), n = e ? e.t.length : 0;
+    $('count').textContent = n;
+    $('tap').classList.toggle('zero', n === 0);
+    const last = e?.t[e.t.length - 1];
+    $('undo').textContent = n ? (last ? `${hm(last)} の分を取り消す` : '1回取り消す') : '';
+    $('undo').hidden = !n;
+    $('times').innerHTML = (e?.t || []).filter(Boolean).map(t => `<span>${hm(t)}</span>`).join('');
+
+    // 罰は「今日」の画面でだけ消化する（過去の日は回数の修正だけ）
+    $('debtBox').hidden = !isToday;
+    if (!isToday) return;
+    const unit = r.penalty || '罰';
+    const carry = balance(r, today);
+    const todayOwed = e ? owedOf(e) : 0;
+    const paid = e ? e.paid : 0;
+    const remain = balance(r);
+    $('debtRows').innerHTML = `
+      <span>今日の分 <span class="muted">${n}回 × ${e ? e.per : r.per}</span></span><span>${todayOwed}</span>
+      <span class="muted">前日までのツケ</span><span class="muted">${carry}</span>
+      <span class="muted">今日やった</span><span class="muted">−${paid}</span>`;
+    const rm = $('remain');
+    rm.className = 'remain' + (remain ? '' : ' clear');
+    rm.innerHTML = remain ? `<small>残り</small><b>${remain}</b><em>${esc(unit)}</em>` : `<b>${todayOwed || carry || paid ? '罰は全部すんだ ✓' : '違反なし ✓'}</b>`;
+    const set = Math.min(r.per, remain);
+    $('paySet').textContent = set ? `${set}回やった` : 'やった';
+    $('paySet').disabled = !remain;
+    $('payAll').disabled = !remain;
+    $('payMinus').disabled = !paid;
+  }
+
+  function tap() {
+    const r = rule(), isToday = viewKey === todayKey();
+    const e = entry(viewKey, r, true);
+    if (isToday) e.per = r.per;
+    // 後から別の日に足した分は時刻がわからないので 0 にしておき、時間帯の集計から外す
+    e.t.push(isToday ? Date.now() : 0);
+    save();
+    navigator.vibrate?.(15);
+    const btn = $('tap');
+    btn.classList.remove('pop'); void btn.offsetWidth; btn.classList.add('pop');
+    renderToday();
+  }
+  function undo() {
+    const e = entry(viewKey, rule());
+    if (!e?.t.length) return;
+    e.t.pop();
+    save(); renderToday();
+  }
+  function pay(amount) {
+    const r = rule();
+    const e = entry(todayKey(), r, true);
+    e.paid = Math.max(0, e.paid + amount);
+    save(); renderToday();
+    if (amount > 0 && !balance(r)) toast('おつかれさま。罰は全部すんだ');
+  }
+
+  // ---- 画面: 記録 ----
+  function renderStats() {
+    const r = rule(), today = todayKey(), first = firstKey(r);
+    renderPills($('pillsStats'), renderStats);
+    const days30 = Array.from({ length: 30 }, (_, i) => addDays(today, i - 29));
+    const used = k => first && k >= first;
+    const sumOf = keys => keys.reduce((s, k) => s + count(k, r), 0);
+
+    const last7 = days30.slice(-7), prev7 = Array.from({ length: 7 }, (_, i) => addDays(today, i - 13));
+    const n7 = last7.filter(used).length;
+    const avg7 = n7 ? sumOf(last7) / n7 : 0;
+    const a = sumOf(last7), b = sumOf(prev7);
+    let diff = '—', cls = '';
+    if (prev7.some(used)) {
+      const d = a - b;
+      diff = (d > 0 ? '+' : '') + d;
+      cls = d > 0 ? 'up' : d < 0 ? 'down' : '';
+    }
+    const zeroDays = days30.filter(k => used(k) && k < today && count(k, r) === 0).length;
+    $('tiles').innerHTML = `
+      <div><b>${count(today, r)}</b><small>今日</small></div>
+      <div><b>${avg7.toFixed(1)}</b><small>7日平均</small></div>
+      <div><b class="${cls}">${diff}</b><small>先週比</small></div>
+      <div><b>${zeroDays}</b><small>ゼロの日</small></div>`;
+
+    const max = Math.max(1, ...days30.map(k => count(k, r)));
+    $('bars30').innerHTML = days30.map(k => {
+      const c = count(k, r), cl = k === today ? 'today' : '';
+      let inner;
+      if (!used(k)) inner = '<i class="nodata"></i>';
+      else if (c === 0) inner = '<span class="z"></span>';
+      else inner = `<i style="height:${c / max * 100}%"></i>`;
+      return `<div class="${cl}" data-k="${k}" title="${label(k)} ${c}回">${inner}</div>`;
+    }).join('');
+    $('axis30').innerHTML = `<span>${label(days30[0])}</span><span>${label(days30[15])}</span><span>今日</span>`;
+    $('bars30').querySelectorAll('[data-k]').forEach(el => el.onclick = () => { viewKey = el.dataset.k; show('viewToday'); });
+
+    // 時間帯: 日付の変わる時刻から1日を並べる
+    const ds = state.settings.dayStart;
+    const hours = Array(24).fill(0);
+    for (const k of days30) for (const t of entry(k, r)?.t || []) if (t) hours[new Date(t).getHours()]++;
+    const order = Array.from({ length: 24 }, (_, i) => (ds + i) % 24);
+    const hmax = Math.max(1, ...hours);
+    $('hours').innerHTML = order.map(h => `<div title="${h}時台 ${hours[h]}回">${hours[h] ? `<i style="height:${hours[h] / hmax * 100}%"></i>` : ''}</div>`).join('');
+    $('hoursAxis').innerHTML = [0, 6, 12, 18, 23].map(i => `<span>${order[i]}時</span>`).join('');
+    const total = hours.reduce((s, x) => s + x, 0);
+    if (total) {
+      const top = hours.indexOf(hmax);
+      $('hoursNote').textContent = `いちばん多いのは ${top}時台（${hmax}回）`;
+    } else {
+      $('hoursNote').textContent = 'まだデータがありません';
+    }
+
+    let allCount = 0, allPaid = 0;
+    for (const k in state.days) { const e = state.days[k][r.id]; if (e) { allCount += e.t.length; allPaid += e.paid; } }
+    const unit = esc(r.penalty || '罰');
+    $('totals').innerHTML = `
+      <span>記録をつけ始めた日</span><span>${first ? label(first) : '—'}</span>
+      <span>違反の合計</span><span>${allCount}回</span>
+      <span>消化した罰</span><span>${allPaid}${unit}</span>
+      <span>残っている罰</span><span>${balance(r)}${unit}</span>`;
+  }
+
+  // ---- 画面: 設定 ----
+  function renderSettings() {
+    const box = $('ruleList');
+    box.innerHTML = '';
+    for (const r of state.rules) {
+      const div = document.createElement('div');
+      div.className = 'rule-edit';
+      div.innerHTML = `
+        <label>ルール<input data-f="name" placeholder="例: 顔を触らない"></label>
+        <div class="row">
+          <label>破ったら<input data-f="penalty" placeholder="例: スクワット"></label>
+          <label class="per">1回あたり<input data-f="per" type="number" min="1" inputmode="numeric"></label>
+        </div>
+        ${state.rules.length > 1 ? '<button class="del">このルールを削除</button>' : ''}`;
+      for (const input of div.querySelectorAll('input')) {
+        const f = input.dataset.f;
+        input.value = r[f];
+        input.onchange = () => {
+          if (f === 'per') {
+            const v = Math.max(1, Math.round(Number(input.value)) || 1);
+            input.value = v; r.per = v;
+            const e = entry(todayKey(), r);
+            if (e) e.per = v;
+          } else {
+            r[f] = input.value.trim();
+          }
+          save();
+        };
+      }
+      const del = div.querySelector('.del');
+      if (del) del.onclick = () => {
+        if (!confirm(`「${r.name}」とその記録を削除しますか？`)) return;
+        state.rules = state.rules.filter(x => x !== r);
+        for (const k in state.days) delete state.days[k][r.id];
+        if (state.sel === r.id) state.sel = state.rules[0].id;
+        save(); renderSettings();
+      };
+      box.append(div);
+    }
+  }
+
+  $('addRule').onclick = () => {
+    const r = { id: uid(), name: '', penalty: '', per: 10 };
+    state.rules.push(r);
+    state.sel = r.id;
+    save(); renderSettings();
+    $('ruleList').lastElementChild.querySelector('input').focus();
+  };
+
+  const dsSel = $('dayStart');
+  for (let h = 0; h <= 6; h++) dsSel.add(new Option(h === 0 ? '0時（夜中の12時）' : `朝${h}時`, h));
+  dsSel.value = state.settings.dayStart;
+  dsSel.onchange = () => { state.settings.dayStart = Number(dsSel.value); save(); viewKey = todayKey(); };
+
+  $('exportBtn').onclick = async () => {
+    const name = `rule-counter-${todayKey()}.json`;
+    const blob = new Blob([JSON.stringify(state)], { type: 'application/json' });
+    const file = new File([blob], name, { type: 'application/json' });
+    if (navigator.canShare?.({ files: [file] })) {
+      try { await navigator.share({ files: [file] }); return; }
+      catch (err) { if (err.name === 'AbortError') return; }
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  $('importBtn').onclick = () => $('importFile').click();
+  $('importFile').onchange = async ev => {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    try {
+      const s = JSON.parse(await f.text());
+      if (!Array.isArray(s.rules) || !s.rules.length || typeof s.days !== 'object') throw 0;
+      if (!confirm('今のデータを、読み込んだデータで置き換えますか？')) return;
+      s.settings ??= { dayStart: 4 };
+      state = s; save();
+      dsSel.value = state.settings.dayStart;
+      viewKey = todayKey();
+      renderSettings();
+      toast('読み込みました');
+    } catch { toast('このファイルは読み込めません'); }
+  };
+
+  // ---- 共通 ----
+  function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]); }
+  let toastTimer;
+  function toast(text) {
+    const el = $('toast');
+    el.textContent = text;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2000);
+  }
+  function show(view) {
+    for (const v of ['viewToday', 'viewStats', 'viewSettings']) $(v).hidden = v !== view;
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    ({ viewToday: renderToday, viewStats: renderStats, viewSettings: renderSettings })[view]();
+    scrollTo(0, 0);
+  }
+  document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => show(b.dataset.view));
+
+  $('tap').onclick = tap;
+  $('undo').onclick = undo;
+  $('prevDay').onclick = () => { viewKey = addDays(viewKey, -1); renderToday(); };
+  $('nextDay').onclick = () => { if (viewKey < todayKey()) { viewKey = addDays(viewKey, 1); renderToday(); } };
+  $('dateSub').onclick = () => { viewKey = todayKey(); renderToday(); };
+  $('paySet').onclick = () => pay(Math.min(rule().per, balance(rule())));
+  $('payAll').onclick = () => pay(balance(rule()));
+  $('payMinus').onclick = () => {
+    const e = entry(todayKey(), rule());
+    pay(-Math.min(rule().per, e?.paid || 0));
+  };
+
+  // 開きっぱなしで日付が変わったときに「今日」を追いかける
+  let lastToday = todayKey();
+  function checkDayChange() {
+    const t = todayKey();
+    if (t === lastToday) return;
+    if (viewKey === lastToday) viewKey = t;
+    lastToday = t;
+    if (!$('viewToday').hidden) renderToday();
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkDayChange(); });
+  setInterval(checkDayChange, 60e3);
+
+  if (!state.rules.some(r => r.id === state.sel)) state.sel = state.rules[0].id;
+  renderToday();
+})();
+</script>
+</body>
+</html>
