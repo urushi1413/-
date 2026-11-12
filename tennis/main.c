@@ -1,5 +1,5 @@
-// 3D テニス：ステップ1「ボールが重力で落ちてバウンドする」
-// 単位はすべてメートル・秒。座標系: x=横, y=上, z=縦（自分側が +z、相手側が -z）
+// 3D テニス：ステップ2「回転（マグヌス効果）と空気抵抗、球種の打ち分け」
+// 単位はすべてメートル・秒・ラジアン。座標系: x=横, y=上, z=縦（自分側が +z、相手側が -z）
 #include "raylib.h"
 #include "raymath.h"
 #include <math.h>
@@ -18,22 +18,49 @@
 
 // ---- ボールの物理 ----
 #define BALL_R           0.0335f
+#define BALL_MASS        0.057f
 #define GRAVITY          9.81f
-#define BOUNCE_E         0.75f   // 垂直方向の反発係数。2.54m から落として 1.43m 跳ねる（規格は 1.35〜1.47m）
-#define BOUNCE_FRICTION  0.80f   // バウンド時に水平速度が残る割合（後で回転に応じて変える）
+#define AIR_RHO          1.21f
+#define DRAG_CD          0.55f
+#define BALL_AREA        (PI * BALL_R * BALL_R)
+#define K_AIR            (0.5f * AIR_RHO * BALL_AREA / BALL_MASS)   // 空気の力 = K_AIR * 係数 * 速さ^2
+#define SPIN_DECAY_TAU   4.0f    // 回転が空気で弱まる時定数（秒）
+
+#define BOUNCE_E         0.77f   // 垂直方向の反発係数。空気抵抗込みで 2.54m から落として 1.40m 跳ねる（規格は 1.35〜1.47m）
+#define COURT_MU         0.60f   // コート表面の摩擦係数（ハードコートくらい）
 #define ROLL_FRICTION    1.5f    // 転がり中の減速（1/秒）
 
+#define RPM_TO_RADS      (2.0f * PI / 60.0f)
 #define PHYS_DT          (1.0f / 240.0f)   // 物理は固定ステップで回す（速い球でもすり抜けない）
 #define TRAIL_N          600
+#define CHARGE_TIME      0.8f              // 最大まで溜めるのにかかる秒数
 
 typedef enum { RESULT_NONE, RESULT_IN, RESULT_OUT, RESULT_NET } ShotResult;
+typedef enum { SHOT_FLAT, SHOT_TOP, SHOT_SLICE, SHOT_COUNT } ShotType;
+
+// 球種ごとの性格。溜め 0→1 で min→max に変わる
+// rpm はプラスがトップスピン、マイナスがバックスピン（スライス）
+typedef struct {
+    const char *name;
+    float minKmh, maxKmh;
+    float minRpm, maxRpm;
+    Color color;
+} ShotSpec;
+
+static const ShotSpec SHOTS[SHOT_COUNT] = {
+    [SHOT_FLAT]  = { "FLAT",    90.0f, 190.0f,   500.0f,   900.0f, RAYWHITE },
+    [SHOT_TOP]   = { "TOPSPIN", 70.0f, 150.0f,  1800.0f,  3200.0f, (Color){ 255, 200, 40, 255 } },
+    [SHOT_SLICE] = { "SLICE",   60.0f, 120.0f, -1200.0f, -2200.0f, (Color){ 80, 220, 255, 255 } },
+};
 
 typedef struct {
     Vector3 pos;
     Vector3 vel;
+    Vector3 spin;          // 角速度ベクトル（rad/s）。向き＝回転軸、長さ＝回転の速さ
     bool    active;
     bool    hitNet;
     int     bounces;
+    float   netClearance;  // ネット上を通過したときの余裕（m）。マイナスならネットに当たった
     float   peakAfterFirstBounce;
     ShotResult result;
 } Ball;
@@ -54,27 +81,75 @@ static void JudgeFirstBounce(Ball *b)
     b->result = (inX && inZ) ? RESULT_IN : RESULT_OUT;
 }
 
+// 空中でボールにかかる加速度
+static Vector3 AirAccel(Vector3 vel, Vector3 spin)
+{
+    Vector3 acc = { 0.0f, -GRAVITY, 0.0f };
+    float v = Vector3Length(vel);
+    if (v < 0.001f) return acc;
+
+    // 空気抵抗：進行方向と逆向き、速さの2乗に比例
+    acc = Vector3Add(acc, Vector3Scale(vel, -K_AIR * DRAG_CD * v));
+
+    // マグヌス力：回転軸 × 速度 の向きに働く。
+    // 揚力係数は「表面の速さ / 球の速さ」で決まる（よく使われる近似式）
+    float w = Vector3Length(spin);
+    if (w > 0.1f) {
+        float cl = 1.0f / (2.0f + v / (BALL_R * w));
+        Vector3 dir = Vector3Normalize(Vector3CrossProduct(spin, vel));
+        acc = Vector3Add(acc, Vector3Scale(dir, K_AIR * cl * v * v));
+    }
+    return acc;
+}
+
+// 地面でのバウンド。接地点の「滑り」を摩擦が打ち消そうとする
+//   トップスピン → 接地点の滑りが小さい → 減速が少なく、前に伸びる
+//   スライス     → 接地点の滑りが大きい → 強く減速し、低く止まりぎみ
+static void Bounce(Ball *b)
+{
+    float vyIn = -b->vel.y;                       // 落ちてくる速さ（正）
+    b->vel.y = vyIn * BOUNCE_E;
+
+    Vector3 r = { 0.0f, -BALL_R, 0.0f };          // 中心から接地点
+    Vector3 slip = Vector3Add(b->vel, Vector3CrossProduct(b->spin, r));
+    slip.y = 0.0f;
+    float slipLen = Vector3Length(slip);
+    if (slipLen > 1e-4f) {
+        Vector3 u = Vector3Scale(slip, 1.0f / slipLen);
+        // 中空球（I = 2/3 m R^2）は、摩擦で速度が dv 変わると滑りが 2.5*dv 変わる
+        float dv = fminf(COURT_MU * (1.0f + BOUNCE_E) * vyIn, slipLen / 2.5f);
+        b->vel = Vector3Subtract(b->vel, Vector3Scale(u, dv));
+        Vector3 dw = Vector3Scale(Vector3CrossProduct(r, u), -1.5f * dv / (BALL_R * BALL_R));
+        b->spin = Vector3Add(b->spin, dw);
+    }
+}
+
 // 1ステップ分ボールを進める。描画にも予測にも同じ関数を使う
 static void StepBall(Ball *b, float dt)
 {
     if (!b->active) return;
 
-    // 力: 今は重力だけ。次のステップで空気抵抗とマグヌス力をここに足す
-    Vector3 acc = { 0.0f, -GRAVITY, 0.0f };
+    bool inAir = b->pos.y > BALL_R + 1e-4f || b->vel.y > 0.0f;
+    if (inAir) {
+        b->vel = Vector3Add(b->vel, Vector3Scale(AirAccel(b->vel, b->spin), dt));
+        b->spin = Vector3Scale(b->spin, expf(-dt / SPIN_DECAY_TAU));
+    }
 
-    b->vel = Vector3Add(b->vel, Vector3Scale(acc, dt));
     Vector3 prev = b->pos;
     b->pos = Vector3Add(b->pos, Vector3Scale(b->vel, dt));
 
     // ネット（z=0 の面）を横切ったか
     bool crossed = (prev.z > 0.0f) != (b->pos.z > 0.0f);
     if (crossed && fabsf(b->pos.x) < NET_POST_X) {
-        if (b->pos.y - BALL_R < NetHeightAt(b->pos.x)) {
+        float clearance = (b->pos.y - BALL_R) - NetHeightAt(b->pos.x);
+        if (b->bounces == 0) b->netClearance = clearance;
+        if (clearance < 0.0f) {
             b->hitNet = true;
             b->pos.z = prev.z;
             b->vel.z *= -0.15f;   // ネットに吸われてほぼ止まる
             b->vel.x *= 0.3f;
             b->vel.y *= 0.3f;
+            b->spin = Vector3Scale(b->spin, 0.3f);
         }
     }
 
@@ -82,9 +157,7 @@ static void StepBall(Ball *b, float dt)
     if (b->pos.y < BALL_R) {
         b->pos.y = BALL_R;
         if (b->vel.y < -0.3f) {
-            b->vel.y = -b->vel.y * BOUNCE_E;
-            b->vel.x *= BOUNCE_FRICTION;
-            b->vel.z *= BOUNCE_FRICTION;
+            Bounce(b);
             b->bounces++;
             if (b->bounces == 1) JudgeFirstBounce(b);
         } else {
@@ -101,16 +174,28 @@ static void StepBall(Ball *b, float dt)
         b->peakAfterFirstBounce = b->pos.y;
 }
 
-// 打ち出し角を変えて試し打ちし、最初のバウンド地点の z を返す
-// （物理をシミュレーションで予測するので、空気抵抗や回転を足してもそのまま使える）
-static float PredictLandingZ(Vector3 from, Vector3 dirFlat, float speed, float angle)
+// 打ち出し方向と回転を決めてボールを作る
+//   rpm > 0 : トップスピン（ボールの上側が前に回る）
+//   rpm < 0 : バックスピン
+static Ball MakeShot(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm)
 {
     Ball b = { 0 };
     b.pos = from;
     b.vel = Vector3Add(Vector3Scale(dirFlat, speed * cosf(angle)),
                        (Vector3){ 0.0f, speed * sinf(angle), 0.0f });
+    // 上向き × 進行方向 = トップスピンの回転軸（マグヌス力が下向きになる）
+    Vector3 axis = Vector3Normalize(Vector3CrossProduct((Vector3){ 0, 1, 0 }, dirFlat));
+    b.spin = Vector3Scale(axis, rpm * RPM_TO_RADS);
     b.active = true;
-    for (int i = 0; i < 240 * 5 && b.active; i++) {
+    b.netClearance = -99.0f;
+    return b;
+}
+
+// 試し打ちして、最初のバウンド地点の z を返す
+static float PredictLandingZ(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm)
+{
+    Ball b = MakeShot(from, dirFlat, speed, angle, rpm);
+    for (int i = 0; i < 240 * 6 && b.active; i++) {
         StepBall(&b, PHYS_DT);
         if (b.hitNet) return HALF_LEN;   // ネット = 「短すぎ」扱い
         if (b.bounces > 0) return b.pos.z;
@@ -119,14 +204,13 @@ static float PredictLandingZ(Vector3 from, Vector3 dirFlat, float speed, float a
 }
 
 // 狙った地点に落ちる打ち出し角を二分探索で求める
-static float SolveLaunchAngle(Vector3 from, Vector3 target, float speed)
+static float SolveLaunchAngle(Vector3 from, Vector3 target, float speed, float rpm)
 {
-    Vector3 d = { target.x - from.x, 0.0f, target.z - from.z };
-    Vector3 dirFlat = Vector3Normalize(d);
+    Vector3 dirFlat = Vector3Normalize((Vector3){ target.x - from.x, 0.0f, target.z - from.z });
     float lo = -15.0f * DEG2RAD, hi = 40.0f * DEG2RAD;
     for (int i = 0; i < 30; i++) {
         float mid = 0.5f * (lo + hi);
-        float z = PredictLandingZ(from, dirFlat, speed, mid);
+        float z = PredictLandingZ(from, dirFlat, speed, mid, rpm);
         if (z > target.z) lo = mid;   // まだ手前に落ちる → 角度を上げる
         else              hi = mid;
     }
@@ -188,7 +272,7 @@ static const char *ResultText(ShotResult r)
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(1280, 720, "Tennis - step1: gravity & bounce");
+    InitWindow(1280, 720, "Tennis - step2: spin & drag");
     SetTargetFPS(60);
 
     Camera3D cam = { 0 };
@@ -197,50 +281,66 @@ int main(void)
     cam.projection = CAMERA_PERSPECTIVE;
     int camMode = 0;
 
+    Vector3 hitPoint = { 0.0f, 1.0f, HALF_LEN + 0.3f };   // 打点（ベースライン少し後ろ、高さ1m）
+    Vector3 target   = { 0.0f, 0.0f, -9.0f };              // 狙う着地点
+
     Ball ball = { 0 };
+    ball.pos = hitPoint;   // 最初は打点に置いておく
     Vector3 trail[TRAIL_N];
     int trailCount = 0;
     float trailTimer = 0.0f;
+    Color trailColor = YELLOW;
 
-    Vector3 hitPoint = { 0.0f, 1.0f, HALF_LEN + 0.3f };   // 打点（ベースライン少し後ろ、高さ1m）
-    Vector3 target   = { 0.0f, 0.0f, -9.0f };              // 狙う着地点
-    float speedKmh = 90.0f;
-    float lastAngleDeg = 0.0f;
-    float lastSpeedKmh = 0.0f;
+    // 溜め打ち：J/K/L を押している間に溜まり、離した瞬間に打つ
+    const int shotKeys[SHOT_COUNT] = { KEY_L, KEY_J, KEY_K };   // L=フラット J=トップスピン K=スライス
+    int   chargingShot = -1;
+    float charge = 0.0f;
+
+    ShotType lastType = SHOT_TOP;
+    float lastAngleDeg = 0.0f, lastSpeedKmh = 0.0f, lastRpm = 0.0f;
     bool slowMo = false;
     float accumulator = 0.0f;
-    ball.pos = hitPoint;   // 最初は打点に置いておく
 
     while (!WindowShouldClose()) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
 
         // ---- 入力 ----
-        if (IsKeyDown(KEY_UP))    speedKmh = fminf(speedKmh + 60.0f * frameDt, 220.0f);
-        if (IsKeyDown(KEY_DOWN))  speedKmh = fmaxf(speedKmh - 60.0f * frameDt, 30.0f);
         if (IsKeyDown(KEY_LEFT))  target.x = fmaxf(target.x - 4.0f * frameDt, -SINGLES_W * 0.5f);
         if (IsKeyDown(KEY_RIGHT)) target.x = fminf(target.x + 4.0f * frameDt,  SINGLES_W * 0.5f);
-        if (IsKeyDown(KEY_W))     target.z = fmaxf(target.z - 4.0f * frameDt, -HALF_LEN);
-        if (IsKeyDown(KEY_S))     target.z = fminf(target.z + 4.0f * frameDt, -1.0f);
+        if (IsKeyDown(KEY_UP))    target.z = fmaxf(target.z - 4.0f * frameDt, -HALF_LEN);
+        if (IsKeyDown(KEY_DOWN))  target.z = fminf(target.z + 4.0f * frameDt, -1.0f);
         if (IsKeyPressed(KEY_C))  camMode = (camMode + 1) % 3;
         if (IsKeyPressed(KEY_T))  slowMo = !slowMo;
 
-        if (IsKeyPressed(KEY_SPACE)) {
-            float v = speedKmh / 3.6f;
-            float ang = SolveLaunchAngle(hitPoint, target, v);
-            Vector3 dirFlat = Vector3Normalize((Vector3){ target.x - hitPoint.x, 0, target.z - hitPoint.z });
-            ball = (Ball){ 0 };
-            ball.pos = hitPoint;
-            ball.vel = Vector3Add(Vector3Scale(dirFlat, v * cosf(ang)), (Vector3){ 0, v * sinf(ang), 0 });
-            ball.active = true;
-            lastAngleDeg = ang * RAD2DEG;
-            lastSpeedKmh = speedKmh;
-            trailCount = 0;
+        if (chargingShot < 0) {
+            for (int s = 0; s < SHOT_COUNT; s++) {
+                if (IsKeyPressed(shotKeys[s])) { chargingShot = s; charge = 0.0f; }
+            }
+        } else {
+            charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
+            if (IsKeyReleased(shotKeys[chargingShot])) {
+                const ShotSpec *sp = &SHOTS[chargingShot];
+                float kmh = Lerp(sp->minKmh, sp->maxKmh, charge);
+                float rpm = Lerp(sp->minRpm, sp->maxRpm, charge);
+                float v = kmh / 3.6f;
+                float ang = SolveLaunchAngle(hitPoint, target, v, rpm);
+                Vector3 dirFlat = Vector3Normalize((Vector3){ target.x - hitPoint.x, 0, target.z - hitPoint.z });
+                ball = MakeShot(hitPoint, dirFlat, v, ang, rpm);
+                lastType = (ShotType)chargingShot;
+                lastAngleDeg = ang * RAD2DEG;
+                lastSpeedKmh = kmh;
+                lastRpm = rpm;
+                trailColor = sp->color;
+                trailCount = 0;
+                chargingShot = -1;
+            }
         }
         if (IsKeyPressed(KEY_R)) {
             // ITF のバウンドテスト: 2.54m から落とす
             ball = (Ball){ 0 };
             ball.pos = (Vector3){ 0.0f, 2.54f, -3.0f };
             ball.active = true;
+            ball.netClearance = -99.0f;
             trailCount = 0;
         }
 
@@ -282,8 +382,8 @@ int main(void)
             DrawCapsule((Vector3){ hitPoint.x + 0.5f, 0.3f, hitPoint.z + 0.2f },
                         (Vector3){ hitPoint.x + 0.5f, 1.5f, hitPoint.z + 0.2f }, 0.25f, 8, 4, (Color){ 230, 120, 60, 255 });
 
-            // 軌跡
-            for (int i = 1; i < trailCount; i++) DrawLine3D(trail[i - 1], trail[i], YELLOW);
+            // 軌跡（球種ごとに色を変える）
+            for (int i = 1; i < trailCount; i++) DrawLine3D(trail[i - 1], trail[i], trailColor);
 
             // 影（高さが分かるようにするのはテニスゲームでは超重要）
             DrawCircle3D((Vector3){ ball.pos.x, 0.006f, ball.pos.z }, BALL_R * 1.5f, (Vector3){ 1, 0, 0 }, 90.0f,
@@ -292,14 +392,26 @@ int main(void)
         EndMode3D();
 
         float spd = Vector3Length(ball.vel) * 3.6f;
-        DrawRectangle(10, 10, 360, 190, Fade(BLACK, 0.5f));
-        DrawText(TextFormat("Shot speed : %.0f km/h  (UP/DOWN)", speedKmh), 20, 20, 18, RAYWHITE);
-        DrawText(TextFormat("Target     : x=%.1f z=%.1f (arrows, W/S)", target.x, target.z), 20, 42, 18, RAYWHITE);
-        DrawText(TextFormat("Last shot  : %.0f km/h @ %.1f deg", lastSpeedKmh, lastAngleDeg), 20, 64, 18, RAYWHITE);
-        DrawText(TextFormat("Ball       : %.0f km/h  h=%.2f m", spd, ball.pos.y), 20, 86, 18, RAYWHITE);
-        DrawText(TextFormat("Bounces    : %d   Result: %s", ball.bounces, ResultText(ball.result)), 20, 108, 18, RAYWHITE);
+        DrawRectangle(10, 10, 420, 220, Fade(BLACK, 0.5f));
+        DrawText(TextFormat("Target   : x=%.1f z=%.1f (arrows)", target.x, target.z), 20, 20, 18, RAYWHITE);
+        DrawText(TextFormat("Last shot: %s %.0f km/h %.0f rpm @ %.1f deg",
+                            SHOTS[lastType].name, lastSpeedKmh, lastRpm, lastAngleDeg), 20, 42, 18, SHOTS[lastType].color);
+        DrawText(TextFormat("Ball     : %.0f km/h  h=%.2f m", spd, ball.pos.y), 20, 64, 18, RAYWHITE);
+        if (ball.netClearance > -50.0f)
+            DrawText(TextFormat("Net clearance: %+.2f m", ball.netClearance), 20, 86, 18, RAYWHITE);
+        DrawText(TextFormat("Bounces  : %d   Result: %s", ball.bounces, ResultText(ball.result)), 20, 108, 18, RAYWHITE);
         DrawText(TextFormat("1st bounce peak: %.2f m", ball.peakAfterFirstBounce), 20, 130, 18, RAYWHITE);
-        DrawText("SPACE hit  R drop test  C camera  T slow-mo", 20, 160, 16, LIGHTGRAY);
+        DrawText("Hold & release: J top  K slice  L flat", 20, 160, 16, LIGHTGRAY);
+        DrawText("R drop test  C camera  T slow-mo", 20, 182, 16, LIGHTGRAY);
+
+        // 溜めゲージ
+        if (chargingShot >= 0) {
+            const ShotSpec *sp = &SHOTS[chargingShot];
+            int w = 300, x = GetScreenWidth() / 2 - w / 2, y = GetScreenHeight() - 60;
+            DrawRectangle(x, y, w, 20, Fade(BLACK, 0.6f));
+            DrawRectangle(x, y, (int)(w * charge), 20, sp->color);
+            DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), x, y - 24, 20, RAYWHITE);
+        }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, 20, 20, RED);
         EndDrawing();
     }
