@@ -42,7 +42,7 @@
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
 #define IDEAL_FWD        0.40f   // 理想の打点：体より 40cm 前
 #define IDEAL_SIDE       0.85f   // 理想の打点：体から横に 85cm
-#define TOL_FWD_COMPACT  1.10f   // タイミングの許容幅（前後にこれだけずれると質 0）。溜めなしのコンパクトなスイング
+#define TOL_FWD_COMPACT  0.95f   // タイミングの許容幅（前後にこれだけずれると質 0）。溜めなしのコンパクトなスイング
 #define TOL_FWD_FULL     0.75f   //   〃 フルスイング。大きく振るほどシビア
 #define VOLLEY_TOL_BONUS 1.20f   // ボレーはテイクバックが小さいので許容幅が広い
 #define TOL_SIDE         0.80f   // 距離の許容幅
@@ -67,6 +67,11 @@
 #define ERR_YAW_Q        7.0f
 #define ERR_PITCH_BASE   0.2f
 #define ERR_PITCH_Q      3.5f
+// 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
+// 倍率 = 1 + (1 - 質) × (来た球の速さ - TWIST_FREE_KMH) / TWIST_KMH
+// ラリーの普通の球（45km/h 以下）では効かず、速いサーブや強打で効く
+#define TWIST_FREE_KMH   45.0f
+#define TWIST_KMH        18.0f
 
 typedef enum { RESULT_NONE, RESULT_IN, RESULT_OUT, RESULT_NET } ShotResult;
 // 前の3つが通常ショット、後ろの3つが Shift を押しながら打つタッチショット
@@ -428,7 +433,8 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
     float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.65f + 0.35f * q);
     float kmh = paceKmh + swingKmh;
-    float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f);
+    float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
+                 * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
@@ -471,10 +477,11 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
 static Ball MachineServe(void)
 {
     Vector3 from = { -0.6f, 2.8f, -HALF_LEN + 0.3f };
-    const float courseX[3] = { 0.35f, 2.0f, 3.75f };   // センター / ボディ / ワイド
-    Vector3 target = { courseX[rand() % 3], 0.0f, RandRange(5.3f, 6.0f) };
-    bool kick = rand() % 2;
-    float kmh = kick ? RandRange(140.0f, 160.0f) : RandRange(180.0f, 210.0f);
+    const float courseX[3] = { 0.35f, 3.75f, 2.0f };   // センター / ワイド / ボディ
+    // 7 割がファースト（速いフラットで T かワイド）、3 割がセカンド（キックでどこでも）
+    bool kick = rand() % 10 < 3;
+    Vector3 target = { courseX[rand() % (kick ? 3 : 2)], 0.0f, RandRange(5.3f, 6.0f) };
+    float kmh = kick ? RandRange(140.0f, 160.0f) : RandRange(190.0f, 215.0f);
     float rpm = kick ? 3000.0f : 800.0f;
     Ball b = AimedShot(from, target, kmh, rpm, false, NULL);
     b.lastHitter = HITTER_MACHINE;
