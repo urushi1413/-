@@ -50,25 +50,41 @@
 #define TIMING_PULL      0.30f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
 
 typedef enum { RESULT_NONE, RESULT_IN, RESULT_OUT, RESULT_NET } ShotResult;
-typedef enum { SHOT_FLAT, SHOT_TOP, SHOT_SLICE, SHOT_COUNT } ShotType;
+// 前の3つが通常ショット、後ろの3つが Shift を押しながら打つタッチショット
+typedef enum {
+    SHOT_FLAT, SHOT_TOP, SHOT_SLICE,             // L / J / K
+    SHOT_SLICE_LOB, SHOT_TOP_LOB, SHOT_DROP,     // Shift + L / J / K
+    SHOT_COUNT
+} ShotType;
+#define SHOT_NORMAL_COUNT 3
 typedef enum { HITTER_NONE, HITTER_MACHINE, HITTER_PLAYER } Hitter;
 
 // 球種ごとの性格。溜め 0→1 で min→max に変わる
 // rpm はプラスがトップスピン、マイナスがバックスピン（スライス）
 // idealHeight / tolHeight: その球種が一番打ちやすい打点の高さと、許容幅
+// depth / shortDepth / deepDepth: 狙う深さ（何も押さない / S / W）
+// highArc: 同じ着地点に落ちる2つの弾道のうち、高い方を選ぶ（守りのロブ）
+// touchAngle: 0 以外なら、打ち出し角をこの角度に固定して「届く速さ」を逆算する（ドロップ）。
+//             このとき min/maxKmh は使わず、溜めは回転量だけに効く
 typedef struct {
     const char *name;
     float minKmh, maxKmh;
     float minRpm, maxRpm;
     float idealHeight, tolHeight;
+    float depth, shortDepth, deepDepth;
+    bool  highArc;
+    float touchAngle;
     Color color;
 } ShotSpec;
 
 static const ShotSpec SHOTS[SHOT_COUNT] = {
-    //                 name       km/h            rpm               高さ(理想, 許容)
-    [SHOT_FLAT]  = { "FLAT",    90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f, RAYWHITE },
-    [SHOT_TOP]   = { "TOPSPIN", 70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, (Color){ 255, 200, 40, 255 } },
-    [SHOT_SLICE] = { "SLICE",   60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, (Color){ 80, 220, 255, 255 } },
+    //                     name         km/h            rpm               高さ(理想,許容)  深さ(普通, S, W)        高い弾道 固定角
+    [SHOT_FLAT]      = { "FLAT",      90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE },
+    [SHOT_TOP]       = { "TOPSPIN",   70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 } },
+    [SHOT_SLICE]     = { "SLICE",     60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 } },
+    [SHOT_SLICE_LOB] = { "SLICE LOB", 50.0f,  65.0f,  -800.0f, -1500.0f, 0.80f, 1.00f, -10.0f, -8.0f, -11.0f, true, 0.0f, (Color){ 150, 160, 255, 255 } },
+    [SHOT_TOP_LOB]   = { "TOP LOB",   60.0f,  90.0f,  2000.0f,  3500.0f, 1.00f, 0.80f, -10.0f, -8.0f, -11.0f, false, 0.0f, (Color){ 255, 130, 40, 255 } },
+    [SHOT_DROP]      = { "DROP",       0.0f,   0.0f, -1500.0f, -2500.0f, 0.90f, 0.90f,  -2.5f, -1.8f,  -4.0f, false, 28.0f, (Color){ 200, 120, 255, 255 } },
 };
 
 typedef struct {
@@ -118,7 +134,9 @@ static float RandRange(float a, float b) { return a + (b - a) * ((float)rand() /
 
 static void JudgeFirstBounce(Ball *b)
 {
-    if (b->hitNet) { b->result = RESULT_NET; return; }
+    // ネットに当たった、またはネットに届く前に自分のコートに落ちた
+    bool ownSide = (b->side < 0) ? (b->pos.z > 0.0f) : (b->pos.z < 0.0f);
+    if (b->hitNet || ownSide) { b->result = RESULT_NET; return; }
     // ラインに少しでも触れたらイン
     bool inX = fabsf(b->pos.x) <= SINGLES_W * 0.5f + BALL_R;
     bool inZ = (b->side < 0) ? (b->pos.z < 0.0f && b->pos.z >= -HALF_LEN - BALL_R)
@@ -260,12 +278,44 @@ static float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, flo
     return -10.0f;
 }
 
-// 狙った距離に落ちる打ち出し角を二分探索で求める
-// その球速・回転・打点の位置では「ネットを越えてその距離に落とす」のが物理的に無理な場合は、
-// ネットを少し余裕を持って越える角度を返す（＝人間が振り切ったときと同じで、アウトになる）
-static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm)
+#define MIN_ANGLE  (-15.0f * DEG2RAD)
+#define MAX_ANGLE  ( 75.0f * DEG2RAD)
+
+// 狙った距離に落ちる打ち出し角を求める
+// 飛距離は角度に対して「上がって下がる」山なので、同じ距離に落ちる角度は2つある。
+//   high=false : 低い方（普通のショット）
+//   high=true  : 高い方（守りのロブ）
+// 無理な場合:
+//   どの角度でも届かない → 一番遠くまで飛ぶ角度（それでも短い）
+//   ネットを越えてその距離に落とせない → ネットを少し余裕を持って越える角度（＝アウト）
+static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm, bool high)
 {
-    float lo = -15.0f * DEG2RAD, hi = 40.0f * DEG2RAD;
+    // 一番遠くまで飛ぶ角度を探す（粗く探してから三分探索で詰める）
+    float best = MIN_ANGLE, bestDist = -1.0f;
+    for (float a = MIN_ANGLE; a <= MAX_ANGLE + 1e-4f; a += 5.0f * DEG2RAD) {
+        float d = PredictLandingDist(from, dirFlat, speed, a, rpm);
+        if (d > bestDist) { bestDist = d; best = a; }
+    }
+    float lo = fmaxf(best - 5.0f * DEG2RAD, MIN_ANGLE), hi = fminf(best + 5.0f * DEG2RAD, MAX_ANGLE);
+    for (int i = 0; i < 16; i++) {
+        float m1 = lo + (hi - lo) / 3.0f, m2 = hi - (hi - lo) / 3.0f;
+        if (PredictLandingDist(from, dirFlat, speed, m1, rpm) < PredictLandingDist(from, dirFlat, speed, m2, rpm)) lo = m1;
+        else hi = m2;
+    }
+    float peak = 0.5f * (lo + hi);
+    if (PredictLandingDist(from, dirFlat, speed, peak, rpm) < dist) return peak;
+
+    if (high) {
+        lo = peak; hi = MAX_ANGLE;
+        for (int i = 0; i < 30; i++) {
+            float mid = 0.5f * (lo + hi);
+            if (PredictLandingDist(from, dirFlat, speed, mid, rpm) > dist) lo = mid;   // まだ遠い → もっと上げる
+            else                                                          hi = mid;
+        }
+        return 0.5f * (lo + hi);
+    }
+
+    lo = MIN_ANGLE; hi = peak;
     for (int i = 0; i < 30; i++) {
         float mid = 0.5f * (lo + hi);
         if (PredictLandingDist(from, dirFlat, speed, mid, rpm) < dist) lo = mid;   // 手前 → 角度を上げる
@@ -275,7 +325,7 @@ static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float s
 
     const float minMargin = 0.10f;
     if (PredictNetClearance(from, dirFlat, speed, ang, rpm) < minMargin) {
-        lo = ang; hi = 40.0f * DEG2RAD;
+        lo = ang; hi = peak;
         for (int i = 0; i < 30; i++) {
             float mid = 0.5f * (lo + hi);
             if (PredictNetClearance(from, dirFlat, speed, mid, rpm) < minMargin) lo = mid;
@@ -286,12 +336,24 @@ static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float s
     return ang;
 }
 
+// 打ち出し角を固定して、狙った距離に届く速さ（m/s）を求める
+static float SolveSpeed(Vector3 from, Vector3 dirFlat, float dist, float angle, float rpm)
+{
+    float lo = 2.0f, hi = 40.0f;
+    for (int i = 0; i < 30; i++) {
+        float mid = 0.5f * (lo + hi);
+        if (PredictLandingDist(from, dirFlat, mid, angle, rpm) < dist) lo = mid;
+        else                                                          hi = mid;
+    }
+    return 0.5f * (lo + hi);
+}
+
 // from から target に向けて、指定の球速・回転で打つ（角度は自動で決める）
-static Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, float *outAngle)
+static Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool high, float *outAngle)
 {
     Vector3 d = { target.x - from.x, 0.0f, target.z - from.z };
     Vector3 dirFlat = Vector3Normalize(d);
-    float ang = SolveLaunchAngle(from, dirFlat, Vector3Length(d), kmh / 3.6f, rpm);
+    float ang = SolveLaunchAngle(from, dirFlat, Vector3Length(d), kmh / 3.6f, rpm, high);
     if (outAngle) *outAngle = ang;
     return MakeShot(from, dirFlat, kmh / 3.6f, ang, rpm);
 }
@@ -339,10 +401,20 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
 
     Vector3 d = { target.x - ballPos.x, 0.0f, target.z - ballPos.z };
     Vector3 dirFlat = Vector3RotateByAxisAngle(Vector3Normalize(d), (Vector3){ 0, 1, 0 }, yaw);
-    float ang = SolveLaunchAngle(ballPos, dirFlat, Vector3Length(d), kmh / 3.6f, rpm);
-
-    // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
-    ang += RandNormal() * (0.15f + (1.0f - q) * 2.5f) * DEG2RAD;
+    float dist = Vector3Length(d);
+    // タッチショットは遅いので角度のずれが効きにくい。代わりに距離感をずらす（ドロップが浮く・ロブが浅い）
+    if (type >= SHOT_NORMAL_COUNT) dist *= 1.0f + RandNormal() * (0.04f + (1.0f - q) * 0.20f);
+    float ang;
+    if (sp->touchAngle > 0.0f) {
+        // ドロップ：決まった角度で、届くぎりぎりの速さで運ぶ
+        ang = sp->touchAngle * DEG2RAD;
+        kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
+        ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * DEG2RAD;
+    } else {
+        ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
+        // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
+        ang += RandNormal() * (0.15f + (1.0f - q) * 2.5f) * DEG2RAD;
+    }
 
     if (outKmh) *outKmh = kmh;
     if (outRpm) *outRpm = rpm;
@@ -355,11 +427,11 @@ static Ball MachineFeed(void)
 {
     Vector3 from   = { RandRange(-1.0f, 1.0f), 1.0f, -HALF_LEN - 0.5f };
     Vector3 target = { RandRange(-3.2f, 3.2f), 0.0f, RandRange(5.5f, 10.5f) };
-    ShotType t = (ShotType)(rand() % SHOT_COUNT);
+    ShotType t = (ShotType)(rand() % SHOT_NORMAL_COUNT);
     float charge = RandRange(0.1f, 0.5f);
     float kmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, charge);
     float rpm = Lerp(SHOTS[t].minRpm, SHOTS[t].maxRpm, charge);
-    Ball b = AimedShot(from, target, kmh, rpm, NULL);
+    Ball b = AimedShot(from, target, kmh, rpm, false, NULL);
     b.lastHitter = HITTER_MACHINE;
     return b;
 }
@@ -458,7 +530,8 @@ int main(void)
     Color trailColor = LIGHTGRAY;
 
     // 溜め打ち：J/K/L を押している間に溜まり、離した瞬間にスイング
-    const int shotKeys[SHOT_COUNT] = { KEY_L, KEY_J, KEY_K };   // L=フラット J=トップスピン K=スライス
+    // L=フラット J=トップスピン K=スライス。Shift を押しながらだと スライスロブ / トップスピンロブ / ドロップ
+    const int shotKeys[SHOT_COUNT] = { KEY_L, KEY_J, KEY_K, KEY_L, KEY_J, KEY_K };
     int   chargingShot = -1;
     float charge = 0.0f;
 
@@ -497,8 +570,12 @@ int main(void)
 
         // ---- スイング ----
         if (chargingShot < 0) {
-            for (int s = 0; s < SHOT_COUNT; s++) {
-                if (IsKeyPressed(shotKeys[s])) { chargingShot = s; charge = 0.0f; }
+            bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+            for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
+                if (IsKeyPressed(shotKeys[s])) {
+                    chargingShot = shift ? s + SHOT_NORMAL_COUNT : s;
+                    charge = 0.0f;
+                }
             }
         } else {
             charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
@@ -507,11 +584,12 @@ int main(void)
                 chargingShot = -1;
 
                 // コースは「離した瞬間に押している方向」で決まる
-                Vector3 target = { 0.0f, 0.0f, -9.0f };
+                const ShotSpec *sp = &SHOTS[type];
+                Vector3 target = { 0.0f, 0.0f, sp->depth };
                 if (IsKeyDown(KEY_A)) target.x = -3.0f;
                 if (IsKeyDown(KEY_D)) target.x =  3.0f;
-                if (IsKeyDown(KEY_W)) target.z = -10.3f;
-                if (IsKeyDown(KEY_S)) target.z = -6.0f;
+                if (IsKeyDown(KEY_W)) target.z = sp->deepDepth;
+                if (IsKeyDown(KEY_S)) target.z = sp->shortDepth;
 
                 bool hittable = ball.active && ball.lastHitter == HITTER_MACHINE &&
                                 ball.bounces <= 1 && ball.pos.z > 0.0f && !ball.hitNet;
@@ -622,7 +700,7 @@ int main(void)
         EndMode3D();
 
         // ---- HUD ----
-        DrawRectangle(10, 10, 470, 250, Fade(BLACK, 0.5f));
+        DrawRectangle(10, 10, 480, 270, Fade(BLACK, 0.5f));
         int y = 20;
         if (hasLast) {
             const Contact *c = &lastContact;
@@ -650,11 +728,15 @@ int main(void)
         } else {
             DrawText("Move to the ball, hold J/K/L, release to swing", 20, y, 18, RAYWHITE); y += 24;
         }
-        y = 190;
+        y = 176;
         DrawText(TextFormat("IN  flat %d/%d   top %d/%d   slice %d/%d",
                             stats[SHOT_FLAT][1], stats[SHOT_FLAT][0], stats[SHOT_TOP][1], stats[SHOT_TOP][0],
-                            stats[SHOT_SLICE][1], stats[SHOT_SLICE][0]), 20, y, 18, RAYWHITE); y += 26;
-        DrawText("WASD move/aim  J top K slice L flat  F feed  C cam  T slow", 20, y, 16, LIGHTGRAY);
+                            stats[SHOT_SLICE][1], stats[SHOT_SLICE][0]), 20, y, 18, RAYWHITE); y += 20;
+        DrawText(TextFormat("    lob %d/%d   top lob %d/%d   drop %d/%d",
+                            stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0], stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0],
+                            stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 18, RAYWHITE); y += 24;
+        DrawText("WASD move/aim  J top K slice L flat  +Shift: lob/drop", 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText("F feed  C cam  T slow", 20, y, 16, LIGHTGRAY);
 
         // 溜めゲージ
         if (chargingShot >= 0) {
@@ -662,7 +744,10 @@ int main(void)
             int w = 300, x = GetScreenWidth() / 2 - w / 2, gy = GetScreenHeight() - 60;
             DrawRectangle(x, gy, w, 20, Fade(BLACK, 0.6f));
             DrawRectangle(x, gy, (int)(w * charge), 20, sp->color);
-            DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), x, gy - 24, 20, RAYWHITE);
+            if (sp->touchAngle > 0.0f)
+                DrawText(TextFormat("%s  %.0f rpm", sp->name, Lerp(sp->minRpm, sp->maxRpm, charge)), x, gy - 24, 20, RAYWHITE);
+            else
+                DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), x, gy - 24, 20, RAYWHITE);
         }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, 20, 20, RED);
         EndDrawing();
