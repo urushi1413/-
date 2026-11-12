@@ -42,12 +42,31 @@
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
 #define IDEAL_FWD        0.40f   // 理想の打点：体より 40cm 前
 #define IDEAL_SIDE       0.85f   // 理想の打点：体から横に 85cm
-#define TOL_FWD          0.90f   // タイミングの許容幅（前後にこれだけずれると質 0）
+#define TOL_FWD_COMPACT  1.10f   // タイミングの許容幅（前後にこれだけずれると質 0）。溜めなしのコンパクトなスイング
+#define TOL_FWD_FULL     0.75f   //   〃 フルスイング。大きく振るほどシビア
+#define VOLLEY_TOL_BONUS 1.20f   // ボレーはテイクバックが小さいので許容幅が広い
 #define TOL_SIDE         0.80f   // 距離の許容幅
 #define REACH_FWD        1.00f   // これ以上前後にずれたら空振り
 #define REACH_SIDE       1.70f   // これ以上遠いと空振り（ラケットが届かない）
 #define REACH_HEIGHT     2.30f
 #define TIMING_PULL      0.30f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
+
+// ---- 来た球の勢い ----
+// ラケットに当たったボールの速さ ≒ EA × 来た球の速さ ＋ (1 + EA) × ラケットの速さ
+// （EA はラケットとボールの「見かけの反発係数」。実測で 0.4 前後）
+// 球種表の km/h は「REF_IN_KMH の球を打ち返したとき」の値として、そこからラケットの速さを逆算する
+#define RACKET_EA        0.40f
+#define REF_IN_KMH       60.0f
+#define VOLLEY_POWER     0.40f   // ボレーは振らないので、自分の力は 4 割しか乗らない
+
+// ---- 打球のばらつき（標準偏差、度）----
+// 実際のばらつき = (BASE + (1 - 質) * Q) × 勢いの倍率
+// 勢いの倍率：ラケット面が δ ずれると、跳ね返る成分は 2δ、自分で振った成分は δ ずれる。
+//            なので来た球が速いほど、同じ面のずれでも狙いが大きく狂う（1〜2 倍）
+#define ERR_YAW_BASE     0.6f
+#define ERR_YAW_Q        7.0f
+#define ERR_PITCH_BASE   0.2f
+#define ERR_PITCH_Q      3.5f
 
 typedef enum { RESULT_NONE, RESULT_IN, RESULT_OUT, RESULT_NET } ShotResult;
 // 前の3つが通常ショット、後ろの3つが Shift を押しながら打つタッチショット
@@ -107,6 +126,9 @@ typedef struct {
     MissReason miss;
     bool  forehand;
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
+    float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）
+    float inKmh;       // 来た球の速さ
+    bool  volley;      // ノーバウンドで打った
     float side;        // 体からの横距離
     float height;      // 打点の高さ
     float qTiming, qDist, qHeight;
@@ -360,14 +382,20 @@ static Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool h
 
 // ---- 打点の評価 ----
 // player はプレイヤーの足元の位置。相手コート（-z）を向いて立っている
-static Contact EvaluateContact(Vector3 player, Vector3 ballPos, ShotType type)
+// charge が大きい（大きく振る）ほど、タイミングの許容幅が狭くなる
+static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge)
 {
     Contact c = { 0 };
+    Vector3 ballPos = ball->pos;
     float lateral = ballPos.x - player.x;
     c.forehand = lateral >= 0.0f;
     c.side     = fabsf(lateral);
     c.height   = ballPos.y;
     c.fwdErr   = (player.z - IDEAL_FWD) - ballPos.z;   // プラス＝ボールがまだ前にある＝振るのが早い
+    c.volley   = ball->bounces == 0;
+    c.inKmh    = Vector3Length(ball->vel) * 3.6f;
+    float vz = fmaxf(ball->vel.z, 1.0f);
+    c.timeErrMs = c.fwdErr / vz * 1000.0f;
 
     if (c.fwdErr >  REACH_FWD)   { c.miss = MISS_EARLY; return c; }
     if (c.fwdErr < -REACH_FWD)   { c.miss = MISS_LATE;  return c; }
@@ -375,7 +403,8 @@ static Contact EvaluateContact(Vector3 player, Vector3 ballPos, ShotType type)
     if (c.height >  REACH_HEIGHT){ c.miss = MISS_HIGH;  return c; }
 
     const ShotSpec *sp = &SHOTS[type];
-    c.qTiming = Clamp01(1.0f - fabsf(c.fwdErr) / TOL_FWD);
+    float tol = Lerp(TOL_FWD_COMPACT, TOL_FWD_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f);
+    c.qTiming = Clamp01(1.0f - fabsf(c.fwdErr) / tol);
     c.qDist   = Clamp01(1.0f - fabsf(c.side - IDEAL_SIDE) / TOL_SIDE);
     c.qHeight = Clamp01(1.0f - fabsf(c.height - sp->idealHeight) / sp->tolHeight);
     c.quality = c.qTiming * c.qDist * c.qHeight;
@@ -390,36 +419,66 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
 {
     const ShotSpec *sp = &SHOTS[type];
     float q = c->quality;
-    float kmh = Lerp(sp->minKmh, sp->maxKmh, charge) * (0.65f + 0.35f * q);
+
+    // 球速 = 来た球の跳ね返り + 自分のスイング
+    //   芯を外すと（質が低いと）どちらも落ちる。ボレーは自分のスイングがほとんど乗らない
+    float specKmh   = Lerp(sp->minKmh, sp->maxKmh, charge);
+    float racketKmh = fmaxf(specKmh - RACKET_EA * REF_IN_KMH, 0.0f) / (1.0f + RACKET_EA);
+    if (c->volley) racketKmh *= VOLLEY_POWER;
+    float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
+    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.65f + 0.35f * q);
+    float kmh = paceKmh + swingKmh;
+    float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = c->forehand ? 1.0f : -1.0f;
     float yaw = hand * c->fwdErr * TIMING_PULL
-              + RandNormal() * (0.5f + (1.0f - q) * 6.0f) * DEG2RAD;
+              + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
     yaw = Clamp(yaw, -30.0f * DEG2RAD, 30.0f * DEG2RAD);
 
     Vector3 d = { target.x - ballPos.x, 0.0f, target.z - ballPos.z };
     Vector3 dirFlat = Vector3RotateByAxisAngle(Vector3Normalize(d), (Vector3){ 0, 1, 0 }, yaw);
     float dist = Vector3Length(d);
     // タッチショットは遅いので角度のずれが効きにくい。代わりに距離感をずらす（ドロップが浮く・ロブが浅い）
-    if (type >= SHOT_NORMAL_COUNT) dist *= 1.0f + RandNormal() * (0.04f + (1.0f - q) * 0.20f);
+    // 跳ね返りの成分は距離感をコントロールしにくい（ブロックリターンやボレーは深さがばらつく）
+    dist *= 1.0f + RandNormal() * (paceKmh / fmaxf(kmh, 1.0f)) * (0.05f + (1.0f - q) * 0.25f);
+    // 速い球ほど勢いを殺すのが難しい（100km/h の球だと、ずれが約 2 倍）
+    if (type >= SHOT_NORMAL_COUNT) {
+        float paceDifficulty = 1.0f + c->inKmh / 100.0f;
+        dist *= 1.0f + RandNormal() * (0.04f + (1.0f - q) * 0.20f) * paceDifficulty;
+    }
     float ang;
     if (sp->touchAngle > 0.0f) {
         // ドロップ：決まった角度で、届くぎりぎりの速さで運ぶ
         ang = sp->touchAngle * DEG2RAD;
         kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
-        ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * DEG2RAD;
+        ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * errMul * DEG2RAD;
     } else {
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
-        ang += RandNormal() * (0.15f + (1.0f - q) * 2.5f) * DEG2RAD;
+        ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
     }
 
     if (outKmh) *outKmh = kmh;
     if (outRpm) *outRpm = rpm;
     if (outAngle) *outAngle = ang;
     return MakeShot(ballPos, dirFlat, kmh / 3.6f, ang, rpm);
+}
+
+// サーブマシン：相手のベースラインの高さ 2.8m から、自分のデュースコートのサービスボックスへ
+// （横回転のサーブはサーブ実装のときに追加する）
+static Ball MachineServe(void)
+{
+    Vector3 from = { -0.6f, 2.8f, -HALF_LEN + 0.3f };
+    const float courseX[3] = { 0.35f, 2.0f, 3.75f };   // センター / ボディ / ワイド
+    Vector3 target = { courseX[rand() % 3], 0.0f, RandRange(5.3f, 6.0f) };
+    bool kick = rand() % 2;
+    float kmh = kick ? RandRange(140.0f, 160.0f) : RandRange(180.0f, 210.0f);
+    float rpm = kick ? 3000.0f : 800.0f;
+    Ball b = AimedShot(from, target, kmh, rpm, false, NULL);
+    b.lastHitter = HITTER_MACHINE;
+    return b;
 }
 
 // 球出しマシン：相手のベースラインから、ランダムな場所・球種で出す
@@ -546,6 +605,13 @@ int main(void)
     int stats[SHOT_COUNT][2] = { 0 };   // [球種][0=打った数, 1=イン]
     bool slowMo = false;
     float accumulator = 0.0f;
+    bool serveMode = false;          // G で切り替え：ラリーの球出し / サーブ
+
+    // 直前のフレームの物理ステップごとのボールの状態。
+    // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
+    // その間で一番いいタイミングの瞬間を採用する（入力の粗さで損をしないように）
+    Ball history[64];
+    int historyCount = 0;
 
     while (!WindowShouldClose()) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
@@ -567,6 +633,7 @@ int main(void)
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
+        if (IsKeyPressed(KEY_G)) { serveMode = !serveMode; feedTimer = 0.0f; }
 
         // ---- スイング ----
         if (chargingShot < 0) {
@@ -591,10 +658,18 @@ int main(void)
                 if (IsKeyDown(KEY_W)) target.z = sp->deepDepth;
                 if (IsKeyDown(KEY_S)) target.z = sp->shortDepth;
 
-                bool hittable = ball.active && ball.lastHitter == HITTER_MACHINE &&
-                                ball.bounces <= 1 && ball.pos.z > 0.0f && !ball.hitNet;
-                Contact c = EvaluateContact(player, ball.pos, type);
-                if (!hittable) c.miss = MISS_NO_BALL;
+                // 直前のフレームの間で、一番タイミングが合っていた瞬間のボールを使う
+                Contact c = { .miss = MISS_NO_BALL };
+                int bestIdx = -1;
+                for (int h = 0; h < historyCount; h++) {
+                    const Ball *hb = &history[h];
+                    bool hittable = hb->active && hb->lastHitter == HITTER_MACHINE &&
+                                    hb->bounces <= 1 && hb->pos.z > 0.0f && !hb->hitNet;
+                    if (!hittable) continue;
+                    Contact hc = EvaluateContact(player, hb, type, charge);
+                    if (bestIdx < 0 || fabsf(hc.fwdErr) < fabsf(c.fwdErr)) { c = hc; bestIdx = h; }
+                }
+                if (bestIdx >= 0 && c.miss == MISS_NONE) ball = history[bestIdx];
 
                 hasLast = true;
                 lastContact = c;
@@ -622,8 +697,11 @@ int main(void)
 
         // ---- 物理（固定ステップ）----
         accumulator += frameDt * (slowMo ? 0.25f : 1.0f);
+        historyCount = 0;
+        history[historyCount++] = ball;
         while (accumulator >= PHYS_DT) {
             StepBall(&ball, PHYS_DT);
+            if (historyCount < 64) history[historyCount++] = ball;
             accumulator -= PHYS_DT;
 
             trailTimer += PHYS_DT;
@@ -646,7 +724,12 @@ int main(void)
         if (rallyOver) {
             feedTimer -= frameDt;
             if (feedTimer <= 0.0f) {
-                ball = MachineFeed();
+                if (serveMode) {
+                    ball = MachineServe();
+                    player = (Vector3){ 2.4f, 0.0f, HALF_LEN + 0.8f };   // リターンの構え位置へ
+                } else {
+                    ball = MachineFeed();
+                }
                 trailColor = Fade(LIGHTGRAY, 0.6f);
                 trailCount = 0;
                 feedTimer = 1.2f;
@@ -707,17 +790,17 @@ int main(void)
             if (c->miss != MISS_NONE) {
                 DrawText(MissText(c->miss), 20, y, 22, RED); y += 30;
             } else {
-                DrawText(TextFormat("%s %s  quality %.0f%%", c->forehand ? "Forehand" : "Backhand",
+                DrawText(TextFormat("%s%s %s  quality %.0f%%", c->forehand ? "Forehand" : "Backhand", c->volley ? " volley" : "",
                                     SHOTS[lastType].name, c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
                 y += 30;
                 const char *tStr = c->fwdErr > 0.08f ? "early" : (c->fwdErr < -0.08f ? "late" : "good");
                 const char *dStr = c->side < IDEAL_SIDE - 0.15f ? "jammed" : (c->side > IDEAL_SIDE + 0.15f ? "stretched" : "good");
                 const char *hStr = c->height < SHOTS[lastType].idealHeight - 0.2f ? "low"
                                  : (c->height > SHOTS[lastType].idealHeight + 0.2f ? "high" : "good");
-                DrawText(TextFormat("Timing  %+.2f m  %-9s %3.0f%%", c->fwdErr, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                DrawText(TextFormat("Timing  %+.2f m (%+.0f ms) %-5s %3.0f%%", c->fwdErr, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
                 DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
                 DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
-                DrawText(TextFormat("-> %.0f km/h  %.0f rpm  %.1f deg", lastKmh, lastRpm, lastAngle * RAD2DEG), 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  %.0f rpm  %.1f deg", c->inKmh, lastKmh, lastRpm, lastAngle * RAD2DEG), 20, y, 18, RAYWHITE); y += 22;
                 if (ball.lastHitter == HITTER_PLAYER) {
                     if (ball.netClearance > -50.0f)
                         DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
@@ -736,7 +819,7 @@ int main(void)
                             stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0], stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0],
                             stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 18, RAYWHITE); y += 24;
         DrawText("WASD move/aim  J top K slice L flat  +Shift: lob/drop", 20, y, 16, LIGHTGRAY); y += 18;
-        DrawText("F feed  C cam  T slow", 20, y, 16, LIGHTGRAY);
+        DrawText(TextFormat("F feed  G mode: %s  C cam  T slow", serveMode ? "SERVE RETURN" : "RALLY"), 20, y, 16, LIGHTGRAY);
 
         // 溜めゲージ
         if (chargingShot >= 0) {
