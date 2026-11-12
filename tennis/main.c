@@ -68,7 +68,7 @@ static const ShotSpec SHOTS[SHOT_COUNT] = {
     //                 name       km/h            rpm               高さ(理想, 許容)
     [SHOT_FLAT]  = { "FLAT",    90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f, RAYWHITE },
     [SHOT_TOP]   = { "TOPSPIN", 70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, (Color){ 255, 200, 40, 255 } },
-    [SHOT_SLICE] = { "SLICE",   60.0f, 105.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, (Color){ 80, 220, 255, 255 } },
+    [SHOT_SLICE] = { "SLICE",   60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, (Color){ 80, 220, 255, 255 } },
 };
 
 typedef struct {
@@ -249,7 +249,20 @@ static float PredictLandingDist(Vector3 from, Vector3 dirFlat, float speed, floa
     return 1000.0f;
 }
 
+// 試し打ちして、ネット上の余裕を返す（ネットに届く前に落ちたら大きなマイナス）
+static float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm)
+{
+    Ball b = MakeShot(from, dirFlat, speed, angle, rpm);
+    for (int i = 0; i < 240 * 6 && b.active && b.bounces == 0; i++) {
+        StepBall(&b, PHYS_DT);
+        if (b.netClearance > -50.0f) return b.netClearance;
+    }
+    return -10.0f;
+}
+
 // 狙った距離に落ちる打ち出し角を二分探索で求める
+// その球速・回転・打点の位置では「ネットを越えてその距離に落とす」のが物理的に無理な場合は、
+// ネットを少し余裕を持って越える角度を返す（＝人間が振り切ったときと同じで、アウトになる）
 static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm)
 {
     float lo = -15.0f * DEG2RAD, hi = 40.0f * DEG2RAD;
@@ -258,7 +271,19 @@ static float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float s
         if (PredictLandingDist(from, dirFlat, speed, mid, rpm) < dist) lo = mid;   // 手前 → 角度を上げる
         else                                                          hi = mid;
     }
-    return 0.5f * (lo + hi);
+    float ang = 0.5f * (lo + hi);
+
+    const float minMargin = 0.10f;
+    if (PredictNetClearance(from, dirFlat, speed, ang, rpm) < minMargin) {
+        lo = ang; hi = 40.0f * DEG2RAD;
+        for (int i = 0; i < 30; i++) {
+            float mid = 0.5f * (lo + hi);
+            if (PredictNetClearance(from, dirFlat, speed, mid, rpm) < minMargin) lo = mid;
+            else                                                                hi = mid;
+        }
+        ang = hi;
+    }
+    return ang;
 }
 
 // from から target に向けて、指定の球速・回転で打つ（角度は自動で決める）
