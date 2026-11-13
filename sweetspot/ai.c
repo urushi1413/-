@@ -19,9 +19,10 @@ Ball RotBall(Ball b)
 }
 
 const AiLevel AI_LEVELS[3] = {
-    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f },
-    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f },
-    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f },
+    //          走る  反応   タイミング 位置   強気   見極め  1st     2nd     サーブの安定感
+    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f },
+    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f },
+    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f, 195.0f, 130.0f, 0.80f },
 };
 
 // 速さ v0（目的地方向の成分）から距離 d を走って止まるまでの時間
@@ -78,7 +79,11 @@ Ball FlipSides(Ball b)
 Vector3 AiHome(void) { return (Vector3){ 0.0f, 0.0f, -(HALF_LEN + 0.8f) }; }
 
 // リターンの構え位置（自分側の座標。AI は Rot180 して使う）。ボックスの外寄り、ベースラインの 1.3m 後ろ
-Vector3 ReturnPos(bool deuce) { return (Vector3){ deuce ? 2.3f : -2.3f, 0.0f, HALF_LEN + 1.3f }; }
+// ファーストは下がって時間を作り（ベースラインの 1.8m 後ろ）、セカンドは前で待つ（0.3m 後ろ）
+Vector3 ReturnPos(bool deuce, bool second)
+{
+    return (Vector3){ deuce ? 2.3f : -2.3f, 0.0f, HALF_LEN + (second ? 0.3f : 1.8f) };
+}
 
 // 飛んでくる球を予測して、どこで打つかを決める（AI 座標で考える）
 void AiPlan(Opponent *ai, const Ball *worldBall)
@@ -252,12 +257,18 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     Vector2 off = { RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
     float hErr = fabsf(RandNormal() * lv->timingSigmaMs / 1000.0f * 2.4f);   // 落ちてくる速さ 2.4m/s 前後
     float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
+    // 強さごとの安定感（低いほどぶれて、フォルトが増える）。セカンドは安全に入れにいくので、ぶれは小さい
+    q *= first ? lv->serveSkill : lv->serveSkill + (1.0f - lv->serveSkill) * 0.65f;
     Vector3 contact = { me.x + 0.25f + off.x, SERVE_IDEAL_H - hErr, me.z - 0.35f + off.y };
 
     ServeType t;
     float charge;
-    if (first) { t = (rand() % 2) ? SERVE_FLAT : SERVE_SLICE; charge = 0.55f + 0.40f * lv->aggression + RandRange(-0.05f, 0.05f); }
-    else       { t = SERVE_KICK; charge = RandRange(0.45f, 0.65f); }
+    // 速さは強さごとの目安から逆算する（打点の質で落ちる分も見込む）
+    float wantKmh;
+    if (first) { t = (rand() % 2) ? SERVE_FLAT : SERVE_SLICE; wantKmh = lv->serve1Kmh + RandNormal() * 6.0f; }
+    else       { t = SERVE_KICK;                              wantKmh = lv->serve2Kmh + RandNormal() * 5.0f; }
+    const ServeSpec *ssp = &SERVES[t];
+    charge = (wantKmh / (0.80f + 0.20f * q) - ssp->minKmh) / (ssp->maxKmh - ssp->minKmh);
     float x0, x1;
     ServiceBox(me.x, -1, &x0, &x1);
     const float course[3] = { x1 - 0.35f, x0 + 0.35f, 0.5f * (x0 + x1) };   // T / ワイド / ボディ（デュース側）

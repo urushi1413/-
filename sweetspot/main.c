@@ -57,6 +57,10 @@ int main(void)
     bool  serveAce = false;
     int   svStats[2][2] = { 0 };        // [1st/2nd][0=打った数, 1=イン]
     int   aces = 0, doubleFaults = 0;
+    // 試合のサーブの成績 [0=自分 1=AI][0=1st 打数 1=1st 入 2=2nd 打数 3=2nd 入 4=返されなかった 5=ダブルフォルト]
+    int   mst[2][6] = { { 0 } };
+    bool  retPending = false;          // 入ったサーブの、リターンの結果待ち
+    int   retServer = 0;
 
     // 試合
     Opponent ai = { 0 };
@@ -235,6 +239,7 @@ int main(void)
             P.sliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
+            memset(mst, 0, sizeof(mst)); retPending = false;
             needSetup = true;
             pointMsg = "";
             trailCount = 0;
@@ -262,11 +267,11 @@ int main(void)
             P.chargingShot = -1; P.chargingServe = -1;
             if (server == 0) {
                 P.pos = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
-                ai.pos = Rot180(ReturnPos(deuce));
+                ai.pos = Rot180(ReturnPos(deuce, serveNo == 2));
                 ai.standPos = ai.pos;
                 P.sv = SV_READY;
             } else {
-                P.pos = ReturnPos(deuce);
+                P.pos = ReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                 ai.standPos = ai.pos;
                 phaseTimer = 1.5f;
@@ -759,9 +764,18 @@ int main(void)
         if (mode == MODE_MATCH && phase == PH_PLAY) {
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
+            // リターンが入ったかどうか（入らなければ「返されなかったサーブ」）
+            if (retPending && !ball.isServe && ball.bounces >= 1 && ball.result != RESULT_NONE) {
+                if (ball.result != RESULT_IN) mst[retServer][4]++;
+                retPending = false;
+            }
             if (ball.isServe && !serveJudged && ball.bounces >= 1) {
+                mst[hitter][serveNo == 1 ? 0 : 2]++;
+                if (ball.result == RESULT_IN) mst[hitter][serveNo == 1 ? 1 : 3]++;
+                else if (serveNo == 2) mst[hitter][5]++;
                 if (ball.result == RESULT_IN) {
                     serveJudged = true;
+                    retPending = true; retServer = hitter;
                 } else if (serveNo == 1) {
                     serveNo = 2;
                     pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
@@ -779,7 +793,8 @@ int main(void)
                                                            : (hitter == 0 ? "Your error (out)" : "AI error (out)");
                 } else if (ball.bounces >= 2) {
                     winner = hitter;
-                    if (ball.isServe) pointMsg = (hitter == 0) ? "Your ace / unreturned serve" : "AI ace / unreturned serve";
+                    if (ball.isServe) { pointMsg = (hitter == 0) ? "Your ace / unreturned serve" : "AI ace / unreturned serve";
+                                        mst[hitter][4]++; retPending = false; }
                     else              pointMsg = (hitter == 0) ? "Your winner" : "AI winner";
                 }
             }
@@ -822,7 +837,7 @@ int main(void)
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
                         ball = MachineServe();
-                        P.pos = ReturnPos(true);   // リターンの構え位置へ
+                        P.pos = ReturnPos(true, false);   // リターンの構え位置へ
                         P.vel = (Vector3){ 0 };
                     } else {
                         ball = MachineFeed(proFeed);
@@ -1095,7 +1110,7 @@ int main(void)
 
         // 統計（Tab）
         if (showStats) {
-            int bx = 260, by = 120, bw = 760, bh = 470;
+            int bx = 240, by = 100, bw = 800, bh = 540;
             DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.85f));
             int ty = by + 16;
             #define LINE(...) do { DrawText(TextFormat(__VA_ARGS__), bx + 20, ty, 20, RAYWHITE); ty += 26; } while (0)
@@ -1121,6 +1136,15 @@ int main(void)
                  plog.nFirstMove ? plog.sumFirstMove / plog.nFirstMove : 0.0f);
             ty += 8;
             LINE("Serves %d:  in %d   whiff %d", plog.serves, plog.servesIn, plog.serveWhiffs);
+            if (mode == MODE_MATCH) {
+                ty += 8;
+                for (int k = 0; k < 2; k++) {
+                    int a = mst[k][0] ? mst[k][0] : 1, b = mst[k][2] ? mst[k][2] : 1, in = mst[k][1] + mst[k][3];
+                    LINE("%-3s 1st in %d/%d (%d%%)  2nd in %d/%d (%d%%)  unreturned %d/%d  DF %d",
+                         k == 0 ? "YOU" : "AI", mst[k][1], mst[k][0], mst[k][1] * 100 / a, mst[k][3], mst[k][2], mst[k][3] * 100 / b,
+                         mst[k][4], in, mst[k][5]);
+                }
+            }
             #undef LINE
         }
 

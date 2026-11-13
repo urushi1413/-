@@ -261,6 +261,9 @@ typedef struct {
     float posErr;         // 立ち位置のずれ（m）
     float aggression;     // 0〜1。強打・コースの厳しさ
     float lineJudge;      // ライン際の球の見極めのあまさ（m）。これより際どいアウトは打ってしまうことがある
+    float serve1Kmh;      // ファーストサーブの速さの目安
+    float serve2Kmh;      // セカンドサーブの速さの目安（キック）
+    float serveSkill;     // サーブの安定感（打点の質に掛ける。低いほどぶれて入りにくい）
 } AiLevel;
 
 typedef struct {
@@ -392,7 +395,7 @@ Vector3 Accelerate(Vector3 vel, Vector3 want, float a, float b, float dt);
 Vector3 MoveToward(Vector3 *pos, Vector3 vel, Vector3 target, float vmax, float dt);
 Ball FlipSides(Ball b);
 Vector3 AiHome(void);
-Vector3 ReturnPos(bool deuce);
+Vector3 ReturnPos(bool deuce, bool second);
 void AiPlan(Opponent *ai, const Ball *worldBall);
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge, Vector3 *target);
 bool AiSwing(Opponent *ai, Ball *ball, Vector3 player);

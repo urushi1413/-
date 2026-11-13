@@ -44,13 +44,15 @@ void AwardPoint(Score *s, int w)
     }
 }
 
+// スコアはサーバーの点を先に言う（サーバーが 15、レシーバーが 0 なら "15 - 0"）
 const char *ScoreText(const Score *s)
 {
-    if (s->tiebreak) return TextFormat("Tiebreak %d - %d", s->points[0], s->points[1]);
+    int sv = CurrentServer(s), rv = 1 - sv;
+    if (s->tiebreak) return TextFormat("Tiebreak %d - %d", s->points[sv], s->points[rv]);
     int a = s->points[0], b = s->points[1];
     if (a >= 3 && b >= 3) {
         if (a == b) return "Deuce";
         return (a > b) ? "Advantage You" : "Advantage AI";
     }
-    return TextFormat("%s - %s", PointName(a), PointName(b));
+    return TextFormat("%s - %s", PointName(s->points[sv]), PointName(s->points[rv]));
 }
