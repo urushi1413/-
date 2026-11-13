@@ -63,7 +63,11 @@
 #define TOL_ANG_COMPACT  55.0f   // タイミング（向き）の許容幅。溜めなしのコンパクトなスイング
 #define TOL_ANG_FULL     40.0f   //   〃 フルスイング。大きく振るほどシビア
 #define VOLLEY_TOL_BONUS 1.30f   // ボレーはテイクバックが小さいので許容幅が広い
-#define BEHIND_LIMIT    -55.0f   // これより後ろに入られたら振り遅れ（空振り）
+#define BEHIND_LIMIT    -75.0f   // これより後ろに入られたら振り遅れ（空振り）。それより手前なら、遅れても押し出すように当たる
+// 振っている途中でもラケットはボールに合わせにいく（人間は振りながら微調整している）。
+// 早く振っても、この時間先までなら当たる。ただし早かった分だけ質が落ち、引っ張り気味になる
+#define ADAPT_EARLY      0.20f   // 秒
+#define ADAPT_PENALTY_T  0.30f   // この時間早いと、タイミングの質が最低（10%）になる
 #define REACH_SIDE       2.10f   // これ以上遠いと届かない。腕＋ラケット 1.6m ＋最後の踏み込み 0.5m
 #define REACH_DIVE       2.80f   // 走っている勢いで飛びつけば、ここまで届く（打った後は倒れる）
 #define DIVE_MIN_SPEED   2.5f    // 飛びつくには、ボールの方向にこの速さ（m/s）以上で走っている必要がある
@@ -1653,7 +1657,7 @@ int main(void)
     // コースの狙い（右手の U/O で左右、I/、で深さ。溜めている間に押し続けると動く）
     float aimX = 0.0f, aimDepth = -9.0f;
     // 簡単モード：早く離したとき、一番いい瞬間まで待って振る
-    struct { bool active; ShotType type; Vector3 target; float charge; float age; } swingQ = { 0 };
+    struct { bool active; ShotType type; Vector3 target; float charge; float age; float releaseAge; float penalty; } swingQ = { 0 };
 
     Camera3D cam = { 0 };
     cam.up = (Vector3){ 0, 1, 0 };
@@ -2066,9 +2070,15 @@ int main(void)
                     swingQ.active = true; swingQ.type = rt; swingQ.charge = rcharge;
                     swingQ.target = (Vector3){ aimX, 0.0f, aimDepth };
                     swingQ.age = -1.0f;   // すぐ振る
-                    if (style == STYLE_CASUAL && ball.active && ball.lastHitter == HITTER_OPP) {
-                        // 簡単モード：この先 0.6 秒で一番いい瞬間が今より良ければ、そこまで待つ
-                        gCasual = true;
+                    swingQ.releaseAge = ball.age;
+                    swingQ.penalty = 1.0f;
+                    if (ball.active && ball.lastHitter == HITTER_OPP) {
+                        // 早く振ったとき、この先の一番いい瞬間が今より良ければ、ラケットがそこに合わせにいく
+                        //   本格：0.2 秒先まで。早かった分だけ質が落ちる
+                        //   簡単：1 秒先まで。質は落ちない
+                        bool cas = style == STYLE_CASUAL;
+                        float window = cas ? CASUAL_WAIT : ADAPT_EARLY;
+                        gCasual = cas;
                         float nowQ = 0.0f, bestQ = 0.0f, bestAge = -1.0f;
                         for (int h = 0; h < historyCount; h++) {
                             const Ball *hb = &history[h];
@@ -2078,7 +2088,7 @@ int main(void)
                             if (hc.miss == MISS_NONE && hc.quality > nowQ) nowQ = hc.quality;
                         }
                         Ball fb = ball;
-                        for (int i = 0; i < (int)(CASUAL_WAIT / PHYS_DT) && fb.active && fb.bounces < 2; i++) {
+                        for (int i = 0; i < (int)(window / PHYS_DT) && fb.active && fb.bounces < 2; i++) {
                             StepBall(&fb, PHYS_DT);
                             if (!(fb.bounces <= 1 && fb.pos.z > 0.0f && !fb.hitNet && (!fb.isServe || fb.bounces == 1))) continue;
                             Contact fc = EvaluateContact(player, &fb, rt, rcharge, 0.0f, 0.0f);
@@ -2087,6 +2097,7 @@ int main(void)
                         gCasual = false;
                         if (bestAge > 0.0f && bestQ > nowQ + 0.03f) {
                             swingQ.age = bestAge;
+                            if (!cas) swingQ.penalty = Clamp(1.0f - (bestAge - ball.age) / ADAPT_PENALTY_T, 0.10f, 1.0f);
                             playerAnim.windup = rcharge;   // 構えたまま待つ
                         }
                     }
@@ -2122,6 +2133,14 @@ int main(void)
                     }
                     if (bestIdx >= 0 && c.miss == MISS_NONE) ball = history[bestIdx];
                     c.stepIn = -playerVel.z;
+                    // 早く振ってラケットが合わせにいった分：タイミングの質を落とし、引っ張り気味にする
+                    if (c.miss == MISS_NONE && swingQ.age >= 0.0f) {
+                        float early = fmaxf(swingQ.age - swingQ.releaseAge, 0.0f);
+                        c.qTiming *= swingQ.penalty;
+                        c.quality *= swingQ.penalty;
+                        c.fwdErr += early * Vector3Length(ball.vel);
+                        c.timeErrMs = early * 1000.0f;   // プラス＝早い
+                    }
 
                     // スイングの見た目と、理想の打点との比較用
                     Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
@@ -2143,6 +2162,7 @@ int main(void)
                         Ball pre = (bestIdx >= 0) ? history[bestIdx] : ball;
                         float bestQ, offMs;
                         LogTimingAnalysis(&plog, player, &pre, type, swingCharge, &bestQ, &offMs);
+                        if (swingQ.age >= 0.0f) offMs += (swingQ.releaseAge - pre.age) * 1000.0f;   // 実際に離した瞬間で記録
                         plog.swung = true;
                         plog.swings++;
                         if (c.miss != MISS_NONE) { plog.whiffs++; plog.miss[c.miss]++; }
