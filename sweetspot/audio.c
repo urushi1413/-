@@ -25,48 +25,46 @@ static bool    gAudioOk = false;
 static float   gVolume  = 0.8f;
 static SfxSlot gSlot[S_COUNT];
 static int     gLoaded = 0;
-static char    gDir[600] = "sounds";
+static char    gDir[1100] = "sounds";
 static Sound   gBeep;                 // 確認用の「ピッ」（ファイルがなくても鳴る）
 static bool    gBeepOk = false;
-
-static bool LoadVariant(SfxSlot *slot, const char *base)
-{
-    static const char *ext[] = { ".wav", ".ogg", ".mp3", ".flac" };
-    for (int e = 0; e < 4; e++) {
-        const char *path = TextFormat("%s%s", base, ext[e]);
-        if (!FileExists(path)) continue;
-        Wave w = LoadWave(path);
-        if (w.frameCount == 0) continue;
-        for (int k = 0; k < POOL; k++) slot->s[slot->nVar][k] = LoadSoundFromWave(w);
-        UnloadWave(w);
-        slot->nVar++;
-        return true;
-    }
-    return false;
-}
 
 void SfxInit(void)
 {
     InitAudioDevice();
     gAudioOk = IsAudioDeviceReady();
     if (!gAudioOk) return;
-    // 実行したフォルダの sounds、なければ実行ファイルの隣の sounds を探す
+    // sounds フォルダを探す：実行したフォルダ → 実行ファイルの隣 → sweetspot/sounds（リポジトリの一番上から起動したとき）
     // TextFormat の結果は使い回されて上書きされるので、自分の配列に写しておく
-    static char dir[512];
-    if (DirectoryExists("sounds")) snprintf(dir, sizeof(dir), "sounds");
-    else                          snprintf(dir, sizeof(dir), "%ssounds", GetApplicationDirectory());
+    static char dir[1024];
+    if (DirectoryExists("sounds"))                                          snprintf(dir, sizeof(dir), "%s/sounds", GetWorkingDirectory());
+    else if (DirectoryExists(TextFormat("%ssounds", GetApplicationDirectory()))) snprintf(dir, sizeof(dir), "%ssounds", GetApplicationDirectory());
+    else if (DirectoryExists("sweetspot/sounds"))                           snprintf(dir, sizeof(dir), "%s/sweetspot/sounds", GetWorkingDirectory());
+    else                                                                     snprintf(dir, sizeof(dir), "%s/sounds", GetWorkingDirectory());
     snprintf(gDir, sizeof(gDir), "%s", dir);
-    for (int i = 0; i < S_COUNT; i++) {
-        char base[1100];
-        snprintf(base, sizeof(base), "%s/%s", dir, SFX_NAMES[i]);
-        if (LoadVariant(&gSlot[i], base)) {
-            for (int v = 2; v <= VARIANTS && gSlot[i].nVar < VARIANTS; v++) {
-                char b2[1110];
-                snprintf(b2, sizeof(b2), "%s_%d", base, v);
-                if (!LoadVariant(&gSlot[i], b2)) break;
+    if (DirectoryExists(dir)) {
+        // 中のフォルダも探す（zip を解凍すると、もう一段フォルダができることがあるので）
+        FilePathList files = LoadDirectoryFilesEx(dir, ".wav;.ogg;.mp3;.flac", true);
+        for (int i = 0; i < S_COUNT; i++) {
+            for (int v = 1; v <= VARIANTS && gSlot[i].nVar < VARIANTS; v++) {
+                char want[64];
+                if (v == 1) snprintf(want, sizeof(want), "%s", SFX_NAMES[i]);
+                else        snprintf(want, sizeof(want), "%s_%d", SFX_NAMES[i], v);
+                for (unsigned int f = 0; f < files.count; f++) {
+                    char nm[256];
+                    snprintf(nm, sizeof(nm), "%s", GetFileNameWithoutExt(files.paths[f]));
+                    if (strcmp(nm, want) != 0) continue;
+                    Wave w = LoadWave(files.paths[f]);
+                    if (w.frameCount == 0) continue;
+                    for (int k = 0; k < POOL; k++) gSlot[i].s[gSlot[i].nVar][k] = LoadSoundFromWave(w);
+                    UnloadWave(w);
+                    gSlot[i].nVar++;
+                    break;
+                }
             }
-            gLoaded++;
+            if (gSlot[i].nVar > 0) gLoaded++;
         }
+        UnloadDirectoryFiles(files);
     }
     TraceLog(LOG_INFO, "SFX: %d / %d sounds loaded from %s", gLoaded, S_COUNT, dir);
     // 確認用の「ピッ」（880Hz、0.15 秒）
