@@ -257,6 +257,7 @@ typedef struct {
     float   runPhase;      // 走りの足の動き
     bool    sliding;       // 滑っている（低く広い構え）
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
+    float   velX, velZ;    // 走っている速さ（体から見て：x=右、z=前）
     bool    slice;         // スライス系（スライス・スライスロブ・ドロップ）：上から下に切る振り方。バックは片手
 } SwingAnim;
 
@@ -449,6 +450,7 @@ Ball MachineFeed(bool pro);
 void LineAlongX(float z, float x0, float x1);
 void LineAlongZ(float x, float z0, float z1);
 void DrawCourt(void);
+Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint);
 Vector3 LocalToWorld(Vector3 base, bool facingNegZ, Vector3 l);
 float EaseOut(float u);
 Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent);

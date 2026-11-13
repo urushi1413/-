@@ -64,7 +64,7 @@ float EaseOut(float u) { u = Clamp01(u); return 1.0f - (1.0f - u) * (1.0f - u); 
 // ラケットの面の中心（ローカル座標）と、ラケットが動いている向き
 Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
 {
-    const float BACK_FH = -110.0f, BACK_OH = 160.0f;
+    const float BACK_FH = -75.0f, BACK_OH = 160.0f;
     if (a->swingT >= 0.0f && a->swingT < SWING_TIME) {
         const Contact *c = &a->lastContact;
         Vector3 cl = a->contactLocal;
@@ -134,6 +134,23 @@ void DrawRacketHead(Vector3 center, Vector3 normal, Color frame)
                    0.13f, 0.13f, 14, Fade(RAYWHITE, 0.35f));
 }
 
+// 2 本の骨（太もも・すね、上腕・前腕）の関節の位置。届かないときは骨を伸ばして届かせる
+//   hint：関節が曲がる向き
+Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint)
+{
+    Vector3 d = Vector3Subtract(end, root);
+    float L = Vector3Length(d);
+    if (L < 1e-4f) return root;
+    if (L >= l1 + l2) { float k = L / (l1 + l2) * 1.0001f; l1 *= k; l2 *= k; }
+    Vector3 u = Vector3Scale(d, 1.0f / L);
+    float a = (l1 * l1 - l2 * l2 + L * L) / (2.0f * L);
+    float h = sqrtf(fmaxf(l1 * l1 - a * a, 0.0f));
+    Vector3 perp = Vector3Subtract(hint, Vector3Scale(u, Vector3DotProduct(hint, u)));
+    float pl = Vector3Length(perp);
+    perp = pl > 1e-4f ? Vector3Scale(perp, 1.0f / pl) : (Vector3){ 0, 0, 1 };
+    return Vector3Add(Vector3Add(root, Vector3Scale(u, a)), Vector3Scale(perp, h));
+}
+
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
     Color skin = { 240, 200, 160, 255 }, pants = { 40, 40, 60, 255 }, frame = { 30, 30, 30, 255 };
@@ -151,48 +168,88 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         return;
     }
 
-    float swingAmt = Clamp(speed / 6.0f, 0.0f, 1.0f) * 0.32f;
+    (void)speed;
+    // ---- 動きの量：走る向き（体から見て）と速さ ----
+    float vx = a->velX, vz = a->velZ;
+    float spd = sqrtf(vx * vx + vz * vz);
+    float move = Clamp(spd / 6.0f, 0.0f, 1.0f);
+    float mdx = spd > 0.05f ? vx / spd : 0.0f, mdz = spd > 0.05f ? vz / spd : 0.0f;
     float ph = a->runPhase;
+
+    // ---- 体のひねり：構えで横を向き、振りながら前へ戻る ----
+    int strokeK; Vector3 tanK;
+    RacketLocal(a, &strokeK, &tanK);
+    float sgnK = (strokeK == 1) ? -1.0f : 1.0f;
+    float yaw = 0.0f;
+    bool swinging = a->swingT >= 0.0f && a->swingT < SWING_TIME;
+    if (swinging)            yaw = sgnK * Lerp(50.0f, -35.0f, EaseOut(a->swingT / SWING_TIME));
+    else if (a->windup > 0)  yaw = sgnK * 55.0f * Clamp01(a->windup * 1.4f);
+    yaw *= DEG2RAD;
+
+    // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
+    float hipY = 0.86f - 0.04f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
+    float lean = 0.06f + 0.10f * move;   // 前傾（走る向きへ）
+    Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.06f + mdz * 0.10f * move };
+    (void)lean;
+
     if (a->sliding) {
         // スライド：腰を落として足を大きく開く。足元に滑った跡
         float sd = a->slideSide >= 0.0f ? 1.0f : -1.0f;
-        DrawCapsule(W( sd * 0.12f, 0.72f, 0.0f), W( sd * 0.75f, 0.05f, 0.05f), 0.075f, 6, 3, pants);
-        DrawCapsule(W(-sd * 0.12f, 0.72f, 0.0f), W(-sd * 0.55f, 0.05f, -0.1f), 0.075f, 6, 3, pants);
-        DrawCylinderEx(W(sd * 0.75f, 0.01f, 0.05f), W(sd * 1.35f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
+        hipY = 0.70f;
+        Vector3 h1 = { sd * 0.10f, hipY, 0.0f }, f1 = { sd * 0.80f, 0.06f, 0.05f };
+        Vector3 h2 = { -sd * 0.10f, hipY, 0.0f }, f2 = { -sd * 0.35f, 0.06f, -0.15f };
+        Vector3 k1 = TwoBone(h1, f1, 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
+        Vector3 k2 = TwoBone(h2, f2, 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
+        DrawCapsule(W(h1.x, h1.y, h1.z), W(k1.x, k1.y, k1.z), 0.075f, 6, 3, pants);
+        DrawCapsule(W(k1.x, k1.y, k1.z), W(f1.x, f1.y, f1.z), 0.065f, 6, 3, pants);
+        DrawCapsule(W(h2.x, h2.y, h2.z), W(k2.x, k2.y, k2.z), 0.075f, 6, 3, pants);
+        DrawCapsule(W(k2.x, k2.y, k2.z), W(f2.x, f2.y, f2.z), 0.065f, 6, 3, pants);
+        DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
     } else {
-        // 足（走っていれば交互に振る）
-        DrawCapsule(W( 0.11f, 0.9f, 0.0f), W( 0.13f, 0.06f,  sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
-        DrawCapsule(W(-0.11f, 0.9f, 0.0f), W(-0.13f, 0.06f, -sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+        // 足：股関節・膝・足首。構えでは足を広げて膝を曲げ、走ると交互に踏み出して足を上げる
+        for (int i = 0; i < 2; i++) {
+            float sd = i == 0 ? 1.0f : -1.0f;
+            float p = ph + (i == 0 ? 0.0f : PI);
+            float width = 0.14f + 0.10f * (1.0f - move);
+            float stride = 0.42f * move;
+            Vector3 hip  = { sd * 0.10f + leanV.x * 0.3f, hipY, leanV.z * 0.3f };
+            Vector3 foot = { sd * width + mdx * sinf(p) * stride, 0.06f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
+                             mdz * sinf(p) * stride };
+            Vector3 knee = TwoBone(hip, foot, 0.44f, 0.44f, (Vector3){ sd * 0.25f, 0.0f, 1.0f });
+            DrawCapsule(W(hip.x, hip.y, hip.z), W(knee.x, knee.y, knee.z), 0.075f, 6, 3, pants);
+            DrawCapsule(W(knee.x, knee.y, knee.z), W(foot.x, foot.y, foot.z), 0.062f, 6, 3, pants);
+            DrawCapsule(W(foot.x, foot.y - 0.02f, foot.z - 0.04f), W(foot.x, foot.y - 0.03f, foot.z + 0.13f), 0.045f, 6, 3, RAYWHITE);
+        }
     }
-    // 胴と頭
-    DrawCapsule(W(0.0f, 0.95f, 0.0f), W(0.0f, 1.42f, 0.0f), 0.17f, 8, 4, shirt);
-    DrawSphere(W(0.0f, 1.68f, 0.0f), 0.12f, skin);
 
-    // ラケットと腕
+    // ---- 胴：骨盤から胸まで。肩の線はひねりに合わせて回る ----
+    Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.06f, leanV.z * 0.3f };
+    Vector3 chest  = { leanV.x, hipY + 0.50f, leanV.z };
+    float cy = cosf(yaw), sy = sinf(yaw);
+    Vector3 rShoulder = { chest.x + 0.21f * cy, hipY + 0.56f, chest.z - 0.21f * sy };
+    Vector3 lShoulder = { chest.x - 0.21f * cy, hipY + 0.56f, chest.z + 0.21f * sy };
+    DrawCapsule(W(pelvis.x, pelvis.y, pelvis.z), W(chest.x, chest.y, chest.z), 0.16f, 8, 4, shirt);
+    DrawCapsule(W(lShoulder.x, lShoulder.y, lShoulder.z), W(rShoulder.x, rShoulder.y, rShoulder.z), 0.075f, 6, 3, shirt);
+    DrawSphere(W(chest.x * 1.1f, hipY + 0.80f, chest.z * 1.1f), 0.12f, skin);
+
+    // ---- ラケットと腕 ----
     int stroke; Vector3 tan;
     Vector3 rl = RacketLocal(a, &stroke, &tan);
-    // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）
-    //   ラケットの向きは、バックなら左肩を支点に考える（両手打ちは左手が主導して振る）
-    Vector3 rShoulder = { 0.22f, 1.42f, 0.0f }, lShoulder = { -0.22f, 1.42f, 0.0f };
-    bool twoHands = (stroke == 1) && !a->slice;   // スライスのバックは片手
+    // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）。スライスのバックは片手
+    bool twoHands = (stroke == 1) && !a->slice;
     Vector3 pivot = twoHands ? lShoulder : rShoulder;
     Vector3 dir = Vector3Normalize(Vector3Subtract(rl, pivot));
-    Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
-    float armLen = Vector3Length(Vector3Subtract(hand, pivot));
-    if (armLen > 0.75f) hand = Vector3Add(pivot, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, pivot)), 0.75f));
-    Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
-    if (stroke == 1 && !twoHands) {
-        // 片手のバック：右肩から腕を伸ばす
-        dir = Vector3Normalize(Vector3Subtract(rl, rShoulder));
-        hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
-        if (Vector3Length(Vector3Subtract(hand, rShoulder)) > 0.75f)
-            hand = Vector3Add(rShoulder, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, rShoulder)), 0.75f));
-        neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
-    }
-    Vector3 shoulder = rShoulder;                                    // ラケットを持つ腕（右）
-    Vector3 other = lShoulder;                                       // 左腕
-    Vector3 otherHand = twoHands ? Vector3Add(hand, Vector3Scale(dir, 0.09f))   // グリップの少し上
-                                 : (Vector3){ -0.31f, 1.0f, 0.2f };             // フォア・頭上：左手は体の前
+    Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));       // グリップ
+    Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));       // ラケットの首
+    Vector3 shoulder = rShoulder, other = lShoulder;
+    Vector3 otherHand;
+    bool idle = !swinging && a->windup <= 0.0f;
+    if (twoHands)          otherHand = Vector3Add(hand, Vector3Scale(dir, 0.09f));         // グリップの少し上
+    else if (idle && move < 0.3f) otherHand = neck;                                        // 構え：左手をラケットの首に
+    else if (stroke == 2 && !swinging) otherHand = (Vector3){ -0.05f, hipY + 1.15f, 0.35f }; // サーブ・スマッシュの構え：左手を上に
+    else if (!swinging && a->windup > 0.0f) otherHand = (Vector3){ 0.25f * sgnK, hipY + 0.42f, 0.45f }; // 構え：左手で球を指す
+    else if (swinging)     otherHand = (Vector3){ -0.28f, hipY + 0.25f, 0.10f };          // 振っている間は体に引きつける
+    else                   otherHand = (Vector3){ lShoulder.x - 0.05f, hipY + 0.12f, lShoulder.z - sinf(ph) * 0.28f * move };   // 走り：足と逆に振る
 
     // スイングの軌跡（振った直後だけ）
     if (a->swingT >= 0.0f && a->swingT < SWING_TIME * 0.8f) {
@@ -214,8 +271,15 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         }
     }
 
-    DrawCapsule(W(shoulder.x, shoulder.y, shoulder.z), W(hand.x, hand.y, hand.z), 0.05f, 6, 3, skin);
-    DrawCapsule(W(other.x, other.y, other.z), W(otherHand.x, otherHand.y, otherHand.z), 0.05f, 6, 3, skin);
+    // 腕：肩・肘・手首。肘は下外側に曲がる
+    {
+        Vector3 e1 = TwoBone(shoulder, hand, 0.31f, 0.30f, (Vector3){ 0.6f, -1.0f, -0.2f });
+        Vector3 e2 = TwoBone(other, otherHand, 0.31f, 0.30f, (Vector3){ -0.6f, -1.0f, -0.2f });
+        DrawCapsule(W(shoulder.x, shoulder.y, shoulder.z), W(e1.x, e1.y, e1.z), 0.052f, 6, 3, skin);
+        DrawCapsule(W(e1.x, e1.y, e1.z), W(hand.x, hand.y, hand.z), 0.045f, 6, 3, skin);
+        DrawCapsule(W(other.x, other.y, other.z), W(e2.x, e2.y, e2.z), 0.052f, 6, 3, skin);
+        DrawCapsule(W(e2.x, e2.y, e2.z), W(otherHand.x, otherHand.y, otherHand.z), 0.045f, 6, 3, skin);
+    }
     DrawCylinderEx(W(hand.x, hand.y, hand.z), W(neck.x, neck.y, neck.z), 0.015f, 0.015f, 6, frame);
     Vector3 nW = Vector3Subtract(W(tan.x, tan.y, tan.z), W(0, 0, 0));
     DrawRacketHead(W(rl.x, rl.y, rl.z), nW, frame);

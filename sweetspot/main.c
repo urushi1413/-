@@ -447,6 +447,7 @@ int main(void)
         P.anim.sliding = P.sliding;
         if (Vector3Length(P.vel) > 0.3f) P.anim.slideSide = P.vel.x;   // 自分は -z 向きなので右＝+x
         P.anim.runPhase += Vector3Length(P.vel) * simDt * 2.2f;
+        P.anim.velX = P.vel.x; P.anim.velZ = -P.vel.z;   // 自分は -z 向き
 
         // ---- 狙い（ずっと残る）。自分は -z を向いているので、深く＝ -z ----
         P.aimX += in.aim.x;

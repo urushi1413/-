@@ -368,6 +368,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->anim.swingT >= 0.0f) ai->anim.swingT = fminf(ai->anim.swingT + dt, 5.0f);
     if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
     ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
+    ai->anim.velX = -ai->vel.x; ai->anim.velZ = ai->vel.z;   // AI は +z 向き
     // 飛びついて倒れている間は動けない
     if (ai->downTimer > 0.0f) {
         ai->downTimer -= dt;
