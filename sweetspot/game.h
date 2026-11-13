@@ -69,6 +69,7 @@ typedef struct {
 #define RETURN_REACH     0.45f   // リターンは跳んで伸びて取る：届く範囲と、距離の許容幅の上乗せ（m）
 #define RETURN_SWING     0.65f   // リターンはコンパクトに合わせる：自分のスイングの分はこの割合（入るが浮きやすい）
 #define LUNGE_TIME       0.40f   // 跳んで伸びる見た目の長さ（秒）
+#define OFFBALANCE_R     1.80f   // これより遠い球は体勢が崩れて取る（ぎりぎりの音を鳴らす）
 #define LUNGE_R          1.35f   // これより遠い球は、足を大きく踏み出して取る（見た目）
 #define VOLLEY_MIN_KMH   35.0f   // ボレーで勢いを殺すときの下限
 #define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）

@@ -62,12 +62,13 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     DrawText(footer, px + pw / 2 - MeasureText(footer, 20) / 2, y + 10, 20, LIGHTGRAY);
 }
 
-// 守りの声を出す球か：伸びて取った・飛びついた・体から遠い・トップスピンロブ・速い球を浅く押して返した。
-//   スライス・ボレー・ネット前（distFromNet が VOICE_NET_Z より近い）は声なし
+// 体勢が崩れて取った球か（ラケットでぎりぎり取って地面に当たる音を鳴らす）：飛びついた、または手が届くぎりぎり。
+//   スライス・ボレー・ネット前（distFromNet が VOICE_NET_Z より近い）は除く
 static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, float hold)
 {
+    (void)hold;
     if (IsSliceShot(t) || (c->volley && !c->overhead) || distFromNet < VOICE_NET_Z) return false;
-    return c->lunge || c->dive || c->qDist < 0.5f || t == SHOT_TOP_LOB || (hold < 0.5f && c->inKmh > 90.0f);
+    return c->dive || c->side > OFFBALANCE_R;
 }
 
 int main(void)

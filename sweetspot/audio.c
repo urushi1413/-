@@ -122,13 +122,13 @@ static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVa
 
 // voice：この打球の前に声（SfxGruntPre）を出し始めたか。出し始めたときだけ「打球音と声の続き」を鳴らす
 //   （途中で声が切れたり、始まりのない声の続きだけが鳴ったりしないように）
-//   defensive：守りの球（伸びて取った・飛びついた・ロブ・速い球を浅く返した）。7 割で控えめな声を出す（打球音のあとに声）
+//   defensive：体勢が崩れて取った球（飛びついた・ぎりぎり）。ラケットでぎりぎり取って地面に当たる音と控えめな声
 static double gVoiceUntil = 0.0;
 void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
     if (voice && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, 1.0f); return; }   // 声から続くので音の高さは変えない
-    if (defensive && !slice && gSlot[S_HIT_VOICE_SOFT].nVar && GetTime() >= gVoiceUntil && GetRandomValue(0, 99) < 70) {
+    if (defensive && !slice && gSlot[S_HIT_VOICE_SOFT].nVar && GetTime() >= gVoiceUntil) {
         gVoiceUntil = GetTime() + 0.45;   // 声は一度に 1 人
         Play(S_HIT_VOICE_SOFT, -1, vol, 1.0f);
         return;
