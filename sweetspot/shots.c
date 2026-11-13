@@ -16,6 +16,12 @@ float HeightErr(const ShotSpec *sp, float y, float inKmh)
     return fmaxf(y - sp->idealHeight - band, 0.0f);
 }
 
+// 遅い球は膝を曲げて合わせる時間があるので、高さの許容幅が広い（50km/h 以下で 1.6 倍、90km/h 以上で 1 倍）
+float HeightTolScale(float inKmh)
+{
+    return 1.0f + 0.6f * Clamp01((90.0f - inKmh) / 40.0f);
+}
+
 Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward, float reachBonus)
 {
     Contact c = { 0 };
@@ -31,6 +37,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     c.fwdErr   = dz - IDEAL_FWD;         // プラス＝ボールがまだ前にある＝振るのが早い
     c.volley   = ball->bounces == 0;
     c.inKmh    = Vector3Length(ball->vel) * 3.6f;
+    c.easeKmh  = ball->isServe ? 999.0f : c.inKmh;
     c.vyBall   = ball->vel.y;
     c.timeErrMs = c.fwdErr / fmaxf(Vector3Length(ball->vel), 1.0f) * 1000.0f;
     c.overhead = bp.y > OVERHEAD_MIN_H;
@@ -62,7 +69,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + reachBonus) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
-        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y, c.inKmh) / (sp->tolHeight * hk), 0.10f, 1.0f);
+        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y, c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
     if (c.dive) c.quality *= DIVE_QUALITY;
@@ -79,7 +86,10 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     // 頭上の球は J/L ならスマッシュ（フラット）、K ならスライスで合わせる
     if (c->overhead && type < SHOT_NORMAL_COUNT && type != SHOT_SLICE) type = SHOT_FLAT;
     const ShotSpec *sp = &SHOTS[type];
-    float q = c->quality;
+    // 上から叩ける球（自分より高い、遅い球）は、多少当たりが悪くても威力が出て、ぶれにくい
+    //   1.1m から上で効き始め、1.7m で最大。来た球が 50km/h 以下で全部、90km/h 以上で効かない
+    float sit = Clamp01((c->height - SIT_H0) / (SIT_H1 - SIT_H0)) * Clamp01((90.0f - c->easeKmh) / 40.0f);
+    float q = c->quality + (1.0f - c->quality) * SIT_BONUS * sit;
 
     // 球速 = 来た球の跳ね返り + 自分のスイング
     //   芯を外すと（質が低いと）どちらも落ちる。ボレーは自分のスイングがほとんど乗らない

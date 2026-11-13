@@ -64,6 +64,9 @@ typedef struct {
 #define HOLD_MAX         1.0f              // 押し続けても一番深いところで止まる（ボールを待つ間押していてもアウトにはならない）
 #define HOLD_DEEP_MARGIN 0.5f              // 一番深いところは、球種の一番深い狙いより 0.5m 浅く（ベースラインの約 2m 手前）
 #define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
+#define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
+#define SIT_H1           1.70f   //   この高さで最大
+#define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
@@ -228,6 +231,7 @@ typedef struct {
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
     float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）
     float inKmh;       // 来た球の速さ
+    float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
     float stepIn;      // 打つ瞬間に前（ネット方向）へ踏み込んでいた速さ（m/s）。マイナスは下がりながら
     float side;        // 体からの横距離
@@ -424,6 +428,7 @@ float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, f
 float SolveSpeed(Vector3 from, Vector3 dirFlat, float dist, float angle, float rpm);
 Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool high, float *outAngle);
 float HeightErr(const ShotSpec *sp, float y, float inKmh);
+float HeightTolScale(float inKmh);
 Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward, float reachBonus);
 Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type, float charge, float *outKmh, float *outRpm, float *outAngle);
 Vector3 SpinVector(Vector3 dirFlat, float top, float side, float gyro);

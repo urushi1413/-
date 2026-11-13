@@ -1279,7 +1279,7 @@ int main(void)
                     const char *tStr = c->angleDeg > idealAng + 8.0f ? "early" : (c->angleDeg < idealAng - 8.0f ? "late" : "good");
                     const char *dStr = c->side < IDEAL_R - 0.15f ? "jammed" : (c->side > IDEAL_R + 0.15f ? "stretched" : "good");
                     const char *hStr = c->height < SHOTS[P.lastType].idealHeight - 0.2f ? "low"
-                                     : (HeightErr(&SHOTS[P.lastType], c->height, c->inKmh) > 0.2f ? "high" : "good");
+                                     : (HeightErr(&SHOTS[P.lastType], c->height, c->easeKmh) > 0.2f ? "high" : "good");
                     DrawText(TextFormat("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
                     DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
                     DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
