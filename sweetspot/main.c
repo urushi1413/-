@@ -98,7 +98,6 @@
 // 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
 // 倍率 = 1 + (1 - 質) × (来た球の速さ - TWIST_FREE_KMH) / TWIST_KMH
 // ラリーの普通の球（45km/h 以下）では効かず、速いサーブや強打で効く
-#define MISHIT_PLAN      0.35f   // 芯を外して遅くなった分を、角度でどれだけ補うか（1=補わない＝短く落ちる、0=全部補う＝打ち上がる）
 #define TWIST_FREE_KMH   45.0f
 #define TWIST_KMH        18.0f
 
@@ -525,19 +524,13 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     if (c->volley) racketKmh *= VOLLEY_POWER;
     float step = Clamp(c->stepIn / STEP_FULL, -1.0f, 1.0f);
     racketKmh += fmaxf(step, 0.0f) * STEP_POWER_KMH;
-    // 芯を外したときの減速：芯から外れるとラケットの反発が落ちる（実測で 10〜20% くらい）
-    float paceKmh  = RACKET_EA * c->inKmh * (0.75f + 0.25f * q);
-    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.80f + 0.20f * q);
+    float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
+    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.65f + 0.35f * q);
     float kmh = paceKmh + swingKmh;
     float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
                  * (1.0f - STEP_STABILITY * step);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
-    // 狙った弾道は「芯で捉えたときの速さと回転」で決まる。芯を外すと遅く・回転も少なくなるので、
-    // 同じ角度で飛び出しても短く・低く落ちる（ネットや浅い球になる）。
-    // ※ 遅くなった分を角度で補うと、ミスショットほど高く打ち上がってしまう
-    float planKmh = RACKET_EA * c->inKmh + (1.0f + RACKET_EA) * racketKmh;
-    float planRpm = Lerp(sp->minRpm, sp->maxRpm, charge);
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = c->forehand ? 1.0f : -1.0f;
@@ -563,9 +556,7 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
         kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
         ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * errMul * DEG2RAD;
     } else {
-        // 打った瞬間の感触で少しだけ補正する（遅くなった分の半分）
-        ang = SolveLaunchAngle(ballPos, dirFlat, dist, Lerp(kmh, planKmh, MISHIT_PLAN) / 3.6f,
-                               Lerp(rpm, planRpm, MISHIT_PLAN), sp->highArc);
+        ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
     }
@@ -1474,12 +1465,15 @@ typedef struct {
     int    noSwingIn, noSwingReachable, noSwingOut;
     float  sumFirstMove; int nFirstMove;
     int    serves, servesIn, serveWhiffs;
-    int    assist;           // 手がかり表示のレベル（記録の最後の列）
+    int    assist;           // 手がかり表示のレベル
+    float  pendingLaunch;    // 結果待ちの打球の打ち出し角（度）
+    float  pendingApex;      // 結果待ちの打球の最高点（m）
 } PlayLog;
 
 #define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
                    "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
-                   "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist"
+                   "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist," \
+                   "launch_deg,apex_m"
 
 static void LogOpen(PlayLog *L)
 {
@@ -1509,7 +1503,12 @@ static void LogFlush(PlayLog *L, const char *result)
         else if (strcmp(result, "OUT") == 0) L->shotOut++;
         else if (strcmp(result, "NET") == 0) L->shotNet++;
     }
-    if (L->f) { fprintf(L->f, "%s,%s,%d\n", L->row, result, L->assist); fflush(L->f); }
+    if (L->f) {
+        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex);
+        else                       fprintf(L->f, "%s,%s,%d,,\n", L->row, result, L->assist);
+        fflush(L->f);
+    }
+    L->pendingApex = 0.0f;
 }
 
 // 「この立ち位置のまま、いつ振るのが一番よかったか」を、来た球の過去の軌道と、この先の軌道から探す
@@ -1561,7 +1560,7 @@ static void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vecto
                 L->noSwingOut++;
             }
             if (L->f) {
-                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d\n",
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,\n",
                         GetTime(), mode, level, reachable ? "reachable" : "unreachable",
                         L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
                         L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist);
@@ -1901,7 +1900,7 @@ int main(void)
                         lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
                         if (plog.f) {
-                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d\n",
+                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d,,\n",
                                     GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
                                     ball.pos.y, player.x, player.z, plog.assist);
                             fflush(plog.f);
@@ -1942,6 +1941,8 @@ int main(void)
                                  GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
                                  q, qH, qT, hb.pos.y, lastServeKmh, player.x, player.z, hb.pos.x, hb.pos.y, hb.pos.z);
                         plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = true;
+                        plog.pendingLaunch = atan2f(ball.vel.y, sqrtf(ball.vel.x * ball.vel.x + ball.vel.z * ball.vel.z)) * RAD2DEG;
+                        plog.pendingApex = ball.pos.y;
                         trailColor = SERVES[type].color;
                         trailCount = 0;
                         serveAce = false;
@@ -2110,6 +2111,7 @@ int main(void)
                                 snprintf(o, sizeof(plog.row) - (size_t)(o - plog.row), "%.0f%s", lastKmh, tail);
                             }
                             plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = false;
+                            plog.pendingLaunch = lastAngle * RAD2DEG; plog.pendingApex = ball.pos.y;
                         }
                         trailColor = SHOTS[type].color;
                         trailCount = 0;
@@ -2184,6 +2186,7 @@ int main(void)
         if (!botControls) {
             LogTrackIncoming(&plog, &ball, player, playerVel, chargingShot >= 0, MODE_NAMES[mode], AI_LEVELS[ai.level].name);
             if (plog.pending) {
+                if (ball.shotId == plog.pendingId && ball.bounces == 0 && ball.pos.y > plog.pendingApex) plog.pendingApex = ball.pos.y;
                 if (ball.shotId != plog.pendingId) LogFlush(&plog, "?");
                 else if (ball.result != RESULT_NONE) LogFlush(&plog, ResultText(ball.result));
             }

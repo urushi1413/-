@@ -126,6 +126,26 @@ def main(path):
             print(f"  溜め始め 中央値 {cs[len(cs) // 2]:.2f} s")
         print()
 
+    # 10. 打ち上げ（最高点）
+    ap = [r for r in swings if f(r, "apex_m") is not None]
+    if ap:
+        print("[10] 打ち上げ（打った球の最高点）")
+        bins = [(0, 1.8), (1.8, 2.5), (2.5, 3.5), (3.5, 99)]
+        for lo, hi in bins:
+            g = [r for r in ap if lo <= f(r, "apex_m") < hi]
+            if not g:
+                continue
+            ch = sum(f(r, "charge") or 0 for r in g) / len(g)
+            q = sum(f(r, "quality") or 0 for r in g) / len(g)
+            print(f"  {lo:.1f}-{hi if hi < 99 else '':<4} m  {len(g):4d} 球 {pct(len(g), len(ap)):>5s} {bar(len(g), len(ap))}"
+                  f"  溜め平均 {ch:.2f}  質平均 {q * 100:.0f}%")
+        hi_ = [r for r in ap if f(r, "apex_m") >= 2.5]
+        if hi_:
+            short = sum(1 for r in hi_ if (f(r, "charge") or 0) < 0.25)
+            badq = sum(1 for r in hi_ if (f(r, "quality") or 0) < 0.3)
+            print(f"  2.5m 以上の球のうち：溜めが短い（0.2 秒未満）{pct(short, len(hi_))}、当たりが悪い（質 30% 未満）{pct(badq, len(hi_))}")
+        print()
+
     # 9. 手がかり表示（H）あり・なしの比較
     if swings and "assist" in swings[0]:
         print("[9] 手がかり表示（H）ごとの比較")
