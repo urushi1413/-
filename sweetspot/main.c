@@ -1632,6 +1632,32 @@ static void LogRecordBall(PlayLog *L, const Ball *ball)
     if (L->ringN < LOG_RING) L->ringN++;
 }
 
+#define AIM_SENS 0.015f   // マウス 1 ピクセルで狙いが動く距離（m）
+#define DROP_ZONE -5.0f   // タッチショットで、狙いがネットからこれより近ければドロップ、遠ければロブ
+
+static ShotType TouchShot(bool left, float aimDepth)
+{
+    if (aimDepth > DROP_ZONE) return SHOT_DROP;
+    return left ? SHOT_TOP_LOB : SHOT_SLICE_LOB;
+}
+
+// 実際に狙う場所：球種と立ち位置で、狙える深さを制限する
+//   普通のショットはネットから 6m より短くは狙えない（ネットに近いほど短く：ネット前なら 2.5m）
+//   タッチショットは自由。簡単モードは左右を少し内側に
+static Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style)
+{
+    float lim = style == STYLE_CASUAL ? 2.8f : 3.7f;
+    float x = Clamp(aimX, -lim, lim);
+    float z = aimDepth;
+    if (t < SHOT_NORMAL_COUNT) {
+        float shrt = SHOTS[t].shortDepth;
+        if (playerZ < SERVICE_Z + 1.0f) shrt = fmaxf(shrt, -Lerp(2.5f, 4.0f, Clamp01((playerZ - 1.0f) / SERVICE_Z)));
+        z = fminf(z, shrt);
+        z = fmaxf(z, -(HALF_LEN - 0.6f));
+    }
+    return (Vector3){ x, 0.0f, z };
+}
+
 // Windows で日本語入力（IME）を切る（platform_ime.c。Windows 以外では何もしない）
 void DisableIme(void *hwnd);
 
@@ -1648,6 +1674,10 @@ int main(void)
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
+    // マウス：マイクラと同じようにカーソルをウィンドウに固定して隠す。Esc で外す／戻す（Esc で終了しない）
+    SetExitKey(KEY_NULL);
+    DisableCursor();
+    bool mouseLocked = true;
 
     static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
     LogOpen(&plog);
@@ -1655,7 +1685,8 @@ int main(void)
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_REAL;  // N：難易度
     // コースの狙い（右手の U/O で左右、I/、で深さ。溜めている間に押し続けると動く）
-    float aimX = 0.0f, aimDepth = -9.0f;
+    float aimX = 0.0f, aimDepth = -9.0f;   // マウスで動かす狙い（ずっと残る）
+    enum { SRC_KEY, SRC_LMB, SRC_RMB } chargeSrc = SRC_KEY;   // 何で溜め始めたか（離す判定に使う）
     // 簡単モード：早く離したとき、一番いい瞬間まで待って振る
     struct { bool active; ShotType type; Vector3 target; float charge; float age; float releaseAge; float penalty; } swingQ = { 0 };
 
@@ -1893,12 +1924,48 @@ int main(void)
         if (Vector3Length(playerVel) > 0.3f) playerAnim.slideSide = playerVel.x;   // 自分は -z 向きなので右＝+x
         playerAnim.runPhase += Vector3Length(playerVel) * simDt * 2.2f;
 
+        // ---- マウス：カーソルの固定と、狙いの移動 ----
+        bool clickConsumed = false;
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            mouseLocked = !mouseLocked;
+            if (mouseLocked) DisableCursor(); else EnableCursor();
+        }
+        if (!mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+            mouseLocked = true; DisableCursor(); clickConsumed = true;   // クリックで戻す（このクリックでは打たない）
+        }
+        {
+            Vector2 md = mouseLocked ? GetMouseDelta() : (Vector2){ 0 };
+            aimX     += md.x * AIM_SENS;
+            aimDepth += md.y * AIM_SENS;          // マウスを奥に（上に）動かすと深く
+            // キーボードでも動かせる（U/O で左右、I/、で深さ）
+            if (IsKeyDown(KEY_U)) aimX -= 6.0f * frameDt;
+            if (IsKeyDown(KEY_O)) aimX += 6.0f * frameDt;
+            if (IsKeyDown(KEY_I)) aimDepth -= 6.0f * frameDt;
+            if (IsKeyDown(KEY_COMMA)) aimDepth += 6.0f * frameDt;
+            aimX = Clamp(aimX, -SINGLES_W * 0.5f, SINGLES_W * 0.5f);
+            aimDepth = Clamp(aimDepth, -(HALF_LEN - 0.3f), -1.2f);
+        }
+        bool lmbDown = mouseLocked && !clickConsumed && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        bool rmbDown = mouseLocked && !clickConsumed && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+        bool spaceHeld = IsKeyDown(KEY_SPACE);
+
         // ---- サーブ（自分）----
         Vector3 tossIdeal = { player.x + 0.25f, SERVE_IDEAL_H, player.z - 0.35f };   // 理想の打点（これ以上の高さ）
         if (playerServing) {
             if (sv == SV_READY) {
+                // サーブの狙いはサービスボックスの中
+                {
+                    float x0, x1;
+                    ServiceBox(player.x, -1, &x0, &x1);
+                    aimX = Clamp(aimX, x0 + 0.2f, x1 - 0.2f);
+                    aimDepth = Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f);
+                }
+                int mouseServe = -1;
+                if (lmbDown || rmbDown) mouseServe = spaceHeld ? SERVE_FLAT : (lmbDown ? SERVE_KICK : SERVE_SLICE);
                 for (int s = 0; s < SERVE_COUNT; s++) {
-                    if (!IsKeyPressed(serveKeys[s])) continue;
+                    bool byKey = IsKeyPressed(serveKeys[s]);
+                    if (!byKey && mouseServe != s) continue;
+                    chargeSrc = byKey ? SRC_KEY : (lmbDown ? SRC_LMB : SRC_RMB);
                     chargingServe = s;
                     charge = 0.0f;
                     tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
@@ -1916,7 +1983,9 @@ int main(void)
                 charge = fminf(charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 playerAnim.windup = 0.3f + 0.7f * charge;
                 playerAnim.windStroke = 2;
-                if (IsKeyReleased(serveKeys[chargingServe])) {
+                bool serveReleased = chargeSrc == SRC_KEY ? IsKeyReleased(serveKeys[chargingServe])
+                                   : IsMouseButtonReleased(chargeSrc == SRC_LMB ? MOUSE_BUTTON_LEFT : MOUSE_BUTTON_RIGHT);
+                if (serveReleased) {
                     playerAnim.windup = 0.0f;
                     ServeType type = (ServeType)chargingServe;
                     chargingServe = -1;
@@ -1951,14 +2020,10 @@ int main(void)
                         float qH = Clamp01(1.0f - fmaxf(SERVE_IDEAL_H - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
                         float qT = Clamp01(1.0f - Vector2Length(tossOffset) / TOSS_TOL);
                         float q = qH * qT;
-                        // コース：A=左、D=右、なし=ボックスの真ん中（ボディ）。W/S で深さ
+                        // コース：マウス（または U/O/I/、）で動かした狙い。サービスボックスの中
                         float x0, x1;
                         ServiceBox(player.x, -1, &x0, &x1);
-                        Vector3 target = { 0.5f * (x0 + x1), 0.0f, -5.7f };
-                        if (IsKeyDown(KEY_A) || IsKeyDown(KEY_U)) target.x = x0 + 0.35f;
-                        if (IsKeyDown(KEY_D) || IsKeyDown(KEY_O)) target.x = x1 - 0.35f;
-                        if (IsKeyDown(KEY_W) || IsKeyDown(KEY_I)) target.z = -6.1f;
-                        if (IsKeyDown(KEY_S) || IsKeyDown(KEY_COMMA)) target.z = -4.8f;
+                        Vector3 target = { Clamp(aimX, x0 + 0.2f, x1 - 0.2f), 0.0f, Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
                         lastServeH = hb.pos.y;
                         lastServeQ = q;
                         lastContactPos = hb.pos;
@@ -2040,10 +2105,18 @@ int main(void)
                 for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
                     if (IsKeyPressed(shotKeys[s])) {
                         chargingShot = shift ? s + SHOT_NORMAL_COUNT : s;
+                        chargeSrc = SRC_KEY;
                         charge = 0.0f;
-                        aimX = 0.0f;
-                        aimDepth = SHOTS[chargingShot].depth;
                     }
+                }
+                // マウス：左＝トップスピン、右＝スライス、スペース＋クリック＝フラット、
+                //          Shift＋クリック＝タッチ（狙いがネット近くならドロップ、奥ならロブ）
+                if (chargingShot < 0 && (lmbDown || rmbDown)) {
+                    if (shift)          chargingShot = TouchShot(lmbDown, aimDepth);
+                    else if (spaceHeld) chargingShot = SHOT_FLAT;
+                    else                chargingShot = lmbDown ? SHOT_TOP : SHOT_SLICE;
+                    chargeSrc = lmbDown ? SRC_LMB : SRC_RMB;
+                    charge = 0.0f;
                 }
             } else {
                 charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
@@ -2052,25 +2125,18 @@ int main(void)
                 if (ball.active && ball.lastHitter == HITTER_OPP)
                     playerAnim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, player) < 6.0f ? 2
                                           : (ball.pos.x >= player.x ? 0 : 1);
-                // 狙い：右手の U/O で左右、I/、で深さ（押し続けると動く。手首で打ち分けるイメージ）
-                {
-                    const ShotSpec *asp = &SHOTS[chargingShot];
-                    float lim = style == STYLE_CASUAL ? 2.8f : 3.6f;
-                    if (IsKeyDown(KEY_U)) aimX = fmaxf(aimX - 6.0f * frameDt, -lim);
-                    if (IsKeyDown(KEY_O)) aimX = fminf(aimX + 6.0f * frameDt,  lim);
-                    float deep = asp->deepDepth, shrt = asp->shortDepth;
-                    // ネットに近いほど、短いアングルを狙える（サービスライン付近なら 4m、ネット前なら 2.5m まで）
-                    if (player.z < SERVICE_Z + 1.0f) shrt = fmaxf(shrt, -Lerp(2.5f, 4.0f, Clamp01((player.z - 1.0f) / (SERVICE_Z))));
-                    if (IsKeyDown(KEY_I))     aimDepth = fmaxf(aimDepth - 6.0f * frameDt, deep);
-                    if (IsKeyDown(KEY_COMMA)) aimDepth = fminf(aimDepth + 6.0f * frameDt, shrt);
-                }
-                if (IsKeyReleased(shotKeys[chargingShot])) {
+                // タッチショットは、狙いを動かせばドロップとロブが切り替わる
+                if (chargingShot >= SHOT_NORMAL_COUNT && chargeSrc != SRC_KEY)
+                    chargingShot = TouchShot(chargeSrc == SRC_LMB, aimDepth);
+                bool released = chargeSrc == SRC_KEY ? IsKeyReleased(shotKeys[chargingShot])
+                              : IsMouseButtonReleased(chargeSrc == SRC_LMB ? MOUSE_BUTTON_LEFT : MOUSE_BUTTON_RIGHT);
+                if (released) {
                     ShotType rt = (ShotType)chargingShot;
                     float rcharge = charge;
                     chargingShot = -1;
                     playerAnim.windup = 0.0f;
                     swingQ.active = true; swingQ.type = rt; swingQ.charge = rcharge;
-                    swingQ.target = (Vector3){ aimX, 0.0f, aimDepth };
+                    swingQ.target = EffectiveAim(rt, player.z, aimX, aimDepth, style);
                     swingQ.age = -1.0f;   // すぐ振る
                     swingQ.releaseAge = ball.age;
                     swingQ.penalty = 1.0f;
@@ -2454,10 +2520,18 @@ int main(void)
                 }
             }
 
-            // 狙い（溜めている間）：相手コートに印
-            if (chargingShot >= 0 && !playerServing) {
-                Vector3 am = { aimX, 0.015f, aimDepth };
-                Color ac = SHOTS[chargingShot].color;
+            // 狙い：相手コートに印（溜めている間は球種の色、それ以外は白）
+            if (!botControls && (playerServing || (mode != MODE_SERVE && (chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
+                Vector3 et = (chargingShot >= 0) ? EffectiveAim((ShotType)chargingShot, player.z, aimX, aimDepth, style)
+                                                 : (Vector3){ aimX, 0.0f, aimDepth };
+                if (playerServing) {
+                    float bx0, bx1;
+                    ServiceBox(player.x, -1, &bx0, &bx1);
+                    et = (Vector3){ Clamp(aimX, bx0 + 0.2f, bx1 - 0.2f), 0.0f, Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
+                }
+                Vector3 am = { et.x, 0.015f, et.z };
+                Color ac = (chargingShot >= 0) ? SHOTS[chargingShot].color
+                         : (chargingServe >= 0 ? SERVES[chargingServe].color : Fade(RAYWHITE, 0.7f));
                 DrawCircle3D(am, 0.45f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
                 DrawCircle3D(am, 0.25f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
                 DrawLine3D((Vector3){ am.x - 0.5f, 0.015f, am.z }, (Vector3){ am.x + 0.5f, 0.015f, am.z }, ac);
@@ -2499,7 +2573,8 @@ int main(void)
         EndMode3D();
 
         // ---- HUD ----
-        DrawRectangle(10, 10, 500, 290, Fade(BLACK, 0.5f));
+        // 左上のパネルは小さく薄く（相手コートの奥を隠さないように）
+        DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         int y = 20;
         bool showServeInfo = (mode == MODE_SERVE) || (playerServing && mode == MODE_MATCH);
         if (showServeInfo) {
@@ -2519,9 +2594,9 @@ int main(void)
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
                 DrawText(serveMsg, 20, y, 22, mc); y += 30;
             } else {
-                DrawText("A/D: position.  Hold L flat / K slice / J kick to toss,", 20, y, 18, RAYWHITE); y += 22;
-                DrawText("release to hit. A/D/W/S at release = course.", 20, y, 18, RAYWHITE); y += 22;
-                DrawText("Keep holding to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
+                DrawText("A/D: position.  Mouse: aim in the box.", 20, y, 18, RAYWHITE); y += 22;
+                DrawText("Hold L-click kick / R-click slice / Space+click flat", 20, y, 18, RAYWHITE); y += 22;
+                DrawText("to toss, release to hit. Hold to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
             }
         } else if (hasLast) {
             const Contact *c = &lastContact;
@@ -2563,21 +2638,20 @@ int main(void)
                 y += 24;
             }
         } else {
-            DrawText("Move to the ball, hold J/K/L, release to swing", 20, y, 18, RAYWHITE);
+            DrawText("Move to the ball. Hold a mouse button, release to swing", 20, y, 18, RAYWHITE);
         }
-        y = 176;
-        if (mode == MODE_SERVE) {
-            DrawText(TextFormat("1st in %d/%d   2nd in %d/%d", svStats[0][1], svStats[0][0], svStats[1][1], svStats[1][0]), 20, y, 18, RAYWHITE); y += 20;
-            DrawText(TextFormat("Aces %d   Double faults %d", aces, doubleFaults), 20, y, 18, RAYWHITE); y += 24;
-        } else {
-            DrawText(TextFormat("IN  flat %d/%d   top %d/%d   slice %d/%d",
+        // 下：成績と操作説明（コートの奥を隠さない場所）
+        y = GetScreenHeight() - 98;
+        if (mode == MODE_SERVE)
+            DrawText(TextFormat("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d",
+                                svStats[0][1], svStats[0][0], svStats[1][1], svStats[1][0], aces, doubleFaults), 20, y, 16, RAYWHITE);
+        else
+            DrawText(TextFormat("IN  flat %d/%d  top %d/%d  slice %d/%d  lob %d/%d  top lob %d/%d  drop %d/%d",
                                 stats[SHOT_FLAT][1], stats[SHOT_FLAT][0], stats[SHOT_TOP][1], stats[SHOT_TOP][0],
-                                stats[SHOT_SLICE][1], stats[SHOT_SLICE][0]), 20, y, 18, RAYWHITE); y += 20;
-            DrawText(TextFormat("    lob %d/%d   top lob %d/%d   drop %d/%d",
-                                stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0], stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0],
-                                stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 18, RAYWHITE); y += 24;
-        }
-        DrawText("WASD move  J top K slice L flat  +Shift lob/drop  aim: U/O I/,", 20, y, 16, LIGHTGRAY); y += 18;
+                                stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
+                                stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
+        y += 20;
+        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob/drop  Esc cursor", 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
         else
@@ -2646,7 +2720,7 @@ int main(void)
         }
 
         // 溜めゲージ
-        int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 60;
+        int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 140;   // 下の操作説明と重ならない高さ
         if (chargingShot >= 0) {
             const ShotSpec *sp = &SHOTS[chargingShot];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
