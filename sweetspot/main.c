@@ -134,6 +134,7 @@ int main(void)
     float soundVolBeforeMute = 0.8f;
     char  toast[96] = { 0 };           // 画面の真ん中下に少しの間だけ出すお知らせ
     float toastT = 0.0f;
+    bool  playerGrunt = false, aiGrunt = false, botGrunt = false;   // この球で、打つ前の声をもう鳴らしたか
     bool  aiTossing = false;           // AI がトスを上げている
     float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
@@ -508,6 +509,7 @@ int main(void)
                     P.chargingServe = s;
                     P.charge = 0.0f;
                     P.serveT = 0.0f;
+                    playerGrunt = false;
                     P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
                     ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f, tossIdeal.z + P.tossOffset.y };
@@ -522,6 +524,7 @@ int main(void)
             } else if (P.sv == SV_TOSS) {
                 P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 P.serveT += simDt;
+                if (!playerGrunt && P.serveT >= 0.50f - GRUNT_LEAD) { SfxGruntPre(Vector3Distance(cam.position, P.pos)); playerGrunt = true; }
                 P.anim.windup = 0.3f + 0.7f * P.charge;
                 P.anim.windStroke = 2;
                 bool serveReleased = in.released[P.chargeSrc];
@@ -648,6 +651,8 @@ int main(void)
                 }
             } else {
                 aiTossT += simDt;
+                if (aiTossT - simDt < AI_TOSS_HIT_T - GRUNT_LEAD && aiTossT >= AI_TOSS_HIT_T - GRUNT_LEAD)
+                    SfxGruntPre(Vector3Distance(cam.position, ai.pos));
                 ai.anim.windStroke = 2;
                 ai.anim.windup = 0.3f + 0.7f * Clamp01(aiTossT / SERVE_CHARGE_TIME);
             }
@@ -675,6 +680,17 @@ int main(void)
                 }
             } else {
                 P.hold = fminf(P.hold + frameDt / CHARGE_TIME, HOLD_MAX);
+                // 打つ前の声：溜めている間、一番いい瞬間まで GRUNT_LEAD 秒を切ったら鳴らし始める（スライス・ボレーは声を出さない）
+                if (!playerGrunt && !IsSliceShot((ShotType)P.chargingShot) && ball.active && ball.lastHitter == HITTER_OPP &&
+                    ball.bounces >= 1) {
+                    gCasual = (style == STYLE_CASUAL);
+                    Assist ga = ComputeAssist(P.pos, P.vel, &ball, (ShotType)P.chargingShot, P.charge);
+                    gCasual = false;
+                    if (ga.timingValid && !ga.overhead && ga.tBest <= GRUNT_LEAD && ga.qBest > 0.2f) {
+                        SfxGruntPre(Vector3Distance(cam.position, P.pos));
+                        playerGrunt = true;
+                    }
+                }
                 P.charge = fminf(P.hold, 1.0f);
                 // 構えの見た目：ボールのある側で構える（高い球なら頭上）
                 P.anim.windup = P.charge;
@@ -870,6 +886,17 @@ int main(void)
             if (!botControls) LogRecordBall(&plog, &ball);
 
             // AI のスイング（物理と同じ細かさで）
+            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiGrunt && ball.bounces >= 1 &&
+                ball.age >= ai.swingAge - GRUNT_LEAD) {
+                SfxGruntPre(Vector3Distance(cam.position, ai.pos));
+                aiGrunt = true;
+            }
+            if (botControls && phase == PH_PLAY && bot.planned && !botGrunt && ball.lastHitter == HITTER_OPP && ball.bounces >= 1 &&
+                ball.age >= bot.swingAge - GRUNT_LEAD) {
+                SfxGruntPre(Vector3Distance(cam.position, P.pos));
+                botGrunt = true;
+            }
+            if (ball.lastHitter != HITTER_OPP) botGrunt = false;
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), ai.anim.lastContact.volley && !ai.anim.lastContact.overhead, Vector3Distance(cam.position, ball.pos));
@@ -914,6 +941,8 @@ int main(void)
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
         prevBounces = ball.bounces;
+        if (!ball.active || ball.lastHitter != HITTER_OPP) playerGrunt = false;
+        if (!ball.active || ball.lastHitter != HITTER_PLAYER) aiGrunt = false;
         if (ball.active && ball.hitNet && !prevHitNet) SfxNet(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));

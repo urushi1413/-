@@ -178,6 +178,7 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define SERVE_DEPTH_T1    0.70f
 #define SERVE_DEPTH_SHORT (-4.0f)
 #define SERVE_DEPTH_LONG  (-7.2f)
+#define GRUNT_LEAD        0.235f  // 打つ前の声（grunt_pre）を、打つこの秒数前から鳴らす
 #define AI_TOSS_HIT_T     0.52f   // AI はトスを上げてからこの時間で打つ（一番上を少し過ぎたところ）
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
 #define SERVE_OVERREACH  0.25f   // 理想の打点よりこれだけ高い球まで、背伸びして届く。トスの最高点（2.95m）は必ず届く
@@ -581,6 +582,7 @@ void  SfxPointEnd(int rallyHits, bool winner);
 int   SfxLoadedCount(void);
 bool  SfxDeviceOk(void);
 void  SfxTest(void);
+void  SfxGruntPre(float dist);
 const char *SfxDir(void);
 
 #endif

@@ -10,13 +10,13 @@
 typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 
 enum {
-    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_SERVE,
+    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_GRUNT_PRE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
     S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
-    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "serve",
+    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "grunt_pre", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
     "crowd", "applause", "applause_big"
 };
@@ -124,7 +124,8 @@ static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVa
 void SfxHit(float q, float kmh, bool slice, bool volley, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
-    if (!slice && !volley && q >= 0.18f && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, Jitter()); return; }
+    // 声つき：打つ前の声（SfxGruntPre）から続くので、音の高さは変えない
+    if (!slice && !volley && q >= 0.18f && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, 1.0f); return; }
     if (q < 0.18f)      Play(S_HIT_FRAME, S_HIT_BAD, vol, Jitter());
     else if (slice)     Play(S_HIT_SLICE, q < 0.5f ? S_HIT_BAD : S_HIT_OK, vol, Jitter());
     else if (q < 0.45f) Play(S_HIT_BAD, S_HIT_OK, vol, Jitter());
@@ -135,7 +136,7 @@ void SfxHit(float q, float kmh, bool slice, bool volley, float dist)
 void SfxServe(float q, float kmh, float dist)
 {
     int id = First3(S_SERVE, S_HIT_VOICE, S_HIT_GOOD);
-    if (q > 0.6f && id >= 0) Play(id, -1, (0.6f + 0.4f * Clamp01(kmh / 200.0f)) * DistVol(dist), Jitter());
+    if (q > 0.6f && id >= 0) Play(id, -1, (0.6f + 0.4f * Clamp01(kmh / 200.0f)) * DistVol(dist), id == S_HIT_VOICE ? 1.0f : Jitter());
     else                     SfxHit(q, kmh, false, false, dist);
 }
 
@@ -146,6 +147,9 @@ void SfxTest(void)
     if (id >= 0) { Play(id, -1, 0.9f, 1.0f); return; }
     if (gAudioOk && gBeepOk) { SetSoundVolume(gBeep, gVolume); PlaySound(gBeep); }   // ファイルがないときは「ピッ」
 }
+
+// 打つ前の声：打つ GRUNT_LEAD 秒前に鳴らし始める（溜めの間に声が出て、そのまま打球音と声の続きにつながる）
+void SfxGruntPre(float dist) { Play(S_GRUNT_PRE, -1, 0.9f * DistVol(dist), 1.0f); }
 
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
 
