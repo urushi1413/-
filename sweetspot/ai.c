@@ -277,6 +277,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
+    ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
     c.stepIn = -meVel.z;
     ai->anim.lastContact = c;
@@ -409,6 +410,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->planned) {
         ai->anim.windup = Clamp01(1.0f - (ai->swingAge - ball->age) / 0.6f);
         ai->anim.windStroke = ai->planFore ? 0 : 1;
+        ai->anim.slice = false;
     } else {
         ai->anim.windup = 0.0f;
     }

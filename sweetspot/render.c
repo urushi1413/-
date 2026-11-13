@@ -84,6 +84,13 @@ Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
         float phiC = atan2f(cl.z, sgn * cl.x) * RAD2DEG;
         float rc = Clamp(sqrtf(cl.x * cl.x + cl.z * cl.z), 0.5f, 1.6f);
         float hc = Clamp(cl.y, 0.15f, 1.9f);
+        if (a->slice) {
+            // スライス：上から下へ切る。フォロースルーは短く前に押し出し、面は上を向いたまま
+            float phi = (phiC + (140.0f - phiC) * u) * DEG2RAD;
+            float rr = Lerp(rc, 0.8f, u);
+            *tangent = Vector3Normalize((Vector3){ -sgn * sinf(phi), 0.45f, cosf(phi) });
+            return (Vector3){ sgn * cosf(phi) * rr, Lerp(hc, fmaxf(hc - 0.25f, 0.8f), u), sinf(phi) * rr };
+        }
         float phi = (phiC + (190.0f - phiC) * u) * DEG2RAD;
         float rr = Lerp(rc, 0.55f, u);
         *tangent = (Vector3){ -sgn * sinf(phi), 0.0f, cosf(phi) };
@@ -98,6 +105,12 @@ Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
             return (Vector3){ 0.3f, 1.75f + 0.8f * sinf(psi), 0.8f * cosf(psi) };
         }
         float sgn = a->windStroke == 0 ? 1.0f : -1.0f;
+        if (a->slice) {
+            // スライスの構え：ラケットを肩より高く引き、面を上に開く
+            float phi = Lerp(60.0f, -85.0f, w) * DEG2RAD;
+            *tangent = Vector3Normalize((Vector3){ -sgn * sinf(phi), 0.45f, cosf(phi) });
+            return (Vector3){ sgn * cosf(phi) * Lerp(0.6f, 0.75f, w), Lerp(1.0f, 1.65f, w), sinf(phi) * Lerp(0.6f, 0.75f, w) };
+        }
         float phi = Lerp(60.0f, BACK_FH, w) * DEG2RAD;
         *tangent = (Vector3){ -sgn * sinf(phi), 0.0f, cosf(phi) };
         return (Vector3){ sgn * cosf(phi) * Lerp(0.6f, 0.85f, w), Lerp(1.0f, 1.25f, w), sinf(phi) * Lerp(0.6f, 0.85f, w) };
@@ -161,13 +174,21 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）
     //   ラケットの向きは、バックなら左肩を支点に考える（両手打ちは左手が主導して振る）
     Vector3 rShoulder = { 0.22f, 1.42f, 0.0f }, lShoulder = { -0.22f, 1.42f, 0.0f };
-    bool twoHands = (stroke == 1);
+    bool twoHands = (stroke == 1) && !a->slice;   // スライスのバックは片手
     Vector3 pivot = twoHands ? lShoulder : rShoulder;
     Vector3 dir = Vector3Normalize(Vector3Subtract(rl, pivot));
     Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
     float armLen = Vector3Length(Vector3Subtract(hand, pivot));
     if (armLen > 0.75f) hand = Vector3Add(pivot, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, pivot)), 0.75f));
     Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
+    if (stroke == 1 && !twoHands) {
+        // 片手のバック：右肩から腕を伸ばす
+        dir = Vector3Normalize(Vector3Subtract(rl, rShoulder));
+        hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
+        if (Vector3Length(Vector3Subtract(hand, rShoulder)) > 0.75f)
+            hand = Vector3Add(rShoulder, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, rShoulder)), 0.75f));
+        neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
+    }
     Vector3 shoulder = rShoulder;                                    // ラケットを持つ腕（右）
     Vector3 other = lShoulder;                                       // 左腕
     Vector3 otherHand = twoHands ? Vector3Add(hand, Vector3Scale(dir, 0.09f))   // グリップの少し上

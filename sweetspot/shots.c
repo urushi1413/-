@@ -127,7 +127,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         float paceDifficulty = 1.0f + c->inKmh / 100.0f;
         dist *= 1.0f + RandNormal() * (0.04f + (1.0f - q) * 0.20f) * paceDifficulty;
     }
-    float ang;
+    float ang, angErr = 0.0f;
     if (sp->touchAngle > 0.0f) {
         // ドロップ：決まった角度で、届くぎりぎりの速さで運ぶ
         ang = sp->touchAngle * DEG2RAD;
@@ -136,13 +136,56 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     } else {
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
-        ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
+        angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
+        ang += angErr;
     }
 
     if (outKmh) *outKmh = kmh;
     if (outRpm) *outRpm = rpm;
     if (outAngle) *outAngle = ang;
-    return MakeShot(ballPos, dirFlat, kmh / 3.6f, ang, rpm);
+    Ball b = MakeShot(ballPos, dirFlat, kmh / 3.6f, ang, rpm);
+    if (IsSliceShot(type)) {
+        // スライスは横回転も乗る：フォアは右、バックは左へ曲がる（弾んだ後も同じ向きに滑る）
+        float ratio = (type == SHOT_SLICE) ? SLICE_SIDE_RATIO : SLICE_SIDE_RATIO * 0.6f;
+        float wy = -hand * ratio * fabsf(rpm) * RPM_TO_RADS;   // 縦軸まわり。マイナスで右に曲がる
+        // 曲がる分を見込んで打ち出す（狙った所に落ちる。途中で曲がって見える）
+        Ball s0 = b, s1 = b;
+        s1.spin.y += wy;
+        for (int i = 0; i < 2400 && s0.bounces < 1 && s0.active; i++) StepBall(&s0, PHYS_DT);
+        for (int i = 0; i < 2400 && s1.bounces < 1 && s1.active; i++) StepBall(&s1, PHYS_DT);
+        Vector3 right = { -dirFlat.z, 0.0f, dirFlat.x };
+        float lateral = Vector3DotProduct(Vector3Subtract(s1.pos, s0.pos), right);   // 右に曲がった量
+        float run  = fmaxf(Vector3Length((Vector3){ s0.pos.x - ballPos.x, 0.0f, s0.pos.z - ballPos.z }), 1.0f);
+        float run1 = Vector3Length((Vector3){ s1.pos.x - ballPos.x, 0.0f, s1.pos.z - ballPos.z });
+        dirFlat = Vector3RotateByAxisAngle(dirFlat, (Vector3){ 0, 1, 0 }, atan2f(lateral, run));    // 右に曲がる分だけ左へ
+        // 曲がって進む分だけ距離が縮むので、その分を見込んで打ち出し角を決め直す（ネットにかかりやすくならないように）
+        (void)run1;
+        if (sp->touchAngle <= 0.0f) {
+            // 横回転があると飛ぶ距離が変わるので、実際に飛ばして狙った距離に合うまで打ち出し角を詰める
+            float want = dist, a0 = ang - angErr;
+            for (int it = 0; it < 4; it++) {
+                a0 = SolveLaunchAngle(ballPos, dirFlat, want, kmh / 3.6f, rpm, sp->highArc);
+                Ball t = MakeShot(ballPos, dirFlat, kmh / 3.6f, a0, rpm);
+                t.spin.y += wy;
+                for (int i = 0; i < 2400 && t.bounces < 1 && t.active; i++) StepBall(&t, PHYS_DT);
+                float got = Vector3Length((Vector3){ t.pos.x - ballPos.x, 0.0f, t.pos.z - ballPos.z });
+                if (fabsf(got - dist) < 0.1f) break;
+                want += dist - got;
+            }
+            // ネットの上の余裕（10cm）も、横回転込みの弾道で確かめる。足りなければ少しずつ上げる
+            for (int k = 0; k < 40; k++) {
+                Ball t = MakeShot(ballPos, dirFlat, kmh / 3.6f, a0, rpm);
+                t.spin.y += wy;
+                for (int i = 0; i < 2400 && t.bounces < 1 && t.active && t.netClearance <= -98.0f; i++) StepBall(&t, PHYS_DT);
+                if (t.netClearance >= 0.10f) break;
+                a0 += 0.25f * DEG2RAD;
+            }
+            ang = a0 + angErr;
+        }
+        b = MakeShot(ballPos, dirFlat, kmh / 3.6f, ang, rpm);
+        b.spin.y += wy;
+    }
+    return b;
 }
 
 // 実際に狙う場所：球種と立ち位置で、狙える深さを制限する
@@ -179,3 +222,5 @@ float ServeDepthFromTime(float t)
     float u = (t - SERVE_DEPTH_T0) / (SERVE_DEPTH_T1 - SERVE_DEPTH_T0);
     return SERVE_DEPTH_SHORT + (SERVE_DEPTH_LONG - SERVE_DEPTH_SHORT) * Clamp(u, 0.0f, 1.2f);
 }
+
+bool IsSliceShot(ShotType t) { return t == SHOT_SLICE || t == SHOT_SLICE_LOB || t == SHOT_DROP; }

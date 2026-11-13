@@ -64,6 +64,7 @@ typedef struct {
 #define HOLD_MAX         1.0f              // 押し続けても一番深いところで止まる（ボールを待つ間押していてもアウトにはならない）
 #define HOLD_DEEP_MARGIN 0.5f              // 一番深いところは、球種の一番深い狙いより 0.5m 浅く（ベースラインの約 2m 手前）
 #define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
+#define SLICE_SIDE_RATIO 0.80f  // スライスの横回転：逆回転の何割（フォアは右、バックは左に曲がる）
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
@@ -256,6 +257,7 @@ typedef struct {
     float   runPhase;      // 走りの足の動き
     bool    sliding;       // 滑っている（低く広い構え）
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
+    bool    slice;         // スライス系（スライス・スライスロブ・ドロップ）：上から下に切る振り方。バックは片手
 } SwingAnim;
 
 // ---- 定数（ほかのファイルから移したもの） ----
@@ -484,6 +486,7 @@ const char *MissName(MissReason m);
 void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vector3 playerVel, bool charging, const char *mode, const char *level);
 void LogRecordBall(PlayLog *L, const Ball *ball);
 Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style);
+bool IsSliceShot(ShotType t);
 Vector3 AimFromHold(ShotType t, float playerZ, float aimX, float hold, PlayStyle style);
 float ServeDepthFromTime(float t);
 void DisableIme(void *hwnd);   // platform_ime.c（Windows で日本語入力を切る）

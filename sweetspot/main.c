@@ -636,6 +636,7 @@ int main(void)
                 P.charge = fminf(P.hold, 1.0f);
                 // 構えの見た目：ボールのある側で構える（高い球なら頭上）
                 P.anim.windup = P.charge;
+                P.anim.slice = IsSliceShot((ShotType)P.chargingShot);
                 if (ball.active && ball.lastHitter == HITTER_OPP)
                     P.anim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, P.pos) < 6.0f ? 2
                                           : (ball.pos.x >= P.pos.x ? 0 : 1);
@@ -723,6 +724,7 @@ int main(void)
                     // スイングの見た目と、理想の打点との比較用
                     Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
                     P.anim.lastContact = c;
+                    P.anim.slice = IsSliceShot(type);
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
                     P.anim.swingT = 0.0f;
                     if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
