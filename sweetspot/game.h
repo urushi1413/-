@@ -112,7 +112,10 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define CASUAL_QFLOOR    0.35f   // 当たりの質は最低 35%
 #define CASUAL_ERR       0.45f   // ぶれ 45%
 #define CASUAL_WAIT      1.00f   // 早く離したとき、この時間まで先の一番いい瞬間を待って振る
-#define TIMING_PULL      0.07f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
+// タイミングのずれによる方向ずれ。早いと引っ張り、遅いと流れる。
+// コースはマウスの印で決める。人間の手で揃えられる ±30ms の中では方向は変わらず、それを超えた分だけずれる
+#define TIMING_PULL_DEAD_MS 30.0f
+#define TIMING_PULL_DEG_MS  0.03f  // 30ms を超えた 1ms ごとに 0.03°（100ms 遅れで約 2°＝向こうのベースラインで約 0.9m）
 
 // ---- 来た球の勢い ----
 // ラケットに当たったボールの速さ ≒ EA × 来た球の速さ ＋ (1 + EA) × ラケットの速さ

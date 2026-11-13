@@ -87,7 +87,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = c->forehand ? 1.0f : -1.0f;
-    float yaw = hand * c->fwdErr * TIMING_PULL * (gCasual ? 0.5f : 1.0f)
+    float over = fmaxf(fabsf(c->timeErrMs) - TIMING_PULL_DEAD_MS, 0.0f) * (c->timeErrMs >= 0.0f ? 1.0f : -1.0f);
+    float yaw = hand * over * TIMING_PULL_DEG_MS * DEG2RAD * (gCasual ? 0.5f : 1.0f)
               + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
     yaw = Clamp(yaw, -30.0f * DEG2RAD, 30.0f * DEG2RAD);
 
