@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 // ---- コート寸法（ITF 規格） ----
 #define COURT_LEN        23.77f
@@ -1328,6 +1329,61 @@ static const char *ScoreText(const Score *s)
 }
 
 
+
+// ================= 手がかり表示（画面に奥行きがないのを補う） =================
+// 物理や判定は変えない。人間が目で読めない「いつ」「どこ」を画面に出すだけ
+typedef struct {
+    bool    timingValid;  // タイミングの輪を出せる
+    float   tBest;        // 今の立ち位置で一番いい瞬間まで（秒）
+    float   qBest;        // そのときの質
+    bool    fore, overhead;
+    bool    standValid;   // 立つ場所の目印を出せる
+    Vector3 stand;        // 立つ場所（地面）
+    Vector3 ballAt;       // そのときのボール
+} Assist;
+
+static Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type, float charge)
+{
+    Assist a = { 0 };
+    if (!ball->active || ball->lastHitter != HITTER_OPP) return a;
+    Ball b = *ball;
+    float t = 0.0f, bestCost = 1e9f;
+    a.qBest = 0.0f;
+    for (int i = 0; i < 360 && b.active && b.bounces < 2; i++) {
+        StepBall(&b, PHYS_DT);
+        t += PHYS_DT;
+        bool hittable = b.bounces <= 1 && b.pos.z > 0.0f && !b.hitNet && (!b.isServe || b.bounces == 1);
+        if (!hittable) continue;
+        // タイミング：今の位置のまま、いつ振るのが一番いいか
+        Contact c = EvaluateContact(player, &b, type, charge, 0.0f);
+        if (c.miss == MISS_NONE && c.quality > a.qBest) {
+            a.qBest = c.quality; a.tBest = t; a.fore = c.forehand; a.overhead = c.overhead; a.timingValid = true;
+        }
+        // 立つ場所：間に合って、打ちやすい高さになる点（AI と同じ考え方）
+        if (i % 2 != 0) continue;
+        bool high = b.pos.y > OVERHEAD_MIN_H;
+        if (b.bounces != 1 && !high) continue;
+        float idealH = high ? OVERHEAD_IDEAL_H : SHOTS[type].idealHeight;
+        Vector3 cand[2];
+        int nc;
+        if (high) { cand[0] = (Vector3){ b.pos.x - OVERHEAD_SIDE, 0.0f, b.pos.z + OVERHEAD_FWD }; nc = 1; }
+        else {
+            cand[0] = (Vector3){ b.pos.x - IDEAL_SIDE, 0.0f, b.pos.z + IDEAL_FWD };
+            cand[1] = (Vector3){ b.pos.x + IDEAL_SIDE, 0.0f, b.pos.z + IDEAL_FWD };
+            nc = 2;
+        }
+        for (int k = 0; k < nc; k++) {
+            Vector3 to = Vector3Subtract(cand[k], player);
+            float d = Vector3Length(to);
+            float v0 = (d > 0.01f) ? Vector3DotProduct(playerVel, Vector3Scale(to, 1.0f / d)) : 0.0f;
+            if (TravelTime(d, v0, PLAYER_SPEED, PLAYER_ACCEL, PLAYER_BRAKE) > t) continue;
+            float cost = fabsf(b.pos.y - idealH) + 0.4f * fmaxf(b.pos.z - (HALF_LEN + 2.0f), 0.0f) + 0.05f * d;
+            if (cost < bestCost) { bestCost = cost; a.stand = cand[k]; a.ballAt = b.pos; a.standValid = true; }
+        }
+    }
+    return a;
+}
+
 // ================= プレイ記録（playlog.csv） =================
 // 自分のプレイを 1 行ずつ CSV に書き出す。どこで失敗しているかを数字で調べるため。
 //   event = swing    : 振った（当たった・空振り）
@@ -1361,17 +1417,28 @@ typedef struct {
     int    noSwingIn, noSwingReachable, noSwingOut;
     float  sumFirstMove; int nFirstMove;
     int    serves, servesIn, serveWhiffs;
+    int    assist;           // 手がかり表示のレベル（記録の最後の列）
 } PlayLog;
+
+#define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
+                   "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
+                   "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist"
 
 static void LogOpen(PlayLog *L)
 {
+    // 列が違う古い記録は、別の名前にして残す（混ざると集計できないので）
+    FILE *old = fopen("playlog.csv", "r");
+    if (old) {
+        char line[1024] = { 0 };
+        if (fgets(line, sizeof(line), old)) line[strcspn(line, "\r\n")] = 0;
+        fclose(old);
+        if (line[0] && strcmp(line, LOG_HEADER) != 0) rename("playlog.csv", TextFormat("playlog_old_%ld.csv", (long)time(NULL)));
+    }
     L->f = fopen("playlog.csv", "a");
     if (!L->f) return;
     fseek(L->f, 0, SEEK_END);
     if (ftell(L->f) == 0)
-        fprintf(L->f, "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height,"
-                      "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in,"
-                      "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result\n");
+        fprintf(L->f, LOG_HEADER "\n");
     fflush(L->f);
 }
 
@@ -1385,7 +1452,7 @@ static void LogFlush(PlayLog *L, const char *result)
         else if (strcmp(result, "OUT") == 0) L->shotOut++;
         else if (strcmp(result, "NET") == 0) L->shotNet++;
     }
-    if (L->f) { fprintf(L->f, "%s,%s\n", L->row, result); fflush(L->f); }
+    if (L->f) { fprintf(L->f, "%s,%s,%d\n", L->row, result, L->assist); fflush(L->f); }
 }
 
 // 「この立ち位置のまま、いつ振るのが一番よかったか」を、来た球の過去の軌道と、この先の軌道から探す
@@ -1437,10 +1504,10 @@ static void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vecto
                 L->noSwingOut++;
             }
             if (L->f) {
-                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s\n",
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d\n",
                         GetTime(), mode, level, reachable ? "reachable" : "unreachable",
                         L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
-                        L->ageAtMin, L->firstMove, L->chargeStart, res);
+                        L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist);
                 fflush(L->f);
             }
         }
@@ -1498,6 +1565,7 @@ int main(void)
     static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
     LogOpen(&plog);
     bool showStats = false;        // Tab：このセッションの統計
+    int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
 
     Camera3D cam = { 0 };
     cam.up = (Vector3){ 0, 1, 0 };
@@ -1586,6 +1654,8 @@ int main(void)
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
         if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
         if (IsKeyPressed(KEY_TAB)) showStats = !showStats;
+        if (IsKeyPressed(KEY_H)) assistLevel = (assistLevel + 2) % 3;
+        plog.assist = assistLevel;
         bot.level = ai.level;
         if (restart) {
             feedTimer = 0.5f;
@@ -1747,9 +1817,9 @@ int main(void)
                         lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
                         if (plog.f) {
-                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF\n",
+                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d\n",
                                     GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
-                                    ball.pos.y, player.x, player.z);
+                                    ball.pos.y, player.x, player.z, plog.assist);
                             fflush(plog.f);
                         }
                         // フォルトとして判定させる
@@ -2104,8 +2174,9 @@ int main(void)
 
         // ---- カメラ ----
         if (camMode == 0) {        // プレイヤーの後ろ
-            cam.position = (Vector3){ player.x * 0.6f, 3.2f, player.z + 6.0f };
-            cam.target   = (Vector3){ player.x * 0.3f, 0.6f, player.z - 8.0f };
+            // 少し高く後ろから：上から見る角度があると、奥行き（ボールまでの距離）が読みやすい
+            cam.position = (Vector3){ player.x * 0.6f, 4.6f, player.z + 7.5f };
+            cam.target   = (Vector3){ player.x * 0.3f, 0.3f, player.z - 7.0f };
         } else if (camMode == 1) { // 真横（弾道が一番わかる）
             cam.position = (Vector3){ 22.0f, 2.5f, 0.0f };
             cam.target   = (Vector3){ 0.0f, 1.0f, 0.0f };
@@ -2158,6 +2229,29 @@ int main(void)
                     DrawSphere(lastContactPos, 0.06f, qc);
                     DrawLine3D(lastIdealPos, lastContactPos, qc);
                     DrawLine3D((Vector3){ lastContactPos.x, 0.01f, lastContactPos.z }, lastContactPos, Fade(qc, 0.5f));
+                }
+            }
+
+            // 手がかり：立つ場所（緑の輪）と、タイミングの輪（一番いい瞬間に向かって縮む）
+            if (assistLevel > 0 && !botControls && !playerServing && mode != MODE_SERVE && playerDownT <= 0.0f) {
+                ShotType at = (chargingShot >= 0) ? (ShotType)chargingShot : SHOT_TOP;
+                Assist as = ComputeAssist(player, playerVel, &ball, at, chargingShot >= 0 ? charge : 0.5f);
+                if (assistLevel >= 2 && as.standValid) {
+                    Vector3 st = { as.stand.x, 0.012f, as.stand.z };
+                    DrawCircle3D(st, 0.30f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
+                    DrawCircle3D(st, 0.26f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
+                    DrawLine3D((Vector3){ player.x, 0.012f, player.z }, st, Fade(GREEN, 0.5f));
+                    DrawSphere(as.ballAt, 0.045f, Fade(YELLOW, 0.5f));
+                    DrawLine3D((Vector3){ as.ballAt.x, 0.012f, as.ballAt.z }, as.ballAt, Fade(YELLOW, 0.4f));
+                }
+                if (as.timingValid && as.tBest < 1.2f) {
+                    Vector3 ip = as.overhead ? (Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD }
+                                             : (Vector3){ player.x + (as.fore ? IDEAL_SIDE : -IDEAL_SIDE), SHOTS[at].idealHeight,
+                                                          player.z - IDEAL_FWD };
+                    float rr = 0.16f + 1.4f * as.tBest;
+                    Color rc = QualityColor(as.qBest);
+                    DrawCircle3D(ip, rr, (Vector3){ 1, 0, 0 }, 90.0f, rc);
+                    DrawCircle3D(ip, rr + 0.02f, (Vector3){ 1, 0, 0 }, 90.0f, rc);
                 }
             }
 
@@ -2336,6 +2430,10 @@ int main(void)
         }
         if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
         DrawText("Tab: stats", GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
+        {
+            static const char *an[3] = { "OFF", "TIMING", "TIMING+SPOT" };
+            DrawText(TextFormat("H assist: %s", an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
+        }
         EndDrawing();
     }
 

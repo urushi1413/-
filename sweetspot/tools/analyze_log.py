@@ -126,6 +126,22 @@ def main(path):
             print(f"  溜め始め 中央値 {cs[len(cs) // 2]:.2f} s")
         print()
 
+    # 9. 手がかり表示（H）あり・なしの比較
+    if swings and "assist" in swings[0]:
+        print("[9] 手がかり表示（H）ごとの比較")
+        names = {"0": "なし", "1": "タイミング", "2": "タイミング＋立つ場所"}
+        for lv in ["0", "1", "2"]:
+            g = [r for r in swings if r.get("assist") == lv]
+            if not g:
+                continue
+            ins = sum(1 for r in g if r["result"] == "IN")
+            wh = sum(1 for r in g if r["result"] == "WHIFF")
+            o = [abs(f(r, "timing_offset_ms")) for r in g if f(r, "timing_offset_ms") is not None]
+            b = [f(r, "best_quality_here") or 0 for r in g]
+            print(f"  {names[lv]:12s} {len(g):4d} 球  IN {pct(ins, len(g)):>5s}  空振り {pct(wh, len(g)):>5s}  "
+                  f"ずれ平均 {sum(o) / len(o) if o else 0:.0f} ms  位置の良さ {sum(b) * 100 / len(b):.0f}%")
+        print()
+
     # 8. サーブ
     if serves:
         print("[8] サーブ")
