@@ -301,6 +301,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->lastType = t;
     ai->lastQ = c.quality;
     ai->lastKmh = kmh;
+    ai->lastServe = false;
     return true;
 }
 
@@ -342,6 +343,7 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     ai->anim.contactLocal = (Vector3){ contact.x - me.x, contact.y, me.z - contact.z };
     ai->anim.swingT = 0.0f;
     ai->lastKmh = kmh;
+    ai->lastServe = true;
     ai->planned = false;
     ai->lastTargetX = target.x;
     // サーブ＆ボレー：強気な AI がたまに。芝では多め

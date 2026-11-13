@@ -1351,7 +1351,7 @@ int main(void)
             if (ai.lastKmh > 0.0f) {
                 int ly = sy + (score.nGames ? 126 : 102);
                 DrawRectangle(sx, ly - 3, sbw, 22, Fade((Color){ 10, 20, 40, 255 }, 0.6f));
-                DrawText(TextFormat("AI last: %s %.0f km/h", ball.isServe && ball.lastHitter == HITTER_OPP ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
+                DrawText(TextFormat("AI last: %s %.0f km/h", ai.lastServe ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
                          sx + 8, ly, 16, LIGHTGRAY);
             }
             if (pointMsg[0]) {

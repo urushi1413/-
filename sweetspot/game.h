@@ -314,6 +314,7 @@ typedef struct {
     // 最後のショット（HUD 用）
     ShotType lastType;
     float   lastQ, lastKmh;
+    bool    lastServe;     // 最後に打ったのがサーブか（表示用）
 } Opponent;
 
 typedef struct {
