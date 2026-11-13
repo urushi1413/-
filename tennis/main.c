@@ -40,16 +40,17 @@
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
+#define PLAYER_ACCEL     9.0f    // 加速（m/s^2）。最高速まで 0.67 秒
+#define PLAYER_BRAKE     20.0f   // 減速（m/s^2）。最高速から 0.3 秒・0.9m で止まる
 #define IDEAL_FWD        0.40f   // 理想の打点：体より 40cm 前
 #define IDEAL_SIDE       0.85f   // 理想の打点：体から横に 85cm
 #define TOL_FWD_COMPACT  0.95f   // タイミングの許容幅（前後にこれだけずれると質 0）。溜めなしのコンパクトなスイング
 #define TOL_FWD_FULL     0.75f   //   〃 フルスイング。大きく振るほどシビア
 #define VOLLEY_TOL_BONUS 1.20f   // ボレーはテイクバックが小さいので許容幅が広い
-#define TOL_SIDE         0.80f   // 距離の許容幅
 #define REACH_FWD        1.00f   // これ以上前後にずれたら空振り
-#define REACH_SIDE       1.70f   // これ以上遠いと空振り（ラケットが届かない）
+#define REACH_SIDE       2.10f   // これ以上遠いと空振り。腕＋ラケット 1.6m ＋最後の踏み込み 0.5m
 #define REACH_HEIGHT     2.30f
-#define TIMING_PULL      0.30f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
+#define TIMING_PULL      0.15f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
 
 // ---- 来た球の勢い ----
 // ラケットに当たったボールの速さ ≒ EA × 来た球の速さ ＋ (1 + EA) × ラケットの速さ
@@ -60,11 +61,12 @@
 #define VOLLEY_POWER     0.40f   // ボレーは振らないので、自分の力は 4 割しか乗らない
 
 // ---- 打球のばらつき（標準偏差、度）----
-// 実際のばらつき = (BASE + (1 - 質) * Q) × 勢いの倍率
+// 実際のばらつき = (BASE + (1 - 質)^2 * Q) × 勢いの倍率
+// 2 乗にしているのは、普通にいい当たり（質 60% 前後）ではぶれが小さく、悪い当たりで急に大きくなるように
 // 勢いの倍率：ラケット面が δ ずれると、跳ね返る成分は 2δ、自分で振った成分は δ ずれる。
 //            なので来た球が速いほど、同じ面のずれでも狙いが大きく狂う（1〜2 倍）
-#define ERR_YAW_BASE     0.6f
-#define ERR_YAW_Q        7.0f
+#define ERR_YAW_BASE     0.5f
+#define ERR_YAW_Q        5.0f
 #define ERR_PITCH_BASE   0.2f
 #define ERR_PITCH_Q      3.5f
 // 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
@@ -95,7 +97,7 @@ typedef enum {
     SHOT_COUNT
 } ShotType;
 #define SHOT_NORMAL_COUNT 3
-typedef enum { HITTER_NONE, HITTER_MACHINE, HITTER_PLAYER } Hitter;
+typedef enum { HITTER_NONE, HITTER_OPP, HITTER_PLAYER } Hitter;   // OPP = 相手（球出しマシンか AI）
 
 // 球種ごとの性格。溜め 0→1 で min→max に変わる
 // rpm はプラスがトップスピン、マイナスがバックスピン（スライス）
@@ -109,6 +111,7 @@ typedef struct {
     float minKmh, maxKmh;
     float minRpm, maxRpm;
     float idealHeight, tolHeight;
+    float tolSide;          // 体からの距離の許容幅。スライスは腕を伸ばしても打てるので広い
     float depth, shortDepth, deepDepth;
     bool  highArc;
     float touchAngle;
@@ -116,13 +119,13 @@ typedef struct {
 } ShotSpec;
 
 static const ShotSpec SHOTS[SHOT_COUNT] = {
-    //                     name         km/h            rpm               高さ(理想,許容)  深さ(普通, S, W)        高い弾道 固定角
-    [SHOT_FLAT]      = { "FLAT",      90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE },
-    [SHOT_TOP]       = { "TOPSPIN",   70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 } },
-    [SHOT_SLICE]     = { "SLICE",     60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 } },
-    [SHOT_SLICE_LOB] = { "SLICE LOB", 50.0f,  65.0f,  -800.0f, -1500.0f, 0.80f, 1.00f, -10.0f, -8.0f, -11.0f, true, 0.0f, (Color){ 150, 160, 255, 255 } },
-    [SHOT_TOP_LOB]   = { "TOP LOB",   60.0f,  90.0f,  2000.0f,  3500.0f, 1.00f, 0.80f, -10.0f, -8.0f, -11.0f, false, 0.0f, (Color){ 255, 130, 40, 255 } },
-    [SHOT_DROP]      = { "DROP",       0.0f,   0.0f, -1500.0f, -2500.0f, 0.90f, 0.90f,  -2.5f, -1.8f,  -4.0f, false, 28.0f, (Color){ 200, 120, 255, 255 } },
+    //                     name         km/h            rpm               高さ(理想,許容) 距離許容 深さ(普通, S, W)    高い弾道 固定角
+    [SHOT_FLAT]      = { "FLAT",      90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE },
+    [SHOT_TOP]       = { "TOPSPIN",   70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 } },
+    [SHOT_SLICE]     = { "SLICE",     60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, 1.10f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 } },
+    [SHOT_SLICE_LOB] = { "SLICE LOB", 50.0f,  65.0f,  -800.0f, -1500.0f, 0.80f, 1.00f, 1.10f, -10.0f, -8.0f, -11.0f, true, 0.0f, (Color){ 150, 160, 255, 255 } },
+    [SHOT_TOP_LOB]   = { "TOP LOB",   60.0f,  90.0f,  2000.0f,  3500.0f, 1.00f, 0.80f, 0.80f, -10.0f, -8.0f, -11.0f, false, 0.0f, (Color){ 255, 130, 40, 255 } },
+    [SHOT_DROP]      = { "DROP",       0.0f,   0.0f, -1500.0f, -2500.0f, 0.90f, 0.90f, 0.90f,  -2.5f, -1.8f,  -4.0f, false, 28.0f, (Color){ 200, 120, 255, 255 } },
 };
 
 typedef struct {
@@ -272,7 +275,8 @@ static void StepBall(Ball *b, float dt)
             b->bounces++;
             if (b->bounces == 1) JudgeFirstBounce(b);
         } else {
-            // 跳ねる力が残ってない → 転がる
+            // 跳ねる力が残ってない → 転がる（転がり始めたら 2 バウンドしたのと同じ扱い）
+            if (b->bounces == 1) b->bounces = 2;
             b->vel.y = 0.0f;
             float k = fmaxf(0.0f, 1.0f - ROLL_FRICTION * dt);
             b->vel.x *= k;
@@ -431,7 +435,7 @@ static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, 
     const ShotSpec *sp = &SHOTS[type];
     float tol = Lerp(TOL_FWD_COMPACT, TOL_FWD_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f);
     c.qTiming = Clamp01(1.0f - fabsf(c.fwdErr) / tol);
-    c.qDist   = Clamp01(1.0f - fabsf(c.side - IDEAL_SIDE) / TOL_SIDE);
+    c.qDist   = Clamp(1.0f - fabsf(c.side - IDEAL_SIDE) / sp->tolSide, 0.10f, 1.0f);   // 届けば最低限は当たる
     c.qHeight = Clamp01(1.0f - fabsf(c.height - sp->idealHeight) / sp->tolHeight);
     c.quality = c.qTiming * c.qDist * c.qHeight;
     return c;
@@ -464,7 +468,7 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = c->forehand ? 1.0f : -1.0f;
     float yaw = hand * c->fwdErr * TIMING_PULL
-              + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
+              + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
     yaw = Clamp(yaw, -30.0f * DEG2RAD, 30.0f * DEG2RAD);
 
     Vector3 d = { target.x - ballPos.x, 0.0f, target.z - ballPos.z };
@@ -487,7 +491,7 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     } else {
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
-        ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
+        ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
     }
 
     if (outKmh) *outKmh = kmh;
@@ -627,7 +631,7 @@ static Ball MachineServe(void)
     SolveServe(from, target, kmh / 3.6f, spin, &dir, &pitch);
     Ball b = MakeServeBall(from, dir, kmh / 3.6f, pitch, spin);
     b.boxX0 = 0.0f; b.boxX1 = SINGLES_W * 0.5f;
-    b.lastHitter = HITTER_MACHINE;
+    b.lastHitter = HITTER_OPP;
     return b;
 }
 
@@ -647,7 +651,7 @@ static Ball MachineFeed(bool pro)
     }
     float rpm = Lerp(SHOTS[t].minRpm, SHOTS[t].maxRpm, charge);
     Ball b = AimedShot(from, target, kmh, rpm, false, NULL);
-    b.lastHitter = HITTER_MACHINE;
+    b.lastHitter = HITTER_OPP;
     return b;
 }
 
@@ -722,10 +726,382 @@ static Color QualityColor(float q)
     return RED;
 }
 
-typedef enum { MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;
-static const char *MODE_NAMES[MODE_COUNT] = { "RALLY", "RETURN", "SERVE" };
+
+// ================= 相手（AI） =================
+// AI は自分（プレイヤー）とまったく同じ物理・同じ打点の評価・同じショットの関数を使う。
+// コートを縦軸まわりに 180° 回した「AI から見た座標」に変換して、プレイヤー用の関数をそのまま呼ぶ。
+// 180° 回転なので、位置・速度・回転（角速度）すべて (x, y, z) → (-x, y, -z) で変換できる
+static Vector3 Rot180(Vector3 v) { return (Vector3){ -v.x, v.y, -v.z }; }
+
+static Ball RotBall(Ball b)
+{
+    b.pos = Rot180(b.pos);
+    b.vel = Rot180(b.vel);
+    b.spin = Rot180(b.spin);
+    b.side = -b.side;
+    float x0 = b.boxX0, x1 = b.boxX1;
+    b.boxX0 = -x1; b.boxX1 = -x0;
+    return b;
+}
+
+typedef struct {
+    const char *name;
+    float speed;          // 走る速さ（m/s）
+    float reaction;       // 相手が打ってから動き出すまで（秒）
+    float timingSigmaMs;  // スイングのタイミングのばらつき
+    float posErr;         // 立ち位置のずれ（m）
+    float aggression;     // 0〜1。強打・コースの厳しさ
+    float lineJudge;      // ライン際の球の見極めのあまさ（m）。これより際どいアウトは打ってしまうことがある
+} AiLevel;
+
+static const AiLevel AI_LEVELS[3] = {
+    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f },
+    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f },
+    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f },
+};
+
+typedef struct {
+    Vector3 pos;          // 足元（ワールド座標）
+    Vector3 vel;
+    Vector3 standPos;     // 向かっている位置（ワールド座標）
+    bool    planned;      // 打つ計画がある
+    bool    leaving;      // アウトと判断して見送る
+    bool    swung;        // この球にはもう振った（空振りでも振り直さない）
+    float   swingAge;     // ボールの age がこの値になったら振る
+    float   seeTimer;     // 相手が打ってから反応するまでの残り時間
+    Hitter  watching;     // 最後に見た打者（打者が変わったら反応を始める）
+    int     level;
+    // 最後のショット（HUD 用）
+    ShotType lastType;
+    float   lastQ, lastKmh;
+} Opponent;
+
+// 速さ v0（目的地方向の成分）から距離 d を走って止まるまでの時間
+// 加速 a で最高速 vmax まで上げ、最後は減速 b で止まる（台形の速度変化）
+static float TravelTime(float d, float v0, float vmax, float a, float b)
+{
+    v0 = Clamp(v0, 0.0f, vmax);
+    float dAcc = (vmax * vmax - v0 * v0) / (2.0f * a);
+    float dBrk = vmax * vmax / (2.0f * b);
+    if (d >= dAcc + dBrk) return (vmax - v0) / a + (d - dAcc - dBrk) / vmax + vmax / b;
+    // 最高速まで上がらない：ピークの速さ vp を求める
+    float vp = sqrtf((d + v0 * v0 / (2.0f * a)) / (1.0f / (2.0f * a) + 1.0f / (2.0f * b)));
+    if (vp < v0) return 2.0f * d / fmaxf(v0, 0.1f);   // すでに速すぎる：すぐ減速
+    return (vp - v0) / a + vp / b;
+}
+
+// 速度を「行きたい速度」に近づける。速くするときは a、遅くするときは b の加速度で
+static Vector3 Accelerate(Vector3 vel, Vector3 want, float a, float b, float dt)
+{
+    Vector3 dv = Vector3Subtract(want, vel);
+    float len = Vector3Length(dv);
+    float lim = (Vector3Length(want) < Vector3Length(vel) - 0.01f) ? b : a;
+    float maxDv = lim * dt;
+    if (len > maxDv) dv = Vector3Scale(dv, maxDv / len);
+    return Vector3Add(vel, dv);
+}
+
+// 目的地に向かって走る（止まれる速さに落としながら）
+static Vector3 MoveToward(Vector3 *pos, Vector3 vel, Vector3 target, float vmax, float dt)
+{
+    Vector3 d = Vector3Subtract(target, *pos);
+    d.y = 0.0f;
+    float dist = Vector3Length(d);
+    Vector3 want = { 0 };
+    if (dist > 0.02f) {
+        float spd = fminf(vmax, sqrtf(2.0f * PLAYER_BRAKE * dist));
+        want = Vector3Scale(d, spd / dist);
+    }
+    vel = Accelerate(vel, want, PLAYER_ACCEL, PLAYER_BRAKE, dt);
+    *pos = Vector3Add(*pos, Vector3Scale(vel, dt));
+    return vel;
+}
+
+// 自分側を AI に任せる（オートパイロット）ための変換：コートを 180° 回して、打者の名前を入れ替える
+static Ball FlipSides(Ball b)
+{
+    b = RotBall(b);
+    if (b.lastHitter == HITTER_PLAYER) b.lastHitter = HITTER_OPP;
+    else if (b.lastHitter == HITTER_OPP) b.lastHitter = HITTER_PLAYER;
+    return b;
+}
+
+// AI のホームポジション（ワールド座標）
+static Vector3 AiHome(void) { return (Vector3){ 0.0f, 0.0f, -(HALF_LEN + 0.8f) }; }
+
+// リターンの構え位置（自分側の座標。AI は Rot180 して使う）。ボックスの外寄り、ベースラインの 1.3m 後ろ
+static Vector3 ReturnPos(bool deuce) { return (Vector3){ deuce ? 2.3f : -2.3f, 0.0f, HALF_LEN + 1.3f }; }
+
+// 飛んでくる球を予測して、どこで打つかを決める（AI 座標で考える）
+static void AiPlan(Opponent *ai, const Ball *worldBall)
+{
+    const AiLevel *lv = &AI_LEVELS[ai->level];
+    Ball b = RotBall(*worldBall);
+    Vector3 me = Rot180(ai->pos);
+
+    // 1) 1バウンド目の判定を予測：アウトなら見送る（際どい球は見極めを間違えることがある）
+    Ball p = b;
+    for (int i = 0; i < 240 * 4 && p.active && p.bounces == 0; i++) StepBall(&p, PHYS_DT);
+    if (p.result == RESULT_OUT || p.result == RESULT_NET) {
+        float overX = fabsf(p.pos.x) - SINGLES_W * 0.5f;
+        float overZ = fabsf(p.pos.z) - (p.isServe ? SERVICE_Z : HALF_LEN);
+        float over = fmaxf(overX, overZ);
+        bool misjudge = p.result == RESULT_OUT && over < lv->lineJudge && RandRange(0, 1) < 0.5f;
+        if (!misjudge) {
+            ai->leaving = true;
+            ai->planned = false;
+            ai->standPos = AiHome();
+            return;
+        }
+    }
+
+    // 2) バウンド後の軌道の中から、間に合って、打ちやすい高さの点を選ぶ
+    Ball q = b;
+    float t = 0.0f;
+    float bestCost = 1e9f, bestT = -1.0f;
+    Vector3 bestStand = me;
+    float lateCost = 1e9f, lateT = -1.0f;
+    Vector3 lateStand = me;
+    for (int i = 0; i < 240 * 4 && q.active && q.bounces < 2; i++) {
+        StepBall(&q, PHYS_DT);
+        t += PHYS_DT;
+        if (i % 2 != 0 || q.bounces != 1 || q.pos.z <= 0.0f) continue;
+        // フォアかバックか、近い方で構える
+        Vector3 fore = { q.pos.x - IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
+        Vector3 back = { q.pos.x + IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
+        Vector3 stand = (Vector3Distance(fore, me) <= Vector3Distance(back, me)) ? fore : back;
+        float cost = fabsf(q.pos.y - 1.0f) + 0.4f * fmaxf(q.pos.z - (HALF_LEN + 2.0f), 0.0f);
+        // 理想の距離で構えるのが無理なら、踏み込んで腕を伸ばせば届く位置（体から 1.75m）でもいい（ただし打点は悪くなる）
+        for (int option = 0; option < 2; option++) {
+            Vector3 st = stand;
+            float extra = 0.0f;
+            if (option == 1) {
+                float sgn = (q.pos.x - stand.x) >= 0.0f ? 1.0f : -1.0f;   // ボールは体のどちら側か
+                Vector3 toMe = Vector3Subtract(me, (Vector3){ q.pos.x, 0.0f, stand.z });
+                float side = (fabsf(toMe.x) > 0.01f) ? (toMe.x > 0 ? 1.0f : -1.0f) : -sgn;
+                st.x = q.pos.x + side * 1.75f;                       // 自分に近い側で、1.75m 離れて立つ（踏み込んで届く）
+                extra = 0.8f;
+            }
+            Vector3 toStand = Vector3Subtract(st, me);
+            float dStand = Vector3Length(toStand);
+            float v0 = (dStand > 0.01f) ? Vector3DotProduct(Rot180(ai->vel), Vector3Scale(toStand, 1.0f / dStand)) : 0.0f;
+            float need = TravelTime(dStand, v0, lv->speed, PLAYER_ACCEL, PLAYER_BRAKE);
+            if (need <= t) {
+                if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; }
+            } else if (need - t < lateCost) {
+                lateCost = need - t; lateT = t; lateStand = st;   // 間に合わない：一番惜しいところを目指す
+            }
+        }
+    }
+    if (bestT < 0.0f) { bestT = lateT; bestStand = lateStand; }
+    if (bestT < 0.0f) { ai->planned = false; ai->standPos = AiHome(); return; }
+
+    bestStand.x += RandNormal() * lv->posErr;
+    bestStand.z += RandNormal() * lv->posErr;
+    ai->standPos = Rot180(bestStand);
+    ai->swingAge = worldBall->age + bestT + RandNormal() * lv->timingSigmaMs / 1000.0f;
+    ai->planned = true;
+    ai->leaving = false;
+}
+
+// AI のショット選び（AI 座標）
+static ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge,
+                             Vector3 *target)
+{
+    const AiLevel *lv = &AI_LEVELS[ai->level];
+    ShotType t = SHOT_TOP;
+    float r = RandRange(0.0f, 1.0f);
+    bool stretched = c->side > IDEAL_SIDE + 0.45f;
+    bool playerAtNet = playerAi.z > -7.0f;        // プレイヤーが前に出てきている（AI 座標で相手は -z 側）
+    bool playerDeep  = playerAi.z < -(HALF_LEN + 2.0f);
+
+    if (c->height < 0.55f || (stretched && r < 0.7f)) t = SHOT_SLICE;          // 低い・遠い → つなぐ
+    else if (c->height > 1.05f && c->quality > 0.55f && r < lv->aggression) t = SHOT_FLAT;   // 高くていい打点 → 叩く
+    if (playerAtNet && (stretched || r < 0.35f)) t = SHOT_TOP_LOB;              // 前に来たらロブ
+    if (playerDeep && meAi.z < HALF_LEN - 1.0f && r < 0.15f * lv->aggression) t = SHOT_DROP;
+
+    // 球速の目安（打ち出し）。プロのラリーはフラット 130〜150、トップ 110〜135、スライス 80〜100km/h くらい
+    float wantKmh;
+    switch (t) {
+        case SHOT_FLAT:  wantKmh = 115.0f + 35.0f * lv->aggression; break;
+        case SHOT_TOP:   wantKmh = 100.0f + 35.0f * lv->aggression; break;
+        case SHOT_SLICE: wantKmh =  75.0f + 20.0f * lv->aggression; break;
+        default:         wantKmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, 0.5f); break;
+    }
+    wantKmh += RandNormal() * 8.0f - (stretched ? 20.0f : 0.0f);
+    const ShotSpec *ss = &SHOTS[t];
+    *charge = (ss->maxKmh > ss->minKmh) ? Clamp01((wantKmh - ss->minKmh) / (ss->maxKmh - ss->minKmh)) : 0.5f;
+
+    // 甘い球（いい打点で、ベースラインより内側）は決めにいく：速く、厳しく
+    bool attack = c->quality > 0.6f && meAi.z < HALF_LEN - 0.3f && (t == SHOT_TOP || t == SHOT_FLAT) &&
+                  RandRange(0, 1) < 0.3f + 0.6f * lv->aggression;
+    if (attack) {
+        const ShotSpec *as = &SHOTS[t];
+        *charge = Clamp01(*charge + 15.0f / (as->maxKmh - as->minKmh));
+    }
+
+    // コース：プレイヤーのいない方へ。強気なほどサイドラインに近い
+    const ShotSpec *sp = &SHOTS[t];
+    float wide = attack ? 3.2f : 1.5f + 1.3f * lv->aggression;   // サイドラインまで 4.1m。普段は 1.5m 以上余裕を残す
+    float x;
+    if (playerAi.x > 0.6f)       x = -wide;
+    else if (playerAi.x < -0.6f) x =  wide;
+    else                         x = (rand() % 2) ? wide : -wide;
+    if (r > 0.85f) x = -x * 0.5f;   // たまに逆を突く
+    float depth = sp->depth;
+    if (t <= SHOT_SLICE && RandRange(0, 1) < 0.15f * lv->aggression) depth = sp->shortDepth;   // 短いアングル
+    *target = (Vector3){ x, 0.0f, depth };
+    return t;
+}
+
+// AI が振る。当たったら true（ball は AI の打球に置き換わる）
+static bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
+{
+    ai->swung = true;
+    ai->planned = false;
+    Ball b = RotBall(*ball);
+    Vector3 me = Rot180(ai->pos);
+    bool hittable = b.active && b.lastHitter == HITTER_PLAYER && b.pos.z > 0.0f && !b.hitNet &&
+                    b.bounces <= 1 && (!b.isServe || b.bounces == 1);
+    if (!hittable) return false;
+
+    float charge; Vector3 target;
+    Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f);
+    ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
+    c = EvaluateContact(me, &b, t, charge);
+    c.stepIn = Rot180(ai->vel).z * -1.0f;
+    if (c.miss != MISS_NONE) return false;
+
+    float kmh;
+    Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
+    out.lastHitter = HITTER_OPP;
+    *ball = RotBall(out);
+    ai->lastType = t;
+    ai->lastQ = c.quality;
+    ai->lastKmh = kmh;
+    return true;
+}
+
+// AI のサーブ。deuce: デュースサイドから打つ。first: ファーストサーブ
+static Ball AiServe(Opponent *ai, bool deuce, bool first)
+{
+    const AiLevel *lv = &AI_LEVELS[ai->level];
+    // AI 座標では自分と同じ：デュースサイドは x>0、対角のボックスは x<0
+    Vector3 me = { deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+    ai->pos = Rot180(me);
+    // トスのぶれとタイミングのずれから、打点の高さと質を決める
+    Vector2 off = { RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
+    float hErr = fabsf(RandNormal() * lv->timingSigmaMs / 1000.0f * 2.4f);   // 落ちてくる速さ 2.4m/s 前後
+    float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
+    Vector3 contact = { me.x + 0.25f + off.x, SERVE_REACH - hErr, me.z - 0.35f + off.y };
+
+    ServeType t;
+    float charge;
+    if (first) { t = (rand() % 2) ? SERVE_FLAT : SERVE_SLICE; charge = 0.55f + 0.40f * lv->aggression + RandRange(-0.05f, 0.05f); }
+    else       { t = SERVE_KICK; charge = RandRange(0.45f, 0.65f); }
+    float x0, x1;
+    ServiceBox(me.x, -1, &x0, &x1);
+    const float course[3] = { x1 - 0.35f, x0 + 0.35f, 0.5f * (x0 + x1) };   // T / ワイド / ボディ（デュース側）
+    int ci = rand() % 3;
+    float tx = course[ci];
+    if (!deuce) tx = (ci == 0) ? x0 + 0.35f : (ci == 1 ? x1 - 0.35f : 0.5f * (x0 + x1));
+    Vector3 target = { tx, 0.0f, -5.7f };
+    float kmh;
+    Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
+    b.lastHitter = HITTER_OPP;
+    ai->lastKmh = kmh;
+    ai->planned = false;
+    return RotBall(b);
+}
+
+// 毎フレーム：反応して、計画を立て、走る
+static void AiUpdate(Opponent *ai, const Ball *ball, float dt)
+{
+    const AiLevel *lv = &AI_LEVELS[ai->level];
+    if (ball->lastHitter != ai->watching) {
+        ai->watching = ball->lastHitter;
+        ai->planned = false;
+        ai->leaving = false;
+        ai->swung = false;
+        // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
+        if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
+        else ai->standPos = AiHome();   // 自分が打った後：戻る
+    }
+    if (ball->lastHitter == HITTER_PLAYER && !ai->planned && !ai->leaving && !ai->swung && ball->active) {
+        ai->seeTimer -= dt;
+        if (ai->seeTimer <= 0.0f) AiPlan(ai, ball);
+    }
+    // 走る（加速・減速あり）
+    ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
+}
+
+// ================= 試合のスコア =================
+typedef struct {
+    int points[2];   // 0=自分, 1=AI
+    int games[2];
+    int sets[2];
+    bool tiebreak;
+    int server;      // 0=自分, 1=AI（ゲームの最初のサーバー）
+    bool over;
+} Score;
+
+static const char *PointName(int p) { static const char *n[] = { "0", "15", "30", "40" }; return p < 4 ? n[p] : "?"; }
+
+// このポイントのサーバー（タイブレークは 1, 2, 2, 2... で交代）
+static int CurrentServer(const Score *s)
+{
+    if (!s->tiebreak) return s->server;
+    int n = s->points[0] + s->points[1];
+    if (n == 0) return s->server;
+    return (((n - 1) / 2) % 2 == 0) ? 1 - s->server : s->server;
+}
+
+// デュースサイドか（ゲーム内のポイント数が偶数ならデュース）
+static bool DeuceCourt(const Score *s) { return (s->points[0] + s->points[1]) % 2 == 0; }
+
+static void AwardPoint(Score *s, int w)
+{
+    int l = 1 - w;
+    s->points[w]++;
+    bool gameWon;
+    if (s->tiebreak) gameWon = s->points[w] >= 7 && s->points[w] - s->points[l] >= 2;
+    else             gameWon = s->points[w] >= 4 && s->points[w] - s->points[l] >= 2;
+    if (!gameWon) {
+        // デュース後は 3-3 に戻して表示を簡単にする（アドバンテージは 4-3）
+        if (!s->tiebreak && s->points[0] >= 4 && s->points[1] >= 4) { s->points[0]--; s->points[1]--; }
+        return;
+    }
+    s->games[w]++;
+    int firstServer = s->server;
+    s->points[0] = s->points[1] = 0;
+    bool setWon = (s->games[w] >= 6 && s->games[w] - s->games[l] >= 2) || (s->tiebreak);
+    s->tiebreak = false;
+    s->server = 1 - firstServer;
+    if (setWon) {
+        s->sets[w]++;
+        s->games[0] = s->games[1] = 0;
+        s->over = true;   // 今は 1 セットマッチ
+    } else if (s->games[0] == 6 && s->games[1] == 6) {
+        s->tiebreak = true;
+    }
+}
+
+static const char *ScoreText(const Score *s)
+{
+    if (s->tiebreak) return TextFormat("Tiebreak %d - %d", s->points[0], s->points[1]);
+    int a = s->points[0], b = s->points[1];
+    if (a >= 3 && b >= 3) {
+        if (a == b) return "Deuce";
+        return (a > b) ? "Advantage You" : "Advantage AI";
+    }
+    return TextFormat("%s - %s", PointName(a), PointName(b));
+}
+
+typedef enum { MODE_MATCH, MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;
+static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
 typedef enum { SV_READY, SV_TOSS, SV_FLIGHT, SV_WAIT } ServeState;
+typedef enum { PH_SERVE, PH_PLAY, PH_BETWEEN, PH_POINT_OVER } MatchPhase;
 
 int main(void)
 {
@@ -769,10 +1145,10 @@ int main(void)
     int stats[SHOT_COUNT][2] = { 0 };   // [球種][0=打った数, 1=イン]
     bool slowMo = false;
     float accumulator = 0.0f;
-    PracticeMode mode = MODE_RALLY;
+    PracticeMode mode = MODE_MATCH;
     bool proFeed = true;
 
-    // サーブ練習
+    // サーブ（練習・試合共通）
     ServeState sv = SV_READY;
     int   serveNo = 1;                  // 1st / 2nd
     bool  deuceSide = true;
@@ -786,6 +1162,18 @@ int main(void)
     int   svStats[2][2] = { 0 };        // [1st/2nd][0=打った数, 1=イン]
     int   aces = 0, doubleFaults = 0;
 
+    // 試合
+    Opponent ai = { 0 };
+    ai.level = 1;
+    Score score = { 0 };
+    MatchPhase phase = PH_SERVE;
+    bool  serveJudged = false;
+    float phaseTimer = 0.0f;
+    const char *pointMsg = "";
+    bool  needSetup = true;            // 次のポイント（またはセカンドサーブ）の準備をする
+    bool  autopilot = false;           // B：自分側も AI が操作する（観戦モード）
+    Opponent bot = { 0 };              // 自分側を操作する AI（座標は 180° 回した世界）
+
     // 直前のフレームの物理ステップごとのボールの状態。
     // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
     // その間で一番いいタイミングの瞬間を採用する（入力の粗さで損をしないように）
@@ -794,47 +1182,124 @@ int main(void)
 
     while (!WindowShouldClose()) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
+        float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
-        if (IsKeyPressed(KEY_G)) {
-            mode = (PracticeMode)((mode + 1) % MODE_COUNT);
+        bool restart = false;
+        if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
+        for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
+        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
+        if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
+        bot.level = ai.level;
+        if (restart) {
             feedTimer = 0.5f;
             ball = (Ball){ 0 };
             chargingShot = -1; chargingServe = -1;
             sv = SV_READY; serveNo = 1; svTimer = 0.0f; serveMsg = "";
             player = (Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f };
+            playerVel = (Vector3){ 0 };
             hasLast = false;
+            int lvl = ai.level;
+            ai = (Opponent){ 0 };
+            ai.level = lvl;
+            ai.pos = AiHome();
+            score = (Score){ 0 };
+            score.server = rand() % 2;
+            needSetup = true;
+            pointMsg = "";
+            trailCount = 0;
         }
 
-        // ---- 移動（WASD）----
+        // ---- 試合：ポイントの準備 ----
+        int server = CurrentServer(&score);
+        if (mode == MODE_MATCH && needSetup && !score.over) {
+            needSetup = false;
+            bool deuce = DeuceCourt(&score);
+            deuceSide = deuce;
+            ball = (Ball){ 0 };
+            trailCount = 0;
+            ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE;
+            ai.vel = (Vector3){ 0 };
+            playerVel = (Vector3){ 0 };
+            bot.planned = false; bot.leaving = false; bot.swung = false; bot.watching = HITTER_NONE;
+            bot.vel = (Vector3){ 0 };
+            chargingShot = -1; chargingServe = -1;
+            if (server == 0) {
+                player = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+                ai.pos = Rot180(ReturnPos(deuce));
+                ai.standPos = ai.pos;
+                sv = SV_READY;
+            } else {
+                player = ReturnPos(deuce);
+                ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
+                ai.standPos = ai.pos;
+                phaseTimer = 1.5f;
+            }
+            phase = PH_SERVE;
+            serveJudged = false;
+            bot.pos = Rot180(player);
+            bot.standPos = bot.pos;
+            if (autopilot && server == 0) phaseTimer = 1.5f;
+            TraceLog(LOG_INFO, "POINT start: server=%s %s court, %s serve, games %d-%d, %s",
+                     server == 0 ? "YOU" : "AI", deuce ? "deuce" : "ad", serveNo == 1 ? "1st" : "2nd",
+                     score.games[0], score.games[1], ScoreText(&score));
+        }
+        bool playerServing = (mode == MODE_SERVE) || (mode == MODE_MATCH && phase == PH_SERVE && server == 0 && !score.over);
+        bool botControls = autopilot && mode == MODE_MATCH && !score.over;
+
+        // ---- オートパイロット：自分側のサーブ ----
+        if (botControls && playerServing) {
+            phaseTimer -= simDt;
+            if (phaseTimer <= 0.0f) {
+                ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
+                player = Rot180(bot.pos);
+                trailColor = RAYWHITE;
+                trailCount = 0;
+                phase = PH_PLAY;
+                serveJudged = false;
+                sv = SV_FLIGHT;
+            }
+            playerServing = false;
+        }
+
+        // ---- 移動（WASD）。加速・減速あり ----
         Vector3 move = { 0 };
         if (IsKeyDown(KEY_A)) move.x -= 1.0f;
         if (IsKeyDown(KEY_D)) move.x += 1.0f;
         if (IsKeyDown(KEY_W)) move.z -= 1.0f;
         if (IsKeyDown(KEY_S)) move.z += 1.0f;
-        playerVel = (Vector3){ 0 };
-        if (mode == MODE_SERVE) {
+        if (botControls) {
+            // オートパイロット：AI と同じ関数で走る
+            if (phase == PH_PLAY || phase == PH_POINT_OVER) {
+                Ball fb = FlipSides(ball);
+                AiUpdate(&bot, &fb, simDt);
+                player = Rot180(bot.pos);
+                playerVel = Rot180(bot.vel);
+            }
+        } else if (playerServing) {
             // サーブ前はベースラインに沿って左右だけ動ける（センターマークを越えない）
+            playerVel = (Vector3){ 0 };
             if (sv == SV_READY && move.x != 0.0f) {
                 player.x += move.x * 2.0f * frameDt;
                 player.x = deuceSide ? Clamp(player.x, 0.2f, SINGLES_W * 0.5f) : Clamp(player.x, -SINGLES_W * 0.5f, -0.2f);
             }
             player.z = HALF_LEN + 0.15f;
-        } else if (Vector3Length(move) > 0.0f) {
+        } else {
             // 溜めている間は少し遅くなる（構えながら動く）
             float spd = PLAYER_SPEED * (chargingShot >= 0 ? 0.6f : 1.0f);
-            playerVel = Vector3Scale(Vector3Normalize(move), spd);
-            player = Vector3Add(player, Vector3Scale(playerVel, frameDt));
+            Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
+            playerVel = Accelerate(playerVel, want, PLAYER_ACCEL, PLAYER_BRAKE, simDt);
+            player = Vector3Add(player, Vector3Scale(playerVel, simDt));
             player.x = Clamp(player.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
-            player.z = Clamp(player.z, 1.0f, HALF_LEN + 5.0f);
+            player.z = Clamp(player.z, 0.5f, HALF_LEN + 5.0f);
         }
 
-        // ---- サーブ ----
+        // ---- サーブ（自分）----
         Vector3 tossIdeal = { player.x + 0.25f, SERVE_REACH, player.z - 0.35f };   // 理想の打点
-        if (mode == MODE_SERVE) {
+        if (playerServing) {
             if (sv == SV_READY) {
                 for (int s = 0; s < SERVE_COUNT; s++) {
                     if (!IsKeyPressed(serveKeys[s])) continue;
@@ -864,12 +1329,17 @@ int main(void)
                         if (best < 0 || fabsf(hb->pos.y - SERVE_REACH) < fabsf(history[best].pos.y - SERVE_REACH)) best = h;
                     }
                     lastServeType = type;
-                    svStats[serveNo - 1][0]++;
+                    if (mode == MODE_SERVE) svStats[serveNo - 1][0]++;
                     if (best < 0) {
                         serveMsg = "WHIFF (ball above reach)";   // 空振りはフォルト
                         lastServeKmh = 0.0f;
-                        ball.result = RESULT_OUT;
+                        // フォルトとして判定させる
+                        ball = (Ball){ 0 };
+                        ball.isServe = true; ball.bounces = 1; ball.result = RESULT_OUT;
+                        ball.lastHitter = HITTER_PLAYER;
+                        ball.netClearance = -99.0f;
                         sv = SV_FLIGHT;
+                        if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     } else {
                         Ball hb = history[best];
                         float qH = Clamp01(1.0f - fabsf(hb.pos.y - SERVE_REACH) / SERVE_TOL_H);
@@ -892,6 +1362,7 @@ int main(void)
                         trailCount = 0;
                         serveAce = false;
                         sv = SV_FLIGHT;
+                        if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     }
                 } else if (ball.pos.y < 1.2f && ball.vel.y < 0.0f) {
                     // 打たずに落とした：トスのやり直し（ペナルティなし）
@@ -900,24 +1371,25 @@ int main(void)
                     serveMsg = "Let the toss drop - toss again";
                     sv = SV_READY;
                 }
-            } else if (sv == SV_FLIGHT) {
-                // 1バウンド目で判定
-                if (ball.result != RESULT_NONE) {
-                    bool in = ball.result == RESULT_IN;
-                    if (in) {
-                        svStats[serveNo - 1][1]++;
-                        serveMsg = "IN";
-                    } else if (serveNo == 1) {
-                        serveMsg = (ball.result == RESULT_NET) ? "FAULT (net)" : (serveMsg[0] ? serveMsg : "FAULT (out)");
-                    } else {
-                        serveMsg = (ball.result == RESULT_NET) ? "DOUBLE FAULT (net)" : "DOUBLE FAULT";
-                        doubleFaults++;
-                    }
-                    if (!in && serveNo == 1) serveNo = 2;
-                    else { serveNo = 1; deuceSide = !deuceSide; }
-                    svTimer = 2.0f;
-                    sv = SV_WAIT;
+            }
+        }
+        // サーブ練習：結果の集計と次のサーブ
+        if (mode == MODE_SERVE) {
+            if (sv == SV_FLIGHT && ball.result != RESULT_NONE) {
+                bool in = ball.result == RESULT_IN;
+                if (in) {
+                    svStats[serveNo - 1][1]++;
+                    serveMsg = "IN";
+                } else if (serveNo == 1) {
+                    serveMsg = (ball.result == RESULT_NET) ? "FAULT (net)" : (serveMsg[0] ? serveMsg : "FAULT (out)");
+                } else {
+                    serveMsg = (ball.result == RESULT_NET) ? "DOUBLE FAULT (net)" : "DOUBLE FAULT";
+                    doubleFaults++;
                 }
+                if (!in && serveNo == 1) serveNo = 2;
+                else { serveNo = 1; deuceSide = !deuceSide; }
+                svTimer = 2.0f;
+                sv = SV_WAIT;
             } else if (sv == SV_WAIT) {
                 svTimer -= frameDt;
                 if (svTimer <= 0.0f) {
@@ -928,8 +1400,20 @@ int main(void)
             }
         }
 
-        // ---- スイング（ラリー・リターン）----
-        if (mode != MODE_SERVE) {
+        // ---- 試合：AI のサーブ ----
+        if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over) {
+            phaseTimer -= simDt;
+            if (phaseTimer <= 0.0f) {
+                ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
+                trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
+                trailCount = 0;
+                phase = PH_PLAY;
+                serveJudged = false;
+            }
+        }
+
+        // ---- スイング（ラリー・リターン・試合）----
+        if (!playerServing && mode != MODE_SERVE && !botControls) {
             if (chargingShot < 0) {
                 bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
                 for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
@@ -957,8 +1441,9 @@ int main(void)
                     int bestIdx = -1;
                     for (int h = 0; h < historyCount; h++) {
                         const Ball *hb = &history[h];
-                        bool hittable = hb->active && hb->lastHitter == HITTER_MACHINE &&
-                                        hb->bounces <= 1 && hb->pos.z > 0.0f && !hb->hitNet;
+                        bool hittable = hb->active && hb->lastHitter == HITTER_OPP &&
+                                        hb->bounces <= 1 && hb->pos.z > 0.0f && !hb->hitNet &&
+                                        (!hb->isServe || hb->bounces == 1);   // サーブはバウンドしてから
                         if (!hittable) continue;
                         Contact hc = EvaluateContact(player, hb, type, charge);
                         if (bestIdx < 0 || fabsf(hc.fwdErr) < fabsf(c.fwdErr)) { c = hc; bestIdx = h; }
@@ -981,7 +1466,7 @@ int main(void)
                 }
             }
         }
-        if (IsKeyPressed(KEY_R)) {
+        if (IsKeyPressed(KEY_R) && mode != MODE_MATCH) {
             // ITF のバウンドテスト: 2.54m から落とす
             ball = (Ball){ 0 };
             ball.pos = (Vector3){ 0.0f, 2.54f, -3.0f };
@@ -991,8 +1476,11 @@ int main(void)
             feedTimer = 4.0f;
         }
 
+        // ---- AI：反応して走る ----
+        if (mode == MODE_MATCH && phase == PH_PLAY) AiUpdate(&ai, &ball, simDt);
+
         // ---- 物理（固定ステップ）----
-        accumulator += frameDt * (slowMo ? 0.25f : 1.0f);
+        accumulator += simDt;
         historyCount = 0;
         history[historyCount++] = ball;
         while (accumulator >= PHYS_DT) {
@@ -1000,21 +1488,80 @@ int main(void)
             if (historyCount < 64) history[historyCount++] = ball;
             accumulator -= PHYS_DT;
 
+            // AI のスイング（物理と同じ細かさで）
+            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
+                if (AiSwing(&ai, &ball, player)) {
+                    trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
+                    trailCount = 0;
+                }
+            }
+            if (botControls && phase == PH_PLAY && bot.planned && ball.age >= bot.swingAge) {
+                Ball fb = FlipSides(ball);
+                if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
+                    ball = FlipSides(fb);
+                    trailColor = SHOTS[bot.lastType].color;
+                    trailCount = 0;
+                }
+            }
+
             trailTimer += PHYS_DT;
             if (ball.active && trailTimer >= 1.0f / 120.0f) {
                 trailTimer = 0.0f;
                 if (trailCount < TRAIL_N) trail[trailCount++] = ball.pos;
             }
 
-            // サーブがエース級か：レシーバー（ボックス中央、ベースラインの 0.8m 後ろ）が
-            // 反応 0.3 秒・6m/s で動いて、ラケット（体から 1.7m）が届かなければエース
+            // サーブ練習：エース級か（レシーバーが反応 0.3 秒・6m/s で、踏み込んで届くか）
             if (mode == MODE_SERVE && ball.isServe && ball.result == RESULT_IN && ball.bounces == 1 &&
                 !serveAce && ball.pos.z <= -HALF_LEN - 0.8f) {
                 float retX = 0.5f * (ball.boxX0 + ball.boxX1);
                 float canMove = fmaxf(ball.age - 0.3f, 0.0f) * PLAYER_SPEED;
-                if (fabsf(ball.pos.x - retX) - REACH_SIDE > canMove) { serveAce = true; aces++; serveMsg = "ACE!"; }
-                else serveAce = true;   // 判定済み（エースではない）
-                if (serveMsg[0] != 'A') serveMsg = "IN (returnable)";
+                serveAce = true;
+                if (fabsf(ball.pos.x - retX) - REACH_SIDE > canMove) { aces++; serveMsg = "ACE!"; }
+                else serveMsg = "IN (returnable)";
+            }
+        }
+
+        // ---- 試合：ポイントの判定 ----
+        if (mode == MODE_MATCH && phase == PH_PLAY) {
+            int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
+            int winner = -1;
+            if (ball.isServe && !serveJudged && ball.bounces >= 1) {
+                if (ball.result == RESULT_IN) {
+                    serveJudged = true;
+                } else if (serveNo == 1) {
+                    serveNo = 2;
+                    pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
+                    TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
+                    phase = PH_BETWEEN;
+                    phaseTimer = 1.5f;
+                } else {
+                    winner = 1 - hitter;
+                    pointMsg = "Double fault";
+                }
+            } else if (!ball.isServe || serveJudged) {
+                if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
+                    winner = 1 - hitter;
+                    pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
+                                                           : (hitter == 0 ? "Your error (out)" : "AI error (out)");
+                } else if (ball.bounces >= 2) {
+                    winner = hitter;
+                    if (ball.isServe) pointMsg = (hitter == 0) ? "Your ace / unreturned serve" : "AI ace / unreturned serve";
+                    else              pointMsg = (hitter == 0) ? "Your winner" : "AI winner";
+                }
+            }
+            if (winner >= 0) {
+                TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
+                AwardPoint(&score, winner);
+                phase = PH_POINT_OVER;
+                phaseTimer = 2.0f;
+            }
+        } else if (mode == MODE_MATCH && (phase == PH_BETWEEN || phase == PH_POINT_OVER)) {
+            phaseTimer -= simDt;
+            if (phase == PH_POINT_OVER) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
+            if (phaseTimer <= 0.0f) {
+                if (phase == PH_POINT_OVER) serveNo = 1;
+                needSetup = true;
+                pointMsg = "";
             }
         }
 
@@ -1024,17 +1571,18 @@ int main(void)
             scoredLast = true;
         }
 
-        // 次の球出し：打球が落ちた / 打ち損ねて2バウンド / 止まった
-        if (mode != MODE_SERVE) {
+        // 次の球出し（練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
+        if (mode == MODE_RALLY || mode == MODE_RETURN) {
             bool rallyOver = !ball.active || ball.hitNet ||
                              (ball.lastHitter == HITTER_PLAYER  && ball.bounces >= 1) ||
-                             (ball.lastHitter == HITTER_MACHINE && ball.bounces >= 2);
+                             (ball.lastHitter == HITTER_OPP && ball.bounces >= 2);
             if (rallyOver) {
                 feedTimer -= frameDt;
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
                         ball = MachineServe();
-                        player = (Vector3){ 2.4f, 0.0f, HALF_LEN + 0.8f };   // リターンの構え位置へ
+                        player = ReturnPos(true);   // リターンの構え位置へ
+                        playerVel = (Vector3){ 0 };
                     } else {
                         ball = MachineFeed(proFeed);
                     }
@@ -1066,8 +1614,12 @@ int main(void)
             // プレイヤー（仮）。正面が -z
             DrawCapsule((Vector3){ player.x, 0.3f, player.z }, (Vector3){ player.x, 1.5f, player.z },
                         0.25f, 8, 4, (Color){ 230, 120, 60, 255 });
+            // AI
+            if (mode == MODE_MATCH)
+                DrawCapsule((Vector3){ ai.pos.x, 0.3f, ai.pos.z }, (Vector3){ ai.pos.x, 1.5f, ai.pos.z },
+                            0.25f, 8, 4, (Color){ 70, 90, 200, 255 });
 
-            if (mode == MODE_SERVE) {
+            if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
                 float x0, x1;
                 ServiceBox(player.x, -1, &x0, &x1);
@@ -1078,7 +1630,7 @@ int main(void)
                 // 構えているときはボールを手に持つ
                 if (sv == SV_READY)
                     DrawSphere((Vector3){ player.x + 0.25f, 1.0f, player.z - 0.3f }, BALL_R, (Color){ 210, 240, 40, 255 });
-            } else {
+            } else if (mode != MODE_SERVE) {
                 // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す
                 ShotType t = (chargingShot >= 0) ? (ShotType)chargingShot : SHOT_TOP;
                 float h = SHOTS[t].idealHeight;
@@ -1104,10 +1656,11 @@ int main(void)
         // ---- HUD ----
         DrawRectangle(10, 10, 500, 290, Fade(BLACK, 0.5f));
         int y = 20;
-        if (mode == MODE_SERVE) {
+        bool showServeInfo = (mode == MODE_SERVE) || (playerServing && mode == MODE_MATCH);
+        if (showServeInfo) {
             DrawText(TextFormat("%s serve  -  %s court", serveNo == 1 ? "1st" : "2nd", deuceSide ? "deuce" : "ad"),
                      20, y, 22, RAYWHITE); y += 30;
-            if (svStats[0][0] + svStats[1][0] > 0) {
+            if (lastServeKmh > 0.0f || serveMsg[0]) {
                 if (lastServeKmh > 0.0f) {
                     DrawText(TextFormat("%s  %.0f km/h", SERVES[lastServeType].name, lastServeKmh), 20, y, 18, SERVES[lastServeType].color); y += 22;
                     DrawText(TextFormat("Contact height %.2f m (reach %.2f)  quality %.0f%%", lastServeH, SERVE_REACH, lastServeQ * 100.0f),
@@ -1124,11 +1677,7 @@ int main(void)
                 DrawText("A/D: position.  Hold L flat / K slice / J kick to toss,", 20, y, 18, RAYWHITE); y += 22;
                 DrawText("release to hit. A/D/W/S at release = course.", 20, y, 18, RAYWHITE); y += 22;
                 DrawText("Keep holding to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
-                DrawText(serveMsg, 20, y, 18, YELLOW); y += 30;
             }
-            y = 176;
-            DrawText(TextFormat("1st in %d/%d   2nd in %d/%d", svStats[0][1], svStats[0][0], svStats[1][1], svStats[1][0]), 20, y, 18, RAYWHITE); y += 20;
-            DrawText(TextFormat("Aces %d   Double faults %d", aces, doubleFaults), 20, y, 18, RAYWHITE); y += 24;
         } else if (hasLast) {
             const Contact *c = &lastContact;
             if (c->miss != MISS_NONE) {
@@ -1152,12 +1701,14 @@ int main(void)
                 }
                 y += 24;
             }
-            y = 176;
         } else {
             DrawText("Move to the ball, hold J/K/L, release to swing", 20, y, 18, RAYWHITE);
-            y = 176;
         }
-        if (mode != MODE_SERVE) {
+        y = 176;
+        if (mode == MODE_SERVE) {
+            DrawText(TextFormat("1st in %d/%d   2nd in %d/%d", svStats[0][1], svStats[0][0], svStats[1][1], svStats[1][0]), 20, y, 18, RAYWHITE); y += 20;
+            DrawText(TextFormat("Aces %d   Double faults %d", aces, doubleFaults), 20, y, 18, RAYWHITE); y += 24;
+        } else {
             DrawText(TextFormat("IN  flat %d/%d   top %d/%d   slice %d/%d",
                                 stats[SHOT_FLAT][1], stats[SHOT_FLAT][0], stats[SHOT_TOP][1], stats[SHOT_TOP][0],
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0]), 20, y, 18, RAYWHITE); y += 20;
@@ -1166,8 +1717,34 @@ int main(void)
                                 stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 18, RAYWHITE); y += 24;
         }
         DrawText("WASD move/aim  J top K slice L flat  +Shift: lob/drop", 20, y, 16, LIGHTGRAY); y += 18;
-        DrawText(TextFormat("G mode: %s   V feed: %s   F feed  C cam  T slow", MODE_NAMES[mode], proFeed ? "PRO" : "CLUB"),
-                 20, y, 16, LIGHTGRAY);
+        if (mode == MODE_MATCH)
+            DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
+        else
+            DrawText(TextFormat("G mode: %s   V feed: %s   F feed  C cam  T slow", MODE_NAMES[mode], proFeed ? "PRO" : "CLUB"),
+                     20, y, 16, LIGHTGRAY);
+
+        // スコア（試合）
+        if (mode == MODE_MATCH) {
+            int sx = GetScreenWidth() - 330;
+            DrawRectangle(sx, 10, 320, 120, Fade(BLACK, 0.55f));
+            DrawText(TextFormat("YOU %d   AI %d   (games)", score.games[0], score.games[1]), sx + 12, 20, 22, RAYWHITE);
+            DrawText(ScoreText(&score), sx + 12, 50, 26, YELLOW);
+            DrawText(TextFormat("Serving: %s  %s", server == 0 ? "YOU" : "AI", serveNo == 2 ? "(2nd)" : ""), sx + 12, 84, 18, LIGHTGRAY);
+            if (ai.lastKmh > 0.0f)
+                DrawText(TextFormat("AI last: %s %.0f km/h", ball.isServe && ball.lastHitter == HITTER_OPP ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
+                         sx + 12, 106, 16, LIGHTGRAY);
+            if (pointMsg[0]) {
+                int w = MeasureText(pointMsg, 34);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));
+                DrawText(pointMsg, GetScreenWidth() / 2 - w / 2, 158, 34, YELLOW);
+            }
+            if (score.over) {
+                const char *m = score.sets[0] > score.sets[1] ? "YOU WIN THE SET!  (Enter: new match)" : "AI WINS THE SET  (Enter: new match)";
+                int w = MeasureText(m, 30);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 220, w + 32, 46, Fade(BLACK, 0.7f));
+                DrawText(m, GetScreenWidth() / 2 - w / 2, 228, 30, RAYWHITE);
+            }
+        }
 
         // 溜めゲージ
         int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 60;
@@ -1186,7 +1763,8 @@ int main(void)
             DrawRectangle(gx, gy, (int)(gw * charge), 20, sp->color);
             DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), gx, gy - 24, 20, RAYWHITE);
         }
-        if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, 20, 20, RED);
+        if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
+        if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
         EndDrawing();
     }
 

@@ -19,4 +19,10 @@ $(TARGET): main.c
 	$(CC) $(CFLAGS) main.c -o $(TARGET) $(LIBS)
 
 clean:
-	rm -f tennis tennis.exe
+	rm -f tennis tennis.exe ai_vs_ai
+
+# AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
+RAYLIB_INC ?= /usr/local/include
+sim: tools/ai_vs_ai.c main.c
+	$(CC) -std=c99 -O2 -DRAYMATH_STATIC_INLINE -I$(RAYLIB_INC) tools/ai_vs_ai.c -o ai_vs_ai -lm -Wl,--unresolved-symbols=ignore-all
+	./ai_vs_ai
