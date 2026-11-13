@@ -253,10 +253,10 @@ int main(void)
             deuceSide = deuce;
             ball = (Ball){ 0 };
             trailCount = 0;
-            ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE;
+            ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;
             ai.vel = (Vector3){ 0 };
             P.vel = (Vector3){ 0 };
-            bot.planned = false; bot.leaving = false; bot.swung = false; bot.watching = HITTER_NONE;
+            bot.planned = false; bot.leaving = false; bot.swung = false; bot.watching = HITTER_NONE; bot.netRush = false;
             bot.vel = (Vector3){ 0 };
             bot.downTimer = 0.0f; bot.anim = (SwingAnim){ .swingT = -1.0f };
             ai.downTimer = 0.0f; ai.anim = (SwingAnim){ .swingT = -1.0f };
@@ -888,7 +888,11 @@ int main(void)
             } else if (mode != MODE_SERVE && !botControls) {
                 // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
                 DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
-                DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, REACH_SIDE, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
+                {   // 届く限界：溜めている球種（スライスは広い）、スライド、簡単モードで広がる
+                    float rr = REACH_SIDE + (P.chargingShot >= 0 ? SHOTS[P.chargingShot].reach : 0.0f)
+                             + (P.sliding ? SLIDE_REACH : 0.0f) + (style == STYLE_CASUAL ? CASUAL_REACH : 0.0f);
+                    DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, rr, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
+                }
                 // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す。頭上で構えていれば頭上
                 ShotType t = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 Color zc = Fade(SHOTS[t].color, 0.8f);

@@ -76,6 +76,12 @@ Ball FlipSides(Ball b)
 }
 
 // AI のホームポジション（ワールド座標）
+// ネットでの構え（ワールド座標）：自分が打ったコースの側に寄って、ネットから 2.6m
+Vector3 AiNetPos(const Opponent *ai)
+{
+    return Rot180((Vector3){ Clamp(ai->lastTargetX * 0.45f, -2.2f, 2.2f), 0.0f, 2.6f });
+}
+
 Vector3 AiHome(void) { return (Vector3){ 0.0f, 0.0f, -(HALF_LEN + 0.8f) }; }
 
 // リターンの構え位置（自分側の座標。AI は Rot180 して使う）。ボックスの外寄り、ベースラインの 1.3m 後ろ
@@ -103,12 +109,15 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
         if (!misjudge) {
             ai->leaving = true;
             ai->planned = false;
-            ai->standPos = AiHome();
+            ai->standPos = ai->netRush ? ai->pos : AiHome();   // ネットにいれば、そのまま見送る
             return;
         }
     }
 
-    // 2) バウンド後の軌道の中から、間に合って、打ちやすい高さの点を選ぶ
+    // 2) 軌道の中から、間に合って、打ちやすい点を選ぶ
+    //    ベースライン：バウンド後の、高さ 1m 前後
+    //    ネット（サービスラインより前）：バウンド前のボレー（早く触るほどいい）、高ければスマッシュ
+    bool atNet = me.z < SERVICE_Z + 1.5f;
     Ball q = b;
     float t = 0.0f;
     float bestCost = 1e9f, bestT = -1.0f;
@@ -119,12 +128,30 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     for (int i = 0; i < 240 * 4 && q.active && q.bounces < 2; i++) {
         StepBall(&q, PHYS_DT);
         t += PHYS_DT;
-        if (i % 2 != 0 || q.bounces != 1 || q.pos.z <= 0.0f) continue;
-        // フォアかバックか、近い方で構える
-        Vector3 fore = { q.pos.x - IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
-        Vector3 back = { q.pos.x + IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
-        Vector3 stand = (Vector3Distance(fore, me) <= Vector3Distance(back, me)) ? fore : back;
-        float cost = fabsf(q.pos.y - 1.0f) + 0.4f * fmaxf(q.pos.z - (HALF_LEN + 2.0f), 0.0f);
+        if (i % 2 != 0 || q.pos.z <= 0.0f) continue;
+        bool volley = q.bounces == 0;
+        if (volley && !(atNet && q.pos.z > 0.3f && q.pos.y > 0.3f && q.pos.y < OVERHEAD_MAX_H)) continue;
+        if (!volley && q.bounces != 1) continue;
+        Vector3 stand;
+        float cost;
+        if (volley && q.pos.y > OVERHEAD_MIN_H) {
+            // スマッシュ：球の少し後ろ左に入る
+            stand = (Vector3){ q.pos.x - OVERHEAD_SIDE, 0.0f, q.pos.z + OVERHEAD_FWD };
+            cost = 0.6f * fabsf(q.pos.y - OVERHEAD_IDEAL_H) + 0.25f * t;
+        } else if (volley) {
+            // ボレー：体の横やや前（40°）で触る。早いほどいい（相手に時間を与えない）
+            Vector3 fore = { q.pos.x - 0.72f, 0.0f, q.pos.z + 0.60f };
+            Vector3 back = { q.pos.x + 0.72f, 0.0f, q.pos.z + 0.60f };
+            stand = (Vector3Distance(fore, me) <= Vector3Distance(back, me)) ? fore : back;
+            cost = 0.3f * t + 0.3f * fabsf(q.pos.y - 1.2f);
+        } else {
+            // フォアかバックか、近い方で構える
+            Vector3 fore = { q.pos.x - IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
+            Vector3 back = { q.pos.x + IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
+            stand = (Vector3Distance(fore, me) <= Vector3Distance(back, me)) ? fore : back;
+            cost = fabsf(q.pos.y - 1.0f) + 0.4f * fmaxf(q.pos.z - (HALF_LEN + 2.0f), 0.0f);
+            if (atNet) cost += 0.6f;   // ネットにいるなら、バウンドさせるよりボレーで取りたい
+        }
         // 理想の距離で構えるのが無理なら、踏み込んで腕を伸ばせば届く位置（体から 1.75m）でもいい（ただし打点は悪くなる）
         for (int option = 0; option < 2; option++) {
             Vector3 st = stand;
@@ -174,6 +201,27 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     else if (c->height > 1.05f && c->quality > 0.55f && r < lv->aggression) t = SHOT_FLAT;   // 高くていい打点 → 叩く
     if (playerAtNet && (stretched || r < 0.35f)) t = SHOT_TOP_LOB;              // 前に来たらロブ
     if (c->overhead) t = SHOT_FLAT;                                             // 頭上はスマッシュ
+
+    // ネットでのボレー・スマッシュ：相手のいない方へ。相手が下がっていれば短いアングルかドロップボレー
+    if (c->volley) {
+        bool oppBack = playerAi.z < -(HALF_LEN - 1.0f);   // 相手がベースライン付近まで下がっている
+        float side = (playerAi.x > 0.3f) ? -1.0f : (playerAi.x < -0.3f ? 1.0f : ((rand() % 2) ? 1.0f : -1.0f));
+        if (c->overhead) {
+            t = SHOT_FLAT;
+            *charge = 0.7f + 0.3f * lv->aggression;
+            *target = (Vector3){ side * (2.6f + 0.8f * lv->aggression), 0.0f, -8.5f };
+        } else if (oppBack && r < 0.25f * lv->aggression) {
+            t = SHOT_DROP;
+            *charge = 0.6f;
+            *target = (Vector3){ side * 2.5f, 0.0f, -2.5f };
+        } else {
+            t = (c->height > 1.2f && c->quality > 0.5f) ? SHOT_FLAT : SHOT_SLICE;   // 高ければ叩く、低ければスライスで運ぶ
+            *charge = RandRange(0.35f, 0.6f);
+            bool angle = oppBack && r < 0.5f;
+            *target = (Vector3){ side * (angle ? 3.4f : 2.4f + 1.0f * lv->aggression), 0.0f, angle ? -5.5f : -9.5f };
+        }
+        return t;
+    }
     if (playerDeep && meAi.z < HALF_LEN - 1.0f && r < 0.15f * lv->aggression) t = SHOT_DROP;
 
     // 球速の目安（打ち出し）。プロのラリーはフラット 130〜150、トップ 110〜135、スライス 80〜100km/h くらい
@@ -213,6 +261,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 // AI が振る。当たったら true（ball は AI の打球に置き換わる）
 bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
 {
+    const AiLevel *lv = &AI_LEVELS[ai->level];
     ai->swung = true;
     ai->planned = false;
     Ball b = RotBall(*ball);
@@ -238,6 +287,14 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
+    ai->lastTargetX = target.x;
+    // 前に出るか：甘い球をベースラインの内側で攻めたら、強気なほど前に出る。ネットにいれば残る。
+    // ロブで下がらされたら（サービスラインより 3m 以上後ろ）、ネットはあきらめる
+    if (me.z > SERVICE_Z + 3.0f) ai->netRush = false;
+    if (!ai->netRush && !c.dive && me.z < HALF_LEN - 2.0f && t <= SHOT_SLICE &&
+        RandRange(0.0f, 1.0f) < 0.25f + 0.6f * lv->aggression)
+        ai->netRush = true;
+    if (me.z < SERVICE_Z + 1.5f) ai->netRush = true;
     out.lastHitter = HITTER_OPP;
     *ball = RotBall(out);
     ai->lastType = t;
@@ -285,6 +342,9 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     ai->anim.swingT = 0.0f;
     ai->lastKmh = kmh;
     ai->planned = false;
+    ai->lastTargetX = target.x;
+    // サーブ＆ボレー：強気な AI がたまに。芝では多め
+    ai->netRush = first && RandRange(0.0f, 1.0f) < 0.15f * lv->aggression + (gSurface == SURF_GRASS ? 0.25f * lv->aggression : 0.0f);
     return RotBall(b);
 }
 
@@ -299,7 +359,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->swung = false;
         // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
         if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
-        else ai->standPos = AiHome();   // 自分が打った後：戻る
+        else ai->standPos = ai->netRush ? AiNetPos(ai) : AiHome();   // 自分が打った後：ネットに詰めるか、戻る
     }
     // 見た目のタイマー
     if (ai->anim.swingT >= 0.0f) ai->anim.swingT = fminf(ai->anim.swingT + dt, 5.0f);

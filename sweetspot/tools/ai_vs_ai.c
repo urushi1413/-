@@ -10,7 +10,7 @@ typedef struct{int unret,points,rallyShots,aces,df,errNet,errOut,winners,unreach
 static int Point(Opponent*O,Opponent*P,int server,bool deuce,St*st){
   Ball ball; int serveNo=1;
 again:
-  O->planned=P->planned=false; O->swung=P->swung=false; O->leaving=P->leaving=false; O->watching=P->watching=HITTER_NONE; O->vel=P->vel=(Vector3){0};
+  O->planned=P->planned=false; O->netRush=P->netRush=false; O->swung=P->swung=false; O->leaving=P->leaving=false; O->watching=P->watching=HITTER_NONE; O->vel=P->vel=(Vector3){0};
   if(server==1){ ball=AiServe(O,deuce,serveNo==1); P->pos=Rot180(ReturnPos(deuce,serveNo==2)); }
   else { Ball bp=AiServe(P,deuce,serveNo==1); ball=Flip(bp); O->pos=Rot180(ReturnPos(deuce,serveNo==2)); }
   if(serveNo==1) st->firstTot++;

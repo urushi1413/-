@@ -28,6 +28,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
     if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
     if (gCasual) reachBonus += CASUAL_REACH;
+    reachBonus += SHOTS[type].reach;   // 球種ごとのリーチ（スライスは腕を伸ばして届く）
     if (!c.overhead && ang < (gCasual ? -80.0f : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
@@ -46,7 +47,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         c.qHeight = 1.0f;
     } else {
         float idealAng = c.volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
-        float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk;
+        float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + reachBonus) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
         c.qHeight = Clamp(1.0f - fabsf(bp.y - sp->idealHeight) / (sp->tolHeight * hk), 0.10f, 1.0f);

@@ -180,6 +180,8 @@ typedef struct {
     bool  highArc;
     float touchAngle;
     Color color;
+    float tolTiming;        // タイミングの許容幅の倍率（スライスは面を合わせるだけなので広い、フラットは狭い）
+    float reach;            // リーチの上乗せ（m）。スライスは片手で腕を伸ばして届く
 } ShotSpec;
 
 typedef struct {
@@ -279,6 +281,8 @@ typedef struct {
     int     level;
     float   downTimer;    // 飛びついて倒れている間は動けない
     bool    sliding;      // 滑り込んでいる
+    bool    netRush;      // ネットに出ている（出ようとしている）
+    float   lastTargetX;  // 最後に打ったコース（AI 座標）。ネットではその側を守る
     bool    planFore;     // フォアで打つ予定
     SwingAnim anim;
     // 最後のショット（HUD 用）
@@ -398,6 +402,7 @@ Vector3 Accelerate(Vector3 vel, Vector3 want, float a, float b, float dt);
 Vector3 MoveToward(Vector3 *pos, Vector3 vel, Vector3 target, float vmax, float dt);
 Ball FlipSides(Ball b);
 Vector3 AiHome(void);
+Vector3 AiNetPos(const Opponent *ai);
 Vector3 ReturnPos(bool deuce, bool second);
 void AiPlan(Opponent *ai, const Ball *worldBall);
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge, Vector3 *target);
