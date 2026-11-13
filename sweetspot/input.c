@@ -30,6 +30,7 @@ void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, f
     bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     bool ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
     bool space = IsKeyDown(KEY_SPACE);
+    in->crouch = IsKeyDown(KEY_Q);
 
     // キーボードの J/K/L
     const InputSource keySrc[SHOT_NORMAL_COUNT] = { SRC_KEY_L, SRC_KEY_J, SRC_KEY_K };   // フラット / トップ / スライス

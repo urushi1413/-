@@ -76,7 +76,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + qualityReach + sp->reach) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
-        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y, c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
+        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y + (gCrouch ? CROUCH_LIFT : 0.0f), c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
     if (c.dive) c.quality *= DIVE_QUALITY;
@@ -139,16 +139,27 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
         ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * errMul * DEG2RAD;
     } else {
+        if (c->volley && !c->overhead) {
+            // ボレー：速すぎて狙った所に落とせない（ネットを越えてから落ちきらない）なら、面で勢いを殺して遅くする
+            for (int it = 0; it < 10 && kmh > VOLLEY_MIN_KMH; it++) {
+                float a0 = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
+                if (PredictLandingDist(ballPos, dirFlat, kmh / 3.6f, a0, rpm) <= dist + 0.5f &&
+                    PredictNetClearance(ballPos, dirFlat, kmh / 3.6f, a0, rpm) >= 0.10f) break;
+                kmh = fmaxf(kmh * 0.88f, VOLLEY_MIN_KMH);
+            }
+        }
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
-        angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
+        // ボレーは面を固めて当てるだけなので、上下のぶれは小さい
+        angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul
+               * (c->volley && !c->overhead ? VOLLEY_PITCH_ERR : 1.0f) * DEG2RAD;
         // 跳ね返りの分は、来た球の上下の動きを持ったまま出ていく：
         //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
         //   うまく当てるほど面で抑えられるが、半分は残る
         float vin = fmaxf(c->inKmh / 3.6f, 1.0f);
         //   リターンは遅く合わせる分もともと高い弾道になるので、上へのずれは半分（入るが浮く）
         angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
-                * (c->isReturn ? 0.5f : 1.0f);
+                * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f);   // ボレーは面で押さえるので小さい
         ang += angErr;
     }
 

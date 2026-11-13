@@ -223,6 +223,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
     float hipY = 0.86f - 0.04f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
     Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.06f + mdz * 0.10f * move };   // 前傾（走る向きへ）
+    // しゃがむ（Q）：腰を落として前に屈む
+    hipY -= 0.30f * a->crouch;
+    leanV.z += 0.10f * a->crouch;
 
     // ---- サーブ・スマッシュ：トスで膝を深く曲げて反り、振るときに伸び上がって跳ぶ ----
     bool overheadPose = (strokeK == 2) && (swinging || a->windup > 0.0f) && move < 0.5f;

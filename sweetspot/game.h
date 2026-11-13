@@ -70,6 +70,10 @@ typedef struct {
 #define RETURN_SWING     0.65f   // リターンはコンパクトに合わせる：自分のスイングの分はこの割合（入るが浮きやすい）
 #define LUNGE_TIME       0.40f   // 跳んで伸びる見た目の長さ（秒）
 #define LUNGE_R          1.35f   // これより遠い球は、足を大きく踏み出して取る（見た目）
+#define VOLLEY_MIN_KMH   35.0f   // ボレーで勢いを殺すときの下限
+#define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）
+#define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
+#define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
@@ -266,6 +270,7 @@ typedef struct {
     float   runPhase;      // 走りの足の動き
     bool    sliding;       // 滑っている（低く広い構え）
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
+    float   crouch;        // しゃがみ（0〜1、見た目）
     float   lungeT;        // 跳んで伸びて取った後の残り時間（見た目）
     float   lungeSide;     // 跳んだ向き（体から見て右 +1、左 -1）
     float   velX, velZ;    // 走っている速さ（体から見て：x=右、z=前）
@@ -428,6 +433,7 @@ typedef enum { PH_SERVE, PH_PLAY, PH_BETWEEN, PH_POINT_OVER } MatchPhase;
 // ---- 表とグローバル変数 ----
 extern SurfaceType gSurface;
 extern bool gCasual;
+extern bool gCrouch;   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];
 extern const char *STYLE_NAMES[STYLE_COUNT];
 extern const ShotSpec SHOTS[SHOT_COUNT];
@@ -554,6 +560,7 @@ typedef struct {
     int  serve;                 // 押されたサーブ（-1：なし）
     InputSource source;         // 押した入力（離されたら振る）
     bool released[SRC_COUNT];   // 離された入力
+    bool crouch;                // しゃがむ（Q を押している間）
 } PlayerInput;
 
 void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);

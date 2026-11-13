@@ -272,7 +272,7 @@ int main(void)
             int hy = rowY0 + n * rowH + 14;
             DrawText("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", px + 30, hy, 16, LIGHTGRAY);
             DrawText("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", px + 30, hy + 24, 16, LIGHTGRAY);
-            DrawText("Shift+click lob, Ctrl+click drop, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
+            DrawText("Shift+click lob, Ctrl+click drop, Q crouch, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
             EndDrawing();
             continue;
         }
@@ -422,7 +422,7 @@ int main(void)
             P.vel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
-            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f);
+            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f);
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
             float v = Vector3Length(P.vel);
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
@@ -444,6 +444,10 @@ int main(void)
         // 見た目のタイマー
         if (P.anim.swingT >= 0.0f) P.anim.swingT = fminf(P.anim.swingT + simDt, 5.0f);
         if (P.anim.lungeT > 0.0f) P.anim.lungeT -= simDt;
+        {   // しゃがみの見た目（なめらかに）
+            float ct = (in.crouch && !botControls) ? 1.0f : 0.0f;
+            P.anim.crouch += (ct - P.anim.crouch) * fminf(simDt * 12.0f, 1.0f);
+        }
         P.anim.downT = P.downT;
         P.anim.sliding = P.sliding;
         if (Vector3Length(P.vel) > 0.3f) P.anim.slideSide = P.vel.x;   // 自分は -z 向きなので右＝+x
@@ -544,7 +548,7 @@ int main(void)
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
                         P.lastAimTarget = target;
-                        gCasual = false;
+                        gCasual = false; gCrouch = false;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
                         plog.serves++;
@@ -665,7 +669,7 @@ int main(void)
                         //   簡単：1 秒先まで。質は落ちない
                         bool cas = style == STYLE_CASUAL;
                         float window = cas ? CASUAL_WAIT : ADAPT_EARLY;
-                        gCasual = cas;
+                        gCasual = cas; gCrouch = in.crouch;
                         float nowQ = 0.0f, bestQ = 0.0f, bestAge = -1.0f;
                         for (int h = 0; h < historyCount; h++) {
                             const Ball *hb = &history[h];
@@ -681,7 +685,7 @@ int main(void)
                             Contact fc = EvaluateContact(P.pos, &fb, rt, rcharge, 0.0f, 0.0f);
                             if (fc.miss == MISS_NONE && fc.quality > bestQ) { bestQ = fc.quality; bestAge = fb.age; }
                         }
-                        gCasual = false;
+                        gCasual = false; gCrouch = false;
                         if (bestAge > 0.0f && bestQ > nowQ + 0.03f) {
                             P.swingQ.age = bestAge;
                             if (!cas) P.swingQ.penalty = Clamp(1.0f - (bestAge - ball.age) / ADAPT_PENALTY_T, 0.10f, 1.0f);
@@ -699,7 +703,7 @@ int main(void)
             Vector3 target = P.swingQ.target;
             float swingCharge = P.swingQ.charge;
             P.anim.windup = 0.0f;
-            gCasual = (style == STYLE_CASUAL);
+            gCasual = (style == STYLE_CASUAL); gCrouch = in.crouch;
             {
                     // 直前のフレームの間で、一番いい当たりになる瞬間のボールを使う
                     Contact c = { .miss = MISS_NO_BALL };
@@ -807,7 +811,7 @@ int main(void)
                         scoredLast = false;
                     }
             }
-            gCasual = false;
+            gCasual = false; gCrouch = false;
         }
         if (IsKeyPressed(KEY_R) && mode != MODE_MATCH) {
             // ITF のバウンドテスト: 2.54m から落とす
@@ -1098,7 +1102,7 @@ int main(void)
                 }
                 if (oppBall) aplanAge = ball.age;
                 Assist as = ComputeAssist(P.pos, P.vel, &ball, at, P.chargingShot >= 0 ? P.charge : 0.5f);
-                gCasual = false;
+                gCasual = false; gCrouch = false;
                 if (assistLevel >= 2 && aplan.valid) {
                     // 弾んだ後の通り道：打ちやすい高さのところだけ緑で太く
                     for (int k = 0; k + 1 < aplan.nPath; k++) {
@@ -1318,7 +1322,7 @@ int main(void)
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
         else
