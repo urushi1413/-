@@ -158,6 +158,7 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define SERVE_DEPTH_T1    0.70f
 #define SERVE_DEPTH_SHORT (-4.0f)
 #define SERVE_DEPTH_LONG  (-7.2f)
+#define AI_TOSS_HIT_T     0.52f   // AI はトスを上げてからこの時間で打つ（一番上を少し過ぎたところ）
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
 #define SERVE_OVERREACH  0.25f   // 理想の打点よりこれだけ高い球まで、背伸びして届く。トスの最高点（2.95m）は必ず届く
 #define TOSS_SPEED       4.55f   // トスの初速（上向き、m/s）。手から 1.9m で離すと最高点 2.95m（届く高さの中）

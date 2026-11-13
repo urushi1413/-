@@ -127,7 +127,9 @@ int main(void)
     int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
-    bool  showSummary = false;         // Tab の 2 回目：試合の統計
+    bool  showSummary = false;
+    bool  aiTossing = false;           // AI がトスを上げている
+    float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
     // 試合
     Opponent ai = { 0 };
@@ -352,7 +354,8 @@ int main(void)
                 P.pos = ReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                 ai.standPos = ai.pos;
-                phaseTimer = 1.5f;
+                phaseTimer = RandRange(1.2f, 2.2f);   // 構えてからトスまで（毎回同じリズムだと読めてしまう）
+                aiTossing = false;
             }
             phase = PH_SERVE;
             serveJudged = false;
@@ -589,8 +592,28 @@ int main(void)
 
         // ---- 試合：AI のサーブ ----
         if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over) {
-            phaseTimer -= simDt;
-            if (phaseTimer <= 0.0f) {
+            // サーブのモーション：構え → トスを上げる（ラケットを担ぐ）→ 一番上を少し過ぎたところで打つ
+            if (!aiTossing) {
+                phaseTimer -= simDt;
+                if (phaseTimer <= 0.0f) {
+                    aiTossing = true; aiTossT = 0.0f;
+                    bool dc = DeuceCourt(&score);
+                    Vector3 me = { dc ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+                    ball = (Ball){ 0 };
+                    ball.pos = Rot180((Vector3){ me.x + 0.25f, 1.9f, me.z - 0.35f });
+                    ball.vel = (Vector3){ 0.0f, TOSS_SPEED, 0.0f };
+                    ball.active = true;
+                    ball.netClearance = -99.0f;
+                    trailCount = 0;
+                }
+            } else {
+                aiTossT += simDt;
+                ai.anim.windStroke = 2;
+                ai.anim.windup = 0.3f + 0.7f * Clamp01(aiTossT / SERVE_CHARGE_TIME);
+            }
+            if (aiTossing && aiTossT >= AI_TOSS_HIT_T) {
+                aiTossing = false;
+                ai.anim.windup = 0.0f;
                 ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
                 trailCount = 0;
@@ -1008,6 +1031,9 @@ int main(void)
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
                 DrawFigure(ai.pos, false, (Color){ 70, 90, 200, 255 }, &ai.anim, Vector3Length(ai.vel));
+            // サーブの構え：トスの前はボールを手に持っている
+            if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over)
+                DrawSphere((Vector3){ ai.pos.x - 0.25f, 1.0f, ai.pos.z + 0.35f }, BALL_R * 1.6f, (Color){ 220, 255, 60, 255 });
 
             if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
