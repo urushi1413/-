@@ -55,11 +55,11 @@ void SfxInit(void)
     else                          snprintf(dir, sizeof(dir), "%ssounds", GetApplicationDirectory());
     snprintf(gDir, sizeof(gDir), "%s", dir);
     for (int i = 0; i < S_COUNT; i++) {
-        char base[512];
+        char base[1100];
         snprintf(base, sizeof(base), "%s/%s", dir, SFX_NAMES[i]);
         if (LoadVariant(&gSlot[i], base)) {
             for (int v = 2; v <= VARIANTS && gSlot[i].nVar < VARIANTS; v++) {
-                char b2[520];
+                char b2[1110];
                 snprintf(b2, sizeof(b2), "%s_%d", base, v);
                 if (!LoadVariant(&gSlot[i], b2)) break;
             }
