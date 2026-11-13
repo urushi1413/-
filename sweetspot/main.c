@@ -109,6 +109,8 @@
 
 // ---- サーブ ----
 #define SERVE_REACH      2.80f   // 腕とラケットを伸ばした打点の高さ
+#define SERVE_IDEAL_H    2.90f   // これ以上の高さで打てば満点（腕を伸ばしきった一番高いところ）。低いと減点
+#define SERVE_CHARGE_TIME 0.45f  // サーブの溜めが最大になるまで（トスの一番上までに溜めきれる）
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
 #define SERVE_OVERREACH  0.25f   // 理想の打点よりこれだけ高い球まで、背伸びして届く。トスの最高点（2.95m）は必ず届く
 #define TOSS_SPEED       4.55f   // トスの初速（上向き、m/s）。手から 1.9m で離すと最高点 2.95m（届く高さの中）
@@ -1226,7 +1228,7 @@ static Ball AiServe(Opponent *ai, bool deuce, bool first)
     Vector2 off = { RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
     float hErr = fabsf(RandNormal() * lv->timingSigmaMs / 1000.0f * 2.4f);   // 落ちてくる速さ 2.4m/s 前後
     float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
-    Vector3 contact = { me.x + 0.25f + off.x, SERVE_REACH - hErr, me.z - 0.35f + off.y };
+    Vector3 contact = { me.x + 0.25f + off.x, SERVE_IDEAL_H - hErr, me.z - 0.35f + off.y };
 
     ServeType t;
     float charge;
@@ -1863,7 +1865,7 @@ int main(void)
         playerAnim.runPhase += Vector3Length(playerVel) * simDt * 2.2f;
 
         // ---- サーブ（自分）----
-        Vector3 tossIdeal = { player.x + 0.25f, SERVE_REACH, player.z - 0.35f };   // 理想の打点
+        Vector3 tossIdeal = { player.x + 0.25f, SERVE_IDEAL_H, player.z - 0.35f };   // 理想の打点（これ以上の高さ）
         if (playerServing) {
             if (sv == SV_READY) {
                 for (int s = 0; s < SERVE_COUNT; s++) {
@@ -1882,7 +1884,7 @@ int main(void)
                     break;
                 }
             } else if (sv == SV_TOSS) {
-                charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
+                charge = fminf(charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 playerAnim.windup = 0.3f + 0.7f * charge;
                 playerAnim.windStroke = 2;
                 if (IsKeyReleased(serveKeys[chargingServe])) {
@@ -1894,7 +1896,7 @@ int main(void)
                     for (int h = 0; h < historyCount; h++) {
                         const Ball *hb = &history[h];
                         if (!hb->active || hb->bounces > 0 || hb->pos.y > SERVE_REACH + SERVE_OVERREACH) continue;
-                        if (best < 0 || fabsf(hb->pos.y - SERVE_REACH) < fabsf(history[best].pos.y - SERVE_REACH)) best = h;
+                        if (best < 0 || hb->pos.y > history[best].pos.y) best = h;   // 届く範囲で一番高いところ
                     }
                     lastServeType = type;
                     if (mode == MODE_SERVE) svStats[serveNo - 1][0]++;
@@ -1917,7 +1919,7 @@ int main(void)
                         if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     } else {
                         Ball hb = history[best];
-                        float qH = Clamp01(1.0f - fabsf(hb.pos.y - SERVE_REACH) / SERVE_TOL_H);
+                        float qH = Clamp01(1.0f - fmaxf(SERVE_IDEAL_H - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
                         float qT = Clamp01(1.0f - Vector2Length(tossOffset) / TOSS_TOL);
                         float q = qH * qT;
                         // コース：A=左、D=右、なし=ボックスの真ん中（ボディ）。W/S で深さ
@@ -2401,7 +2403,7 @@ int main(void)
             if (lastServeKmh > 0.0f || serveMsg[0]) {
                 if (lastServeKmh > 0.0f) {
                     DrawText(TextFormat("%s  %.0f km/h", SERVES[lastServeType].name, lastServeKmh), 20, y, 18, SERVES[lastServeType].color); y += 22;
-                    DrawText(TextFormat("Contact height %.2f m (reach %.2f)  quality %.0f%%", lastServeH, SERVE_REACH, lastServeQ * 100.0f),
+                    DrawText(TextFormat("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", lastServeH, SERVE_IDEAL_H, lastServeQ * 100.0f),
                              20, y, 18, QualityColor(lastServeQ)); y += 22;
                 } else {
                     DrawText(SERVES[lastServeType].name, 20, y, 18, SERVES[lastServeType].color); y += 44;
