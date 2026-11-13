@@ -1080,14 +1080,38 @@ int main(void)
 
         // スコア（試合）
         if (mode == MODE_MATCH) {
-            int sx = GetScreenWidth() - 330;
-            DrawRectangle(sx, 10, 320, 120, Fade(BLACK, 0.55f));
-            DrawText(TextFormat("YOU %d   AI %d   (games)", score.games[0], score.games[1]), sx + 12, 20, 22, RAYWHITE);
-            DrawText(ScoreText(&score), sx + 12, 50, 26, YELLOW);
-            DrawText(TextFormat("Serving: %s  %s", server == 0 ? "YOU" : "AI", serveNo == 2 ? "(2nd)" : ""), sx + 12, 84, 18, LIGHTGRAY);
-            if (ai.lastKmh > 0.0f)
+            // スコア表（中継のような形）：サーブの印、名前、ゲーム、ポイント
+            int sbw = 300, sx = GetScreenWidth() - sbw - 10, sy = 10;
+            DrawRectangle(sx, sy, sbw, 96, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
+            DrawText("GAMES", sx + 166, sy + 4, 12, LIGHTGRAY);
+            DrawText(score.tiebreak ? "TIEBREAK" : "POINT", sx + 222, sy + 4, 12, LIGHTGRAY);
+            for (int k = 0; k < 2; k++) {
+                int ry = sy + 20 + k * 36;
+                Color nameC = (k == 0) ? RAYWHITE : (Color){ 140, 170, 255, 255 };
+                if (k == 1) DrawLine(sx + 8, ry - 2, sx + sbw - 8, ry - 2, Fade(RAYWHITE, 0.2f));
+                if (server == k && !score.over) {
+                    DrawCircle(sx + 16, ry + 13, 6, YELLOW);
+                    if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
+                }
+                DrawText(k == 0 ? "YOU" : "AI", sx + 58, ry + 3, 24, nameC);
+                DrawText(TextFormat("%d", score.games[k]), sx + 176, ry + 3, 24, RAYWHITE);
+                DrawRectangle(sx + 212, ry, 76, 30, Fade(YELLOW, 0.15f));
+                const char *pl = PointLabel(&score, k);
+                DrawText(pl, sx + 250 - MeasureText(pl, 24) / 2, ry + 3, 24, YELLOW);
+            }
+            // ゲームの流れ：取った方の色。ブレーク（レシーバーが取ったゲーム）は B
+            for (int g = 0; g < score.nGames; g++) {
+                int gx = sx + 8 + g * 22, gy = sy + 102;
+                Color gc = score.gameWinner[g] == 0 ? (Color){ 230, 230, 235, 255 } : (Color){ 90, 120, 230, 255 };
+                DrawRectangle(gx, gy, 18, 18, gc);
+                if (score.gameWinner[g] != score.gameServer[g]) DrawText("B", gx + 5, gy + 2, 14, RED);
+            }
+            if (ai.lastKmh > 0.0f) {
+                int ly = sy + (score.nGames ? 126 : 102);
+                DrawRectangle(sx, ly - 3, sbw, 22, Fade((Color){ 10, 20, 40, 255 }, 0.6f));
                 DrawText(TextFormat("AI last: %s %.0f km/h", ball.isServe && ball.lastHitter == HITTER_OPP ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
-                         sx + 12, 106, 16, LIGHTGRAY);
+                         sx + 8, ly, 16, LIGHTGRAY);
+            }
             if (pointMsg[0]) {
                 int w = MeasureText(pointMsg, 34);
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));

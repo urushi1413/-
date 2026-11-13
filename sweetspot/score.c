@@ -31,6 +31,7 @@ void AwardPoint(Score *s, int w)
     }
     s->games[w]++;
     int firstServer = s->server;
+    if (s->nGames < 16) { s->gameWinner[s->nGames] = w; s->gameServer[s->nGames] = firstServer; s->nGames++; }
     s->points[0] = s->points[1] = 0;
     bool setWon = (s->games[w] >= 6 && s->games[w] - s->games[l] >= 2) || (s->tiebreak);
     s->tiebreak = false;
@@ -42,6 +43,15 @@ void AwardPoint(Score *s, int w)
     } else if (s->games[0] == 6 && s->games[1] == 6) {
         s->tiebreak = true;
     }
+}
+
+// スコア表に出す、プレイヤー k のポイント（0/15/30/40/AD。タイブレークは数）
+const char *PointLabel(const Score *s, int k)
+{
+    int a = s->points[k], b = s->points[1 - k];
+    if (s->tiebreak) return TextFormat("%d", a);
+    if (a >= 3 && b >= 3) return a > b ? "AD" : "40";
+    return PointName(a);
 }
 
 // スコアはサーバーの点を先に言う（サーバーが 15、レシーバーが 0 なら "15 - 0"）

@@ -293,6 +293,9 @@ typedef struct {
     bool tiebreak;
     int server;      // 0=自分, 1=AI（ゲームの最初のサーバー）
     bool over;
+    int nGames;              // ここまでのゲーム数
+    int gameWinner[16];      // 各ゲームを取った方
+    int gameServer[16];      // 各ゲームのサーバー（取った方と違えばブレーク）
 } Score;
 
 typedef struct {
@@ -406,6 +409,7 @@ int CurrentServer(const Score *s);
 bool DeuceCourt(const Score *s);
 void AwardPoint(Score *s, int w);
 const char *ScoreText(const Score *s);
+const char *PointLabel(const Score *s, int k);
 Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type, float charge);
 void LogOpen(PlayLog *L);
 void LogFlush(PlayLog *L, const char *result);
