@@ -20,6 +20,9 @@ int main(void)
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_REAL;  // N：難易度
+    AssistPlan aplan = { 0 };      // 今来ている球の予定（相手が打った瞬間に一度だけ作る）
+    float aplanAge = 1e9f;         // 予定を作ったときの球の経過時間（減ったら新しい球）
+    int   aplanType = -1;          // 予定を作ったときの球種
 
     // 自分（プレイヤー）。2 人目を足すときは、これを配列にする
     Player P = NewPlayer((Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f });
@@ -919,19 +922,68 @@ int main(void)
                 }
             }
 
-            // 手がかり：立つ場所（緑の輪）と、タイミングの輪（一番いい瞬間に向かって縮む）
+            // 手がかり：弾む点（×）、打ちやすい高さの通り道（緑）、立つ場所（緑の輪＋矢印）、タイミングの輪
             if (assistLevel > 0 && !botControls && !playerServing && mode != MODE_SERVE && P.downT <= 0.0f) {
                 ShotType at = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 gCasual = (style == STYLE_CASUAL);
+                // 予定は球ごとに一度だけ（溜める球種を変えたら、打ちやすい高さが変わるので作り直す）
+                bool oppBall = ball.active && ball.lastHitter == HITTER_OPP;
+                if (!oppBall) { aplan.valid = false; aplanAge = 1e9f; }
+                else if (!aplan.valid || ball.age < aplanAge || (int)at != aplanType) {
+                    aplan = PlanAssist(P.pos, P.vel, &ball, at);
+                    aplanAge = ball.age; aplanType = (int)at;
+                }
+                if (oppBall) aplanAge = ball.age;
                 Assist as = ComputeAssist(P.pos, P.vel, &ball, at, P.chargingShot >= 0 ? P.charge : 0.5f);
                 gCasual = false;
-                if (assistLevel >= 2 && as.standValid) {
-                    Vector3 st = { as.stand.x, 0.012f, as.stand.z };
-                    DrawCircle3D(st, 0.30f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
-                    DrawCircle3D(st, 0.26f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
-                    DrawLine3D((Vector3){ P.pos.x, 0.012f, P.pos.z }, st, Fade(GREEN, 0.5f));
-                    DrawSphere(as.ballAt, 0.045f, Fade(YELLOW, 0.5f));
-                    DrawLine3D((Vector3){ as.ballAt.x, 0.012f, as.ballAt.z }, as.ballAt, Fade(YELLOW, 0.4f));
+                if (assistLevel >= 2 && aplan.valid) {
+                    // 弾んだ後の通り道：打ちやすい高さのところだけ緑で太く
+                    for (int k = 0; k + 1 < aplan.nPath; k++) {
+                        Vector3 a0 = { aplan.path[k].x, 0.014f, aplan.path[k].z };
+                        Vector3 a1 = { aplan.path[k + 1].x, 0.014f, aplan.path[k + 1].z };
+                        bool g = aplan.good[k] && aplan.good[k + 1];
+                        Color pc = g ? Fade(LIME, 0.9f) : Fade(LIGHTGRAY, 0.45f);
+                        int nl = g ? 4 : 1;
+                        for (int w = 0; w < nl; w++) {
+                            float o = (w - (nl - 1) * 0.5f) * 0.035f;
+                            DrawLine3D((Vector3){ a0.x + o, a0.y, a0.z }, (Vector3){ a1.x + o, a1.y, a1.z }, pc);
+                        }
+                    }
+                    // 弾む点：まだ弾んでいない間だけ
+                    if (aplan.bounceValid && ball.bounces == 0) {
+                        Vector3 bp = { aplan.bounce.x, 0.016f, aplan.bounce.z };
+                        Color bc = (Color){ 255, 150, 40, 230 };
+                        DrawCircle3D(bp, 0.28f, (Vector3){ 1, 0, 0 }, 90.0f, bc);
+                        DrawCircle3D(bp, 0.24f, (Vector3){ 1, 0, 0 }, 90.0f, bc);
+                        DrawLine3D((Vector3){ bp.x - 0.2f, bp.y, bp.z - 0.2f }, (Vector3){ bp.x + 0.2f, bp.y, bp.z + 0.2f }, bc);
+                        DrawLine3D((Vector3){ bp.x - 0.2f, bp.y, bp.z + 0.2f }, (Vector3){ bp.x + 0.2f, bp.y, bp.z - 0.2f }, bc);
+                    }
+                    if (aplan.standValid) {
+                        Vector3 st = { aplan.stand.x, 0.018f, aplan.stand.z };
+                        float dx = st.x - P.pos.x, dz = st.z - P.pos.z;
+                        float dist = sqrtf(dx * dx + dz * dz);
+                        bool there = dist < 0.35f;
+                        Color sc = there ? (Color){ 60, 255, 90, 255 } : GREEN;
+                        if (there) DrawCylinder((Vector3){ st.x, 0.005f, st.z }, 0.34f, 0.34f, 0.01f, 24, Fade(GREEN, 0.45f));
+                        for (int w = 0; w < 3; w++) DrawCircle3D(st, 0.34f - 0.03f * w, (Vector3){ 1, 0, 0 }, 90.0f, sc);
+                        // 自分から立つ場所への矢印
+                        if (dist > 0.45f) {
+                            Vector3 from = { P.pos.x, 0.018f, P.pos.z };
+                            float ux = dx / dist, uz = dz / dist;
+                            Vector3 tip = { st.x - ux * 0.38f, 0.018f, st.z - uz * 0.38f };
+                            for (int w = -1; w <= 1; w++) {
+                                float o = w * 0.03f;
+                                DrawLine3D((Vector3){ from.x - uz * o, from.y, from.z + ux * o },
+                                           (Vector3){ tip.x - uz * o, tip.y, tip.z + ux * o }, Fade(GREEN, 0.75f));
+                            }
+                            DrawLine3D(tip, (Vector3){ tip.x - ux * 0.3f - uz * 0.18f, tip.y, tip.z - uz * 0.3f + ux * 0.18f }, GREEN);
+                            DrawLine3D(tip, (Vector3){ tip.x - ux * 0.3f + uz * 0.18f, tip.y, tip.z - uz * 0.3f - ux * 0.18f }, GREEN);
+                        }
+                        // そこで打つときのボール（黄色）と、そこへの縦線
+                        DrawSphere(aplan.ballAt, 0.05f, Fade(YELLOW, 0.6f));
+                        DrawLine3D((Vector3){ aplan.ballAt.x, 0.018f, aplan.ballAt.z }, aplan.ballAt, Fade(YELLOW, 0.5f));
+                        DrawLine3D(st, (Vector3){ aplan.ballAt.x, 0.018f, aplan.ballAt.z }, Fade(YELLOW, 0.5f));
+                    }
                 }
                 if (as.timingValid && as.tBest < 1.2f) {
                     Vector3 ip = as.overhead ? (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }

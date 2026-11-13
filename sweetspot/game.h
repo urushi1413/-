@@ -312,6 +312,22 @@ typedef struct {
     Vector3 ballAt;       // そのときのボール
 } Assist;
 
+// 相手が打った瞬間に一度だけ作る「この球の予定」。毎フレーム作り直さないので目印が跳ねない
+#define ASSIST_PATH_MAX 80
+typedef struct {
+    bool    valid;
+    bool    bounceValid;
+    Vector3 bounce;                   // 自分のコートで最初に弾む点
+    int     nPath;
+    Vector3 path[ASSIST_PATH_MAX];    // 弾んだ後の球の通り道
+    bool    good[ASSIST_PATH_MAX];    // その点で打ちやすい高さか
+    bool    standValid;
+    Vector3 stand;                    // 立つ場所（地面）
+    Vector3 ballAt;                   // そこで打つときのボール
+    bool    fore, overhead;
+    float   tContact;                 // 打った瞬間から打点まで（秒）
+} AssistPlan;
+
 typedef struct {
     FILE  *f;
     int    shotSerial;
@@ -416,6 +432,7 @@ void AwardPoint(Score *s, int w);
 const char *ScoreText(const Score *s);
 const char *PointLabel(const Score *s, int k);
 Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type, float charge);
+AssistPlan PlanAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type);
 void LogOpen(PlayLog *L);
 void LogFlush(PlayLog *L, const char *result);
 void LogTimingAnalysis(const PlayLog *L, Vector3 player, const Ball *pre, ShotType type, float charge, float *bestQ, float *offsetMs);
