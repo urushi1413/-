@@ -156,7 +156,7 @@ Vector3 AimFromHold(ShotType t, float playerZ, float aimX, float hold, PlayStyle
 {
     float shrt = SHOTS[t].shortDepth;
     if (t < SHOT_NORMAL_COUNT) shrt = EffectiveAim(t, playerZ, aimX, 0.0f, style).z;   // 一番浅いところ
-    float z = shrt + (SHOTS[t].deepDepth - shrt) * hold;                                // 1 を超えたら延長
+    float z = shrt + (SHOTS[t].deepDepth + HOLD_DEEP_MARGIN - shrt) * Clamp01(hold);
     Vector3 a = EffectiveAim(t, playerZ, aimX, -1.0f, style);                           // 左右の制限だけ使う
     return (Vector3){ a.x, 0.0f, z };
 }

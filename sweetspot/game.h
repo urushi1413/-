@@ -61,8 +61,10 @@ typedef struct {
 #define PHYS_DT          (1.0f / 240.0f)   // 物理は固定ステップで回す（速い球でもすり抜けない）
 #define TRAIL_N          900
 #define CHARGE_TIME      0.5f              // 押す長さ：これだけ押すとベースライン近くまで深く（強さも最大）
-#define HOLD_MAX         1.5f              // 押しすぎるとさらに深く＝アウト（0.75 秒で約 0.6m 長い）。CASUAL は 1.0 まで
+#define HOLD_MAX         1.0f              // 押し続けても一番深いところで止まる（ボールを待つ間押していてもアウトにはならない）
+#define HOLD_DEEP_MARGIN 0.5f              // 一番深いところは、球種の一番深い狙いより 0.5m 浅く（ベースラインの約 2m 手前）
 #define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
+#define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）

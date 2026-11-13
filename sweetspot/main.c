@@ -632,7 +632,7 @@ int main(void)
                     P.hold = 0.0f;
                 }
             } else {
-                P.hold = fminf(P.hold + frameDt / CHARGE_TIME, style == STYLE_CASUAL ? 1.0f : HOLD_MAX);
+                P.hold = fminf(P.hold + frameDt / CHARGE_TIME, HOLD_MAX);
                 P.charge = fminf(P.hold, 1.0f);
                 // 構えの見た目：ボールのある側で構える（高い球なら頭上）
                 P.anim.windup = P.charge;
@@ -773,7 +773,7 @@ int main(void)
                     }
 
                     if (c.miss == MISS_NONE) {
-                        ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (1.0f - HOLD_POWER_BASE) * swingCharge,
+                        ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
@@ -1293,7 +1293,7 @@ int main(void)
                 y += 24;
             }
         } else {
-            DrawText("Move to the ball. Hold longer = deeper (red = long). Release to swing", 20, y, 18, RAYWHITE);
+            DrawText("Move to the ball. Hold longer = deeper. Release to swing", 20, y, 18, RAYWHITE);
         }
         // 下：成績と操作説明（コートの奥を隠さない場所）
         y = GetScreenHeight() - 98;
@@ -1424,7 +1424,7 @@ int main(void)
             DrawRectangle(gx, gy, (int)(full * fminf(P.hold, 1.0f)), 20, sp->color);
             if (P.hold > 1.0f) DrawRectangle(gx + (int)full, gy, (int)(full * (P.hold - 1.0f)), 20, RED);
             DrawRectangle(gx + (int)full - 1, gy - 4, 3, 28, RAYWHITE);
-            float pw = HOLD_POWER_BASE + (1.0f - HOLD_POWER_BASE) * P.charge;
+            float pw = HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * P.charge;
             float dz = -AimFromHold((ShotType)P.chargingShot, P.pos.z, P.aimX, P.hold, style).z;
             if (sp->touchAngle > 0.0f)
                 DrawText(TextFormat("%s  depth %.1f m", sp->name, dz), gx, gy - 24, 20, RAYWHITE);
