@@ -4,6 +4,7 @@
 // 単位はすべてメートル・秒・ラジアン。座標系: x=横, y=上, z=縦（自分側が +z、相手側が -z）
 #include "raylib.h"
 #include "raymath.h"
+#include "rlgl.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -97,6 +98,7 @@
 // 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
 // 倍率 = 1 + (1 - 質) × (来た球の速さ - TWIST_FREE_KMH) / TWIST_KMH
 // ラリーの普通の球（45km/h 以下）では効かず、速いサーブや強打で効く
+#define MISHIT_PLAN      0.35f   // 芯を外して遅くなった分を、角度でどれだけ補うか（1=補わない＝短く落ちる、0=全部補う＝打ち上がる）
 #define TWIST_FREE_KMH   45.0f
 #define TWIST_KMH        18.0f
 
@@ -523,13 +525,19 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     if (c->volley) racketKmh *= VOLLEY_POWER;
     float step = Clamp(c->stepIn / STEP_FULL, -1.0f, 1.0f);
     racketKmh += fmaxf(step, 0.0f) * STEP_POWER_KMH;
-    float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
-    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.65f + 0.35f * q);
+    // 芯を外したときの減速：芯から外れるとラケットの反発が落ちる（実測で 10〜20% くらい）
+    float paceKmh  = RACKET_EA * c->inKmh * (0.75f + 0.25f * q);
+    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.80f + 0.20f * q);
     float kmh = paceKmh + swingKmh;
     float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
                  * (1.0f - STEP_STABILITY * step);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
+    // 狙った弾道は「芯で捉えたときの速さと回転」で決まる。芯を外すと遅く・回転も少なくなるので、
+    // 同じ角度で飛び出しても短く・低く落ちる（ネットや浅い球になる）。
+    // ※ 遅くなった分を角度で補うと、ミスショットほど高く打ち上がってしまう
+    float planKmh = RACKET_EA * c->inKmh + (1.0f + RACKET_EA) * racketKmh;
+    float planRpm = Lerp(sp->minRpm, sp->maxRpm, charge);
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = c->forehand ? 1.0f : -1.0f;
@@ -555,7 +563,9 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
         kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
         ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * errMul * DEG2RAD;
     } else {
-        ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
+        // 打った瞬間の感触で少しだけ補正する（遅くなった分の半分）
+        ang = SolveLaunchAngle(ballPos, dirFlat, dist, Lerp(kmh, planKmh, MISHIT_PLAN) / 3.6f,
+                               Lerp(rpm, planRpm, MISHIT_PLAN), sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         ang += RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
     }
@@ -1693,6 +1703,11 @@ int main(void)
     Ball history[64];
     int historyCount = 0;
 
+    // バウンドの目印
+    Vector3 bouncePos = { 0 };
+    float bounceT = 10.0f;
+    int prevBounces = 0;
+
     while (!WindowShouldClose()) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
@@ -2160,6 +2175,11 @@ int main(void)
             }
         }
 
+        // バウンドを見つけて目印を出す
+        bounceT += simDt;
+        if (ball.bounces > prevBounces && ball.bounces <= 2) { bouncePos = ball.pos; bounceT = 0.0f; }
+        prevBounces = ball.bounces;
+
         // ---- プレイ記録：来た球の追跡と、打球の結果 ----
         if (!botControls) {
             LogTrackIncoming(&plog, &ball, player, playerVel, chargingShot >= 0, MODE_NAMES[mode], AI_LEVELS[ai.level].name);
@@ -2331,14 +2351,37 @@ int main(void)
                 }
             }
 
-            // 軌跡
-            for (int i = 1; i < trailCount; i++) DrawLine3D(trail[i - 1], trail[i], trailColor);
+            // 軌跡：新しいところほど濃く。相手の球は明るい色で
+            {
+                bool incoming = ball.lastHitter == HITTER_OPP;
+                Color tc = incoming ? (Color){ 255, 255, 170, 255 } : trailColor;
+                for (int i = 1; i < trailCount; i++) {
+                    float age = (float)(trailCount - i) / 60.0f;          // 0 = 今、1 = 0.5 秒前
+                    float alpha = Clamp(1.0f - age, 0.15f, 1.0f);
+                    DrawLine3D(trail[i - 1], trail[i], Fade(tc, alpha));
+                }
+            }
 
-            // 影（高さが分かるようにするのはテニスゲームでは超重要）
+            // バウンドした場所に輪を一瞬出す（深さが読みやすい）
+            if (bounceT < 0.8f) {
+                float k = bounceT / 0.8f;
+                DrawCircle3D((Vector3){ bouncePos.x, 0.012f, bouncePos.z }, 0.12f + 0.35f * k, (Vector3){ 1, 0, 0 }, 90.0f,
+                             Fade(RAYWHITE, 1.0f - k));
+            }
+
+            // ボール：実寸（直径 6.7cm）だと遠くで数ピクセルになるので、遠いほど少し大きく描く。
+            // 影と、ボールから地面への縦の線で、高さと位置が分かるようにする
             if (ball.active || ball.bounces > 0) {
-                DrawCircle3D((Vector3){ ball.pos.x, 0.006f, ball.pos.z }, BALL_R * 1.5f, (Vector3){ 1, 0, 0 }, 90.0f,
-                             (Color){ 0, 0, 0, 120 });
-                DrawSphere(ball.pos, BALL_R, (Color){ 210, 240, 40, 255 });
+                float camDist = Vector3Distance(cam.position, ball.pos);
+                float vr = fmaxf(BALL_R * 1.4f, camDist * 0.0050f);
+                Vector3 g = { ball.pos.x, 0.004f, ball.pos.z };
+                DrawCylinder(g, vr * 1.1f, vr * 1.1f, 0.002f, 14, (Color){ 0, 0, 0, 150 });   // 影
+                if (ball.pos.y > 0.15f) DrawLine3D(g, ball.pos, Fade(RAYWHITE, 0.45f));       // 高さの線
+                DrawSphere(ball.pos, vr, (Color){ 235, 255, 40, 255 });
+                // 光のふち（ボールの後に描く。先に描くと、ふちの奥行きでボールが隠れる）
+                rlDisableDepthMask();
+                DrawSphere(ball.pos, vr * 1.7f, Fade((Color){ 255, 255, 140, 255 }, 0.22f));
+                rlEnableDepthMask();
             }
         EndMode3D();
 
