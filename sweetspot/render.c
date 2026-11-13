@@ -158,14 +158,20 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // ラケットと腕
     int stroke; Vector3 tan;
     Vector3 rl = RacketLocal(a, &stroke, &tan);
-    Vector3 shoulder = (stroke == 1) ? (Vector3){ -0.22f, 1.42f, 0.0f } : (Vector3){ 0.22f, 1.42f, 0.0f };
-    Vector3 dir = Vector3Normalize(Vector3Subtract(rl, shoulder));
+    // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）
+    //   ラケットの向きは、バックなら左肩を支点に考える（両手打ちは左手が主導して振る）
+    Vector3 rShoulder = { 0.22f, 1.42f, 0.0f }, lShoulder = { -0.22f, 1.42f, 0.0f };
+    bool twoHands = (stroke == 1);
+    Vector3 pivot = twoHands ? lShoulder : rShoulder;
+    Vector3 dir = Vector3Normalize(Vector3Subtract(rl, pivot));
     Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
-    float armLen = Vector3Length(Vector3Subtract(hand, shoulder));
-    if (armLen > 0.75f) hand = Vector3Add(shoulder, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, shoulder)), 0.75f));
+    float armLen = Vector3Length(Vector3Subtract(hand, pivot));
+    if (armLen > 0.75f) hand = Vector3Add(pivot, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, pivot)), 0.75f));
     Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
-    Vector3 other = (stroke == 1) ? (Vector3){ 0.22f, 1.42f, 0.0f } : (Vector3){ -0.22f, 1.42f, 0.0f };
-    Vector3 otherHand = { other.x * 1.4f, 1.0f, 0.2f };
+    Vector3 shoulder = rShoulder;                                    // ラケットを持つ腕（右）
+    Vector3 other = lShoulder;                                       // 左腕
+    Vector3 otherHand = twoHands ? Vector3Add(hand, Vector3Scale(dir, 0.09f))   // グリップの少し上
+                                 : (Vector3){ -0.31f, 1.0f, 0.2f };             // フォア・頭上：左手は体の前
 
     // スイングの軌跡（振った直後だけ）
     if (a->swingT >= 0.0f && a->swingT < SWING_TIME * 0.8f) {

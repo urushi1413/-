@@ -146,6 +146,21 @@ def main(path):
             print(f"  2.5m 以上の球のうち：溜めが短い（0.2 秒未満）{pct(short, len(hi_))}、当たりが悪い（質 30% 未満）{pct(badq, len(hi_))}")
         print()
 
+    # 11. ライジング（バウンド後、上がり際・頂点・落ち際のどこで打ったか）
+    vy = [r for r in swings if f(r, "ball_vy") is not None]
+    if vy:
+        print("[11] バウンド後のどこで打ったか（ball_vy：プラス＝上がり際）")
+        for name, lo, hi in [("上がり際（ライジング）", 0.6, 99), ("頂点付近", -0.6, 0.6), ("落ち際", -99, -0.6)]:
+            g = [r for r in vy if lo <= f(r, "ball_vy") < hi]
+            if not g:
+                continue
+            ins = sum(1 for r in g if r["result"] == "IN")
+            q = sum(f(r, "quality") or 0 for r in g) / len(g)
+            kmh = [f(r, "out_kmh") for r in g if f(r, "out_kmh") is not None]
+            print(f"  {name:14s} {len(g):4d} 球  IN {pct(ins, len(g)):>5s}  質平均 {q * 100:.0f}%"
+                  f"  打球平均 {sum(kmh) / len(kmh) if kmh else 0:.0f} km/h")
+        print()
+
     # 9. 手がかり表示（H）あり・なしの比較
     if swings and "assist" in swings[0]:
         print("[9] 手がかり表示（H）ごとの比較")

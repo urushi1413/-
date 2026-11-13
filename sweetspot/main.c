@@ -686,6 +686,7 @@ int main(void)
                             }
                             plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = false;
                             plog.pendingLaunch = P.lastAngle * RAD2DEG; plog.pendingApex = ball.pos.y;
+                            plog.pendingVy = c.vyBall; plog.hasVy = !c.volley;
                         }
                         trailColor = SHOTS[type].color;
                         trailCount = 0;
@@ -1102,7 +1103,9 @@ int main(void)
                 }
             } else {
                 const char *stroke = c->overhead ? "Overhead" : (c->forehand ? "Forehand" : "Backhand");
-                const char *tag = c->dive ? " DIVE!" : (c->volley ? " volley" : "");
+                // バウンド後の球：上がり際（ライジング）・頂点・落ち際
+                const char *tag = c->dive ? " DIVE!" : (c->volley ? " volley"
+                                : (c->vyBall > 0.6f ? " on the rise" : (c->vyBall > -0.6f ? " at the top" : " dropping")));
                 DrawText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
                                     c->overhead && P.lastType != SHOT_SLICE && P.lastType < SHOT_NORMAL_COUNT ? "SMASH" : SHOTS[P.lastType].name,
                                     c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));

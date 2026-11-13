@@ -39,11 +39,13 @@ void LogFlush(PlayLog *L, const char *result)
         else if (strcmp(result, "NET") == 0) L->shotNet++;
     }
     if (L->f) {
-        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d,%s\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style, SURFACES[gSurface].name);
-        else                       fprintf(L->f, "%s,%s,%d,,,%d,%s\n", L->row, result, L->assist, L->style, SURFACES[gSurface].name);
+        const char *vy = L->hasVy ? TextFormat("%.2f", L->pendingVy) : "";
+        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d,%s,%s\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style, SURFACES[gSurface].name, vy);
+        else                       fprintf(L->f, "%s,%s,%d,,,%d,%s,%s\n", L->row, result, L->assist, L->style, SURFACES[gSurface].name, vy);
         fflush(L->f);
     }
     L->pendingApex = 0.0f;
+    L->hasVy = false;
 }
 
 // 「この立ち位置のまま、いつ振るのが一番よかったか」を、来た球の過去の軌道と、この先の軌道から探す
@@ -95,7 +97,7 @@ void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vector3 play
                 L->noSwingOut++;
             }
             if (L->f) {
-                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d,%s\n",
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d,%s,\n",
                         GetTime(), mode, level, reachable ? "reachable" : "unreachable",
                         L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
                         L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist, L->style, SURFACES[gSurface].name);

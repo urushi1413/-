@@ -21,6 +21,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     c.fwdErr   = dz - IDEAL_FWD;         // プラス＝ボールがまだ前にある＝振るのが早い
     c.volley   = ball->bounces == 0;
     c.inKmh    = Vector3Length(ball->vel) * 3.6f;
+    c.vyBall   = ball->vel.y;
     c.timeErrMs = c.fwdErr / fmaxf(Vector3Length(ball->vel), 1.0f) * 1000.0f;
     c.overhead = bp.y > OVERHEAD_MIN_H;
 

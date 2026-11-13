@@ -220,6 +220,7 @@ typedef struct {
     float stepIn;      // 打つ瞬間に前（ネット方向）へ踏み込んでいた速さ（m/s）。マイナスは下がりながら
     float side;        // 体からの横距離
     float height;      // 打点の高さ
+    float vyBall;      // 打った瞬間のボールの上下の速さ（プラス＝上がり際＝ライジング）
     float qTiming, qDist, qHeight;
     float quality;     // 0〜1。3つの積
 } Contact;
@@ -245,7 +246,7 @@ typedef struct {
 #define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
                    "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
                    "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist," \
-                   "launch_deg,apex_m,style,court"
+                   "launch_deg,apex_m,style,court,ball_vy"
 #define AIM_SENS 0.015f   // マウス 1 ピクセルで狙いが動く距離（m）
 
 // ---- 型（ほかのファイルから移したもの） ----
@@ -358,6 +359,8 @@ typedef struct {
     int    assist;           // 手がかり表示のレベル
     float  pendingLaunch;    // 結果待ちの打球の打ち出し角（度）
     float  pendingApex;      // 結果待ちの打球の最高点（m）
+    float  pendingVy;        // 打った瞬間のボールの上下の速さ（プラス＝上がり際＝ライジング）
+    bool   hasVy;
     int    style;            // 難易度（0=REAL 1=CASUAL）
 } PlayLog;
 
