@@ -116,6 +116,12 @@ typedef struct {
 #define DIVE_MIN_SPEED   2.5f    // 飛びつくには、ボールの方向にこの速さ（m/s）以上で走っている必要がある
 #define DIVE_QUALITY     0.35f   // 飛びついた球の質は 35% に落ちる
 #define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
+// 踏み込み（ランジ）：打点に入れていない球へ、体ごと倒れ込んで届かせる。止まっていても使える
+#define STRETCH_VOLLEY   0.80f   // ボレーで届く範囲の上乗せ（m）。ネット前で横を抜かれにくくなる
+#define STRETCH_GROUND   0.50f   // ストローク（バウンド後）の上乗せ
+#define STRETCH_QUALITY  0.50f   // 当たりの質はこの割合に落ちる（面を合わせるだけ）
+#define STRETCH_RECOVER  0.60f   // 打ったあと、体勢を立て直すまで（秒）。この間は動きが遅い
+#define STRETCH_MOVE     0.35f   //   その間の走る速さの割合
 #define OVERHEAD_MIN_H   1.85f   // これより高い球は頭上で打つ（スマッシュ・ハイボレー）
 #define OVERHEAD_IDEAL_H 2.55f   // 頭上の理想の打点
 #define OVERHEAD_TOL_H   0.70f
@@ -251,6 +257,7 @@ typedef struct {
     float inKmh;       // 来た球の速さ
     bool  isReturn;    // サーブのリターン
     bool  lunge;       // 足を大きく踏み出して（跳んで）伸びて取った
+    bool  stretch;     // 届く範囲を超えた球に、体ごと倒れ込んで届かせた（体勢が崩れる）
     float sit;         // 上から叩ける球の度合い（0〜1）。高くて遅い球ほど大きい
     float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
@@ -530,6 +537,7 @@ typedef struct {
     Vector3 pos, vel;          // 足元の位置と速度
     SwingAnim anim;            // 見た目（体とラケット）
     float downT;               // 飛びついて倒れている残り時間
+    float recoverT;            // 踏み込みで体勢が崩れている残り時間（動きが遅い）
     bool  sliding;             // 滑り込んでいる
     float aimX, aimDepth;      // 狙い（マウスで動かす。ずっと残る）
     int   chargingShot;        // 溜めている球種（-1：溜めていない）

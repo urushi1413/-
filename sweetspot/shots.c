@@ -56,8 +56,12 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
         bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE + reachBonus && moveToward >= DIVE_MIN_SPEED;
-        if (!canDive) { c.miss = (ang > 55.0f) ? MISS_EARLY : (ang < -20.0f ? MISS_LATE : MISS_FAR); return c; }
-        c.dive = true;
+        // 踏み込み（ランジ）：走っていなくても、球の方へ体ごと倒れ込めばもう少し届く
+        float stretchMax = reach + (c.volley ? STRETCH_VOLLEY : STRETCH_GROUND);
+        bool canStretch = !c.overhead && bp.y > 0.15f && bp.y < 2.0f && r <= stretchMax;
+        if (canDive)         c.dive = true;
+        else if (canStretch) c.stretch = true;
+        else { c.miss = (ang > 55.0f) ? MISS_EARLY : (ang < -20.0f ? MISS_LATE : MISS_FAR); return c; }
     }
 
     c.lunge = !c.overhead && r > LUNGE_R;
@@ -80,6 +84,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
     if (c.dive) c.quality *= DIVE_QUALITY;
+    if (c.stretch) c.quality *= STRETCH_QUALITY;
     if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
     return c;
 }

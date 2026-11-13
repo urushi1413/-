@@ -287,6 +287,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.swingT = 0.0f;
     if (c.miss != MISS_NONE) return false;
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
+    else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);

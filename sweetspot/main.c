@@ -347,7 +347,7 @@ int main(void)
             ai.pos = AiHome();
             ai.anim.swingT = -1.0f;
             P.anim = (SwingAnim){ .swingT = -1.0f };
-            P.downT = 0.0f;
+            P.downT = 0.0f; P.recoverT = 0.0f;
             P.sliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
@@ -376,7 +376,7 @@ int main(void)
             bot.downTimer = 0.0f; bot.anim = (SwingAnim){ .swingT = -1.0f };
             ai.downTimer = 0.0f; ai.anim = (SwingAnim){ .swingT = -1.0f };
             P.anim = (SwingAnim){ .swingT = -1.0f };
-            P.downT = 0.0f;
+            P.downT = 0.0f; P.recoverT = 0.0f;
             P.sliding = false;
             ai.sliding = false; bot.sliding = false;
             P.chargingShot = -1; P.chargingServe = -1;
@@ -459,7 +459,8 @@ int main(void)
             P.vel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
-            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f);
+            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f)
+                      * (P.recoverT > 0.0f ? STRETCH_MOVE : 1.0f);   // 踏み込みで体勢が崩れている間は遅い
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
             float v = Vector3Length(P.vel);
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
@@ -481,6 +482,7 @@ int main(void)
         // 見た目のタイマー
         if (P.anim.swingT >= 0.0f) P.anim.swingT = fminf(P.anim.swingT + simDt, 5.0f);
         if (P.anim.lungeT > 0.0f) P.anim.lungeT -= simDt;
+        if (P.recoverT > 0.0f) P.recoverT -= simDt;
         {   // しゃがみの見た目（なめらかに）
             float ct = (in.crouch && !botControls) ? 1.0f : 0.0f;
             P.anim.crouch += (ct - P.anim.crouch) * fminf(simDt * 12.0f, 1.0f);
@@ -806,6 +808,7 @@ int main(void)
                                                    SHOTS[type].idealHeight, P.pos.z - IDEAL_FWD };
                     P.lastContactPos = sb;
                     if (c.miss == MISS_NONE && c.dive) { P.downT = DIVE_DOWN_TIME; P.vel = (Vector3){ 0 }; }
+                    if (c.miss == MISS_NONE && c.stretch) { P.recoverT = STRETCH_RECOVER; P.vel = Vector3Scale(P.vel, 0.3f); }
 
                     P.hasLast = true;
                     P.lastContact = c;
