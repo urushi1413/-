@@ -33,8 +33,28 @@
 #define K_AIR            (0.5f * AIR_RHO * BALL_AREA / BALL_MASS)   // 空気の力 = K_AIR * 係数 * 速さ^2
 #define SPIN_DECAY_TAU   4.0f    // 回転が空気で弱まる時定数（秒）
 
-#define BOUNCE_E         0.77f   // 垂直方向の反発係数。空気抵抗込みで 2.54m から落として 1.40m 跳ねる（規格は 1.35〜1.47m）
-#define COURT_MU         0.60f   // コート表面の摩擦係数（ハードコートくらい）
+// ---- コートの種類 ----
+// 摩擦（mu）：バウンドで横の速さがどれだけ落ちるか。大きいほど遅いコート
+// 反発（e）  ：どれだけ跳ねるか
+// ITF のコート速度（Court Pace Rating）= 100(1 - mu) + 150(e - 0.81) で、クレー 約 19（遅い）、ハード 約 34、芝 約 45（速い）
+typedef enum { SURF_HARD, SURF_CLAY, SURF_GRASS, SURF_COUNT } SurfaceType;
+typedef struct {
+    const char *name;
+    float mu, e;
+    float keep;           // 表面のめり込みで、回転に関係なく横の速さがこれだけ残る（クレーは柔らかいので減る）
+    float slideDecel;     // 滑るときの減速（m/s^2）。小さいほど長く滑る
+    float slideMin;       // これより速く走っていると滑れる
+    Color court, outside, lines;
+} Surface;
+static const Surface SURFACES[SURF_COUNT] = {
+    //                       mu     e   めり込み 滑りの減速 滑れる速さ
+    [SURF_HARD]  = { "HARD",  0.60f, 0.77f, 1.00f, 7.0f, 3.0f, { 40, 90, 160, 255 },  { 40, 110, 80, 255 },  { 245, 245, 245, 255 } },
+    [SURF_CLAY]  = { "CLAY",  0.80f, 0.80f, 0.88f, 4.5f, 2.0f, { 196, 98, 52, 255 },  { 170, 85, 45, 255 },   { 245, 240, 230, 255 } },
+    [SURF_GRASS] = { "GRASS", 0.38f, 0.70f, 1.00f, 9.0f, 3.5f, { 70, 140, 60, 255 },  { 55, 115, 50, 255 },   { 250, 250, 250, 255 } },
+};
+static SurfaceType gSurface = SURF_HARD;
+#define BOUNCE_E         (SURFACES[gSurface].e)    // 反発（ハードは 0.77：空気抵抗込みで 2.54m から落として 1.40m、規格 1.35〜1.47m）
+#define COURT_MU         (SURFACES[gSurface].mu)   // 摩擦
 #define ROLL_FRICTION    1.5f    // 転がり中の減速（1/秒）
 
 #define RPM_TO_RADS      (2.0f * PI / 60.0f)
@@ -48,8 +68,8 @@
 #define PLAYER_BRAKE     20.0f   // 減速（m/s^2）。最高速から 0.3 秒・0.9m で止まる
 #define CHARGE_MOVE      0.85f   // 溜めている（テイクバックしている）間の走る速さの割合
 // スライド：溜めながら速く走っていて減速・切り返しをすると、足を滑らせながら打てる（止まる必要がない）
-#define SLIDE_MIN_SPEED  3.0f    // これより速く走っているとスライドになる
-#define SLIDE_DECEL      7.0f    // 滑っている間の減速（m/s^2）。ハードコートで滑るときの摩擦くらい。6m/s から 2.6m 滑る
+#define SLIDE_MIN_SPEED  (SURFACES[gSurface].slideMin)     // これより速く走っているとスライドになる（クレーは遅くても滑れる）
+#define SLIDE_DECEL      (SURFACES[gSurface].slideDecel)   // 滑っている間の減速。ハード 7（6m/s から 2.6m）、クレー 4.5（4m）、芝 9
 #define SLIDE_END_SPEED  0.8f
 #define SLIDE_REACH      0.30f   // スライド中は低く広い構えになり、リーチがこれだけ伸びる
 #define NO_BRAKE         1e6f    // TravelTime に渡すと「止まらずに滑り込む」計算になる
@@ -297,6 +317,10 @@ static void Bounce(Ball *b)
         Vector3 dw = Vector3Scale(Vector3CrossProduct(r, u), -1.5f * dv / (BALL_R * BALL_R));
         b->spin = Vector3Add(b->spin, dw);
     }
+    // 柔らかいコート（クレー）はボールがめり込むので、回転に関係なく横の勢いが落ちる
+    float keep = SURFACES[gSurface].keep;
+    b->vel.x *= keep;
+    b->vel.z *= keep;
 }
 
 // 1ステップ分ボールを進める。描画にも予測にも同じ関数を使う
@@ -761,8 +785,16 @@ static void LineAlongZ(float x, float z0, float z1)
 
 static void DrawCourt(void)
 {
-    DrawPlane((Vector3){ 0, -0.001f, 0 }, (Vector2){ 40.0f, 60.0f }, (Color){ 40, 110, 80, 255 });
-    DrawPlane((Vector3){ 0, 0.0f, 0 }, (Vector2){ DOUBLES_W, COURT_LEN }, (Color){ 40, 90, 160, 255 });
+    const Surface *sf = &SURFACES[gSurface];
+    DrawPlane((Vector3){ 0, -0.001f, 0 }, (Vector2){ 40.0f, 60.0f }, sf->outside);
+    DrawPlane((Vector3){ 0, 0.0f, 0 }, (Vector2){ DOUBLES_W, COURT_LEN }, sf->court);
+    if (gSurface == SURF_GRASS) {
+        // 芝の刈り目（縞）
+        for (int i = 0; i < 12; i++) {
+            float z = -HALF_LEN + COURT_LEN * (i + 0.5f) / 12.0f;
+            if (i % 2) DrawPlane((Vector3){ 0, 0.0012f, z }, (Vector2){ DOUBLES_W, COURT_LEN / 12.0f }, (Color){ 80, 155, 68, 255 });
+        }
+    }
 
     float dx = DOUBLES_W * 0.5f, sx = SINGLES_W * 0.5f;
     LineAlongX( HALF_LEN, -dx, dx);
@@ -1500,7 +1532,7 @@ typedef struct {
 #define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
                    "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
                    "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist," \
-                   "launch_deg,apex_m,style"
+                   "launch_deg,apex_m,style,court"
 
 static void LogOpen(PlayLog *L)
 {
@@ -1531,8 +1563,8 @@ static void LogFlush(PlayLog *L, const char *result)
         else if (strcmp(result, "NET") == 0) L->shotNet++;
     }
     if (L->f) {
-        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style);
-        else                       fprintf(L->f, "%s,%s,%d,,,%d\n", L->row, result, L->assist, L->style);
+        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d,%s\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style, SURFACES[gSurface].name);
+        else                       fprintf(L->f, "%s,%s,%d,,,%d,%s\n", L->row, result, L->assist, L->style, SURFACES[gSurface].name);
         fflush(L->f);
     }
     L->pendingApex = 0.0f;
@@ -1587,10 +1619,10 @@ static void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vecto
                 L->noSwingOut++;
             }
             if (L->f) {
-                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d\n",
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d,%s\n",
                         GetTime(), mode, level, reachable ? "reachable" : "unreachable",
                         L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
-                        L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist, L->style);
+                        L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist, L->style, SURFACES[gSurface].name);
                 fflush(L->f);
             }
         }
@@ -1780,10 +1812,10 @@ int main(void)
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
-            enum { MI_PLAY, MI_MODE, MI_AI, MI_STYLE, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
-            int items[12], n = 0;
+            enum { MI_PLAY, MI_MODE, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            int items[13], n = 0;
             items[n++] = MI_PLAY;
-            items[n++] = MI_MODE; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_ASSIST;
+            items[n++] = MI_MODE; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
             items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
@@ -1819,6 +1851,7 @@ int main(void)
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
+                    case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
                     case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
                     case MI_FEED:   proFeed = !proFeed; break;
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
@@ -1858,6 +1891,8 @@ int main(void)
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
                     case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
+                    case MI_COURT:   label = "Court";           value = gSurface == SURF_CLAY ? "CLAY (slow, high)"
+                                                                       : gSurface == SURF_GRASS ? "GRASS (fast, low)" : "HARD"; break;
                     case MI_ASSIST:  label = "Assist";          value = assistNames[assistLevel]; break;
                     case MI_FEED:    label = "Practice feed";   value = proFeed ? "PRO" : "CLUB"; break;
                     case MI_SENS:    label = "Mouse sensitivity"; value = TextFormat("%.2f", aimSens); break;
@@ -2112,9 +2147,9 @@ int main(void)
                         lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
                         if (plog.f) {
-                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d,,,%d\n",
+                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d,,,%d,%s\n",
                                     GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
-                                    ball.pos.y, player.x, player.z, plog.assist, plog.style);
+                                    ball.pos.y, player.x, player.z, plog.assist, plog.style, SURFACES[gSurface].name);
                             fflush(plog.f);
                         }
                         // フォルトとして判定させる
@@ -2564,7 +2599,7 @@ int main(void)
             DrawCourt();
 
             // プレイヤー（-z 向き）と AI（+z 向き）
-            DrawFigure(player, true, (Color){ 230, 120, 60, 255 }, botControls ? &bot.anim : &playerAnim,
+            DrawFigure(player, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &playerAnim,
                        Vector3Length(playerVel));
             if (mode == MODE_MATCH)
                 DrawFigure(ai.pos, false, (Color){ 70, 90, 200, 255 }, &ai.anim, Vector3Length(ai.vel));
@@ -2658,6 +2693,12 @@ int main(void)
                 }
             }
 
+            // クレーはボールの跡が残る（実際の試合でも跡でイン・アウトを確かめる）
+            if (gSurface == SURF_CLAY && bounceT < 5.0f) {
+                Color mk = Fade((Color){ 120, 55, 25, 255 }, 0.8f * (1.0f - bounceT / 5.0f));
+                DrawCylinder((Vector3){ bouncePos.x, 0.0015f, bouncePos.z }, 0.05f, 0.05f, 0.001f, 12, mk);
+                DrawCylinder((Vector3){ bouncePos.x, 0.0015f, bouncePos.z + 0.06f }, 0.045f, 0.045f, 0.001f, 12, mk);
+            }
             // バウンドした場所に輪を一瞬出す（深さが読みやすい）
             if (bounceT < 0.8f) {
                 float k = bounceT / 0.8f;
@@ -2856,6 +2897,7 @@ int main(void)
             static const char *an[3] = { "OFF", "TIMING", "TIMING+SPOT" };
             DrawText(TextFormat("H assist: %s", an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
             DrawText(TextFormat("N style: %s", STYLE_NAMES[style]), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);
+            DrawText(TextFormat("Court: %s", SURFACES[gSurface].name), 780, GetScreenHeight() - 30, 18, LIGHTGRAY);
         }
         EndDrawing();
     }

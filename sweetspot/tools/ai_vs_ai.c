@@ -40,11 +40,13 @@ again:
   return 0;
 }
 int main(void){ srand(3);
+  for(int sf=0;sf<SURF_COUNT;sf++){ gSurface=(SurfaceType)sf; printf("--- court: %s ---\n",SURFACES[sf].name);
   for(int lv=0;lv<3;lv++){
     Opponent O={0},P={0}; O.level=P.level=lv; St st={0};
     int N=300; for(int n=0;n<N;n++){ int server=n%2; bool deuce=(n/2)%2==0; int w=Point(&O,&P,server,deuce,&st); st.points++; st.svPts[server]++; if(w==server)st.svWon[server]++; }
     printf("%-6s vs same: avg rally %.1f shots | 1st serve in %2d%% | unreturned serve %2d%% (no touch %2d%%) DF %2d%% | ends: winners %2d%% net err %2d%% out err %2d%% | server wins %2d%%\n",
       AI_LEVELS[lv].name,(float)st.rallyShots/st.points, st.firstIn*100/st.firstTot, st.unret*100/st.points, st.aces*100/st.points, st.df*100/st.points,
       st.winners*100/st.points, st.errNet*100/st.points, st.errOut*100/st.points,(st.svWon[0]+st.svWon[1])*100/st.points);
+  }
   }
 }
