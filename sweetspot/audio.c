@@ -120,12 +120,12 @@ static float Jitter(void) { return 1.0f + GetRandomValue(-20, 20) / 1000.0f; }  
 // 最初に見つかった音の番号（なければ -1）
 static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVar ? b : gSlot[c].nVar ? c : -1; }
 
-// volley：ボレー。スライスとボレーは声を出さない（それ以外の打球は声つき）
-void SfxHit(float q, float kmh, bool slice, bool volley, float dist)
+// voice：この打球の前に声（SfxGruntPre）を出し始めたか。出し始めたときだけ「打球音と声の続き」を鳴らす
+//   （途中で声が切れたり、始まりのない声の続きだけが鳴ったりしないように）
+void SfxHit(float q, float kmh, bool slice, bool voice, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
-    // 声つき：打つ前の声（SfxGruntPre）から続くので、音の高さは変えない
-    if (!slice && !volley && q >= 0.18f && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, 1.0f); return; }
+    if (voice && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, 1.0f); return; }   // 声から続くので音の高さは変えない
     if (q < 0.18f)      Play(S_HIT_FRAME, S_HIT_BAD, vol, Jitter());
     else if (slice)     Play(S_HIT_SLICE, q < 0.5f ? S_HIT_BAD : S_HIT_OK, vol, Jitter());
     else if (q < 0.45f) Play(S_HIT_BAD, S_HIT_OK, vol, Jitter());
@@ -133,11 +133,9 @@ void SfxHit(float q, float kmh, bool slice, bool volley, float dist)
     else                Play(S_HIT_GOOD, S_HIT_OK, vol, Jitter());
 }
 
-void SfxServe(float q, float kmh, float dist)
+void SfxServe(float q, float kmh, bool voice, float dist)
 {
-    int id = First3(S_SERVE, S_HIT_VOICE, S_HIT_GOOD);
-    if (q > 0.6f && id >= 0) Play(id, -1, (0.6f + 0.4f * Clamp01(kmh / 200.0f)) * DistVol(dist), id == S_HIT_VOICE ? 1.0f : Jitter());
-    else                     SfxHit(q, kmh, false, false, dist);
+    SfxHit(q, kmh, false, voice, dist);
 }
 
 // 試しに鳴らす（M で音をオンにしたとき）
@@ -149,7 +147,17 @@ void SfxTest(void)
 }
 
 // 打つ前の声：打つ GRUNT_LEAD 秒前に鳴らし始める（溜めの間に声が出て、そのまま打球音と声の続きにつながる）
-void SfxGruntPre(float dist) { Play(S_GRUNT_PRE, -1, 0.9f * DistVol(dist), 1.0f); }
+//   声は一度に 1 人だけ：前の声（打つ前＋続き）が鳴り終わるまでは始めない。始めたら true
+static double gVoiceUntil = 0.0;
+bool SfxGruntPre(float dist)
+{
+    if (!gAudioOk || gSlot[S_GRUNT_PRE].nVar == 0 || gSlot[S_HIT_VOICE].nVar == 0 || gVolume <= 0.0f) return false;
+    double now = GetTime();
+    if (now < gVoiceUntil) return false;
+    gVoiceUntil = now + GRUNT_LEAD + 0.45;
+    Play(S_GRUNT_PRE, -1, 0.9f * DistVol(dist), 1.0f);
+    return true;
+}
 
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
 

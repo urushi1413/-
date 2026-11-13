@@ -178,6 +178,7 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define SERVE_DEPTH_T1    0.70f
 #define SERVE_DEPTH_SHORT (-4.0f)
 #define SERVE_DEPTH_LONG  (-7.2f)
+#define VOICE_NET_Z       (SERVICE_Z + 1.5f)   // これよりネットに近いところから打つときは声を出さない
 #define GRUNT_LEAD        0.235f  // 打つ前の声（grunt_pre）を、打つこの秒数前から鳴らす
 #define AI_TOSS_HIT_T     0.52f   // AI はトスを上げてからこの時間で打つ（一番上を少し過ぎたところ）
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
@@ -571,8 +572,8 @@ void  SfxInit(void);
 void  SfxClose(void);
 void  SfxSetVolume(float v);
 float SfxGetVolume(void);
-void  SfxHit(float q, float kmh, bool slice, bool volley, float dist);
-void  SfxServe(float q, float kmh, float dist);
+void  SfxHit(float q, float kmh, bool slice, bool voice, float dist);
+void  SfxServe(float q, float kmh, bool voice, float dist);
 void  SfxWhiff(void);
 void  SfxBounce(float speed, float dist);
 void  SfxNet(float speed, float dist);
@@ -582,7 +583,7 @@ void  SfxPointEnd(int rallyHits, bool winner);
 int   SfxLoadedCount(void);
 bool  SfxDeviceOk(void);
 void  SfxTest(void);
-void  SfxGruntPre(float dist);
+bool  SfxGruntPre(float dist);
 const char *SfxDir(void);
 
 #endif

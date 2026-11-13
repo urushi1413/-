@@ -12,7 +12,9 @@ SWEET SPOT の効果音フォルダ
   hit_frame     フレームに当たった音（なければ hit_bad）
   hit_slice     スライス（なければ hit_ok）
   grunt_pre     打つ前の声。打つ 0.235 秒前から鳴らし始め、そのまま hit_voice につながる
-  hit_voice     打球音と声の続き。スライスとボレー以外の打球とサーブで使う（なければ普通の打球音）
+  hit_voice     打球音と声の続き。grunt_pre を鳴らしたときだけ使う
+                声は強いストローク（自分は深く押したとき、AI は 6 割）とサーブだけ。スライス・ボレー・ネット前は声なし。
+                声は一度に 1 人だけ（前の声が終わるまで次の声は始めない）
   serve         サーブ（なければ hit_good）
   bounce_hard   ハードコートのバウンド
   bounce_clay   クレーのバウンド（なければ bounce_hard）

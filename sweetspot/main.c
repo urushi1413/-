@@ -134,7 +134,8 @@ int main(void)
     float soundVolBeforeMute = 0.8f;
     char  toast[96] = { 0 };           // 画面の真ん中下に少しの間だけ出すお知らせ
     float toastT = 0.0f;
-    bool  playerGrunt = false, aiGrunt = false, botGrunt = false;   // この球で、打つ前の声をもう鳴らしたか
+    bool  playerGrunt = false, aiGrunt = false, botGrunt = false;   // この球で、打つ前の声を鳴らし始めたか
+    bool  playerGruntTried = false, aiGruntTried = false, botGruntTried = false;   // この球で、打つ前の声をもう鳴らしたか
     bool  aiTossing = false;           // AI がトスを上げている
     float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
@@ -398,7 +399,7 @@ int main(void)
             phaseTimer -= simDt;
             if (phaseTimer <= 0.0f) {
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
-                SfxServe(bot.anim.lastContact.quality, bot.lastKmh, Vector3Distance(cam.position, ball.pos));
+                SfxServe(bot.anim.lastContact.quality, bot.lastKmh, false, Vector3Distance(cam.position, ball.pos));
                 rallyHits = 1;
                 P.pos = Rot180(bot.pos);
                 trailColor = RAYWHITE;
@@ -509,7 +510,7 @@ int main(void)
                     P.chargingServe = s;
                     P.charge = 0.0f;
                     P.serveT = 0.0f;
-                    playerGrunt = false;
+                    playerGrunt = false; playerGruntTried = false;
                     P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
                     ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f, tossIdeal.z + P.tossOffset.y };
@@ -524,7 +525,7 @@ int main(void)
             } else if (P.sv == SV_TOSS) {
                 P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 P.serveT += simDt;
-                if (!playerGrunt && P.serveT >= 0.50f - GRUNT_LEAD) { SfxGruntPre(Vector3Distance(cam.position, P.pos)); playerGrunt = true; }
+                if (!playerGruntTried && P.serveT >= 0.50f - GRUNT_LEAD) { playerGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos)); playerGruntTried = true; }
                 P.anim.windup = 0.3f + 0.7f * P.charge;
                 P.anim.windStroke = 2;
                 bool serveReleased = in.released[P.chargeSrc];
@@ -576,7 +577,8 @@ int main(void)
                         P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
-                        SfxServe(q, P.lastServeKmh, Vector3Distance(cam.position, ball.pos));
+                        SfxServe(q, P.lastServeKmh, playerGrunt, Vector3Distance(cam.position, ball.pos));
+                        playerGrunt = false;
                         rallyHits = 1;
                         P.lastAimTarget = target;
                         gCasual = false; gCrouch = false;
@@ -652,7 +654,7 @@ int main(void)
             } else {
                 aiTossT += simDt;
                 if (aiTossT - simDt < AI_TOSS_HIT_T - GRUNT_LEAD && aiTossT >= AI_TOSS_HIT_T - GRUNT_LEAD)
-                    SfxGruntPre(Vector3Distance(cam.position, ai.pos));
+                    aiGrunt = SfxGruntPre(Vector3Distance(cam.position, ai.pos));
                 ai.anim.windStroke = 2;
                 ai.anim.windup = 0.3f + 0.7f * Clamp01(aiTossT / SERVE_CHARGE_TIME);
             }
@@ -660,7 +662,8 @@ int main(void)
                 aiTossing = false;
                 ai.anim.windup = 0.0f;
                 ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
-                SfxServe(ai.anim.lastContact.quality, ai.lastKmh, Vector3Distance(cam.position, ball.pos));
+                SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
+                aiGrunt = false;
                 rallyHits = 1;
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
                 trailCount = 0;
@@ -681,14 +684,14 @@ int main(void)
             } else {
                 P.hold = fminf(P.hold + frameDt / CHARGE_TIME, HOLD_MAX);
                 // 打つ前の声：溜めている間、一番いい瞬間まで GRUNT_LEAD 秒を切ったら鳴らし始める（スライス・ボレーは声を出さない）
-                if (!playerGrunt && !IsSliceShot((ShotType)P.chargingShot) && ball.active && ball.lastHitter == HITTER_OPP &&
-                    ball.bounces >= 1) {
+                if (!playerGrunt && !playerGruntTried && !IsSliceShot((ShotType)P.chargingShot) && ball.active && ball.lastHitter == HITTER_OPP &&
+                    ball.bounces >= 1 && P.pos.z > VOICE_NET_Z && P.hold >= 0.5f) {   // 強く打つときだけ。ネット前は声なし
                     gCasual = (style == STYLE_CASUAL);
                     Assist ga = ComputeAssist(P.pos, P.vel, &ball, (ShotType)P.chargingShot, P.charge);
                     gCasual = false;
                     if (ga.timingValid && !ga.overhead && ga.tBest <= GRUNT_LEAD && ga.qBest > 0.2f) {
-                        SfxGruntPre(Vector3Distance(cam.position, P.pos));
-                        playerGrunt = true;
+                        playerGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos));
+                        playerGruntTried = true;
                     }
                 }
                 P.charge = fminf(P.hold, 1.0f);
@@ -837,7 +840,8 @@ int main(void)
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
-                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), c.volley && !c.overhead, Vector3Distance(cam.position, ball.pos));
+                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt, Vector3Distance(cam.position, ball.pos));
+                        playerGrunt = false;
                         rallyHits++;
                         P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
@@ -886,20 +890,22 @@ int main(void)
             if (!botControls) LogRecordBall(&plog, &ball);
 
             // AI のスイング（物理と同じ細かさで）
-            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiGrunt && ball.bounces >= 1 &&
+            // AI の打つ前の声：6 割の確率で。ネット前は声なし
+            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiGruntTried && ball.bounces >= 1 &&
                 ball.age >= ai.swingAge - GRUNT_LEAD) {
-                SfxGruntPre(Vector3Distance(cam.position, ai.pos));
-                aiGrunt = true;
+                aiGruntTried = true;
+                if (ai.pos.z < -VOICE_NET_Z && GetRandomValue(0, 99) < 60) aiGrunt = SfxGruntPre(Vector3Distance(cam.position, ai.pos));
             }
-            if (botControls && phase == PH_PLAY && bot.planned && !botGrunt && ball.lastHitter == HITTER_OPP && ball.bounces >= 1 &&
+            if (botControls && phase == PH_PLAY && bot.planned && !botGruntTried && ball.lastHitter == HITTER_OPP && ball.bounces >= 1 &&
                 ball.age >= bot.swingAge - GRUNT_LEAD) {
-                SfxGruntPre(Vector3Distance(cam.position, P.pos));
-                botGrunt = true;
+                botGruntTried = true;
+                if (P.pos.z > VOICE_NET_Z && GetRandomValue(0, 99) < 60) botGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos));
             }
-            if (ball.lastHitter != HITTER_OPP) botGrunt = false;
+            if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
-                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), ai.anim.lastContact.volley && !ai.anim.lastContact.overhead, Vector3Distance(cam.position, ball.pos));
+                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt, Vector3Distance(cam.position, ball.pos));
+                    aiGrunt = false;
                     rallyHits++;
                     trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
                     trailCount = 0;
@@ -909,7 +915,8 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
-                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), bot.anim.lastContact.volley && !bot.anim.lastContact.overhead, Vector3Distance(cam.position, ball.pos));
+                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt, Vector3Distance(cam.position, ball.pos));
+                    botGrunt = false;
                     rallyHits++;
                     trailColor = SHOTS[bot.lastType].color;
                     trailCount = 0;
@@ -941,8 +948,8 @@ int main(void)
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
         prevBounces = ball.bounces;
-        if (!ball.active || ball.lastHitter != HITTER_OPP) playerGrunt = false;
-        if (!ball.active || ball.lastHitter != HITTER_PLAYER) aiGrunt = false;
+        if (!ball.active || ball.lastHitter != HITTER_OPP) { if (!(playerServing && P.sv == SV_TOSS)) { playerGrunt = false; playerGruntTried = false; } }
+        if (!ball.active || ball.lastHitter != HITTER_PLAYER) { if (!aiTossing) { aiGrunt = false; aiGruntTried = false; } }
         if (ball.active && ball.hitNet && !prevHitNet) SfxNet(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
