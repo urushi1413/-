@@ -1,9 +1,7 @@
 // AI 同士で試合をさせて、バランスの数字を出すツール。
 //   make sim  （sweetspot/ ディレクトリで）
-// main.c をそのまま取り込んで、main だけ名前を変えている。描画は使わない。
-#define main game_main
-#include "../main.c"
-#undef main
+// ゲームの部品（main.c 以外）をそのまま取り込む。描画は使わない。
+#include "../sim_core.h"
 #include <stdio.h>
 // 自分側も AI にする：世界を 180° 回して、打者の名前を入れ替えれば、同じ AI 関数で動かせる
 static Ball Flip(Ball b){ return FlipSides(b); }

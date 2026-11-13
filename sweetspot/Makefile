@@ -18,14 +18,16 @@ else
     endif
 endif
 
-$(TARGET): main.c platform_ime.c
-	$(CC) $(CFLAGS) main.c platform_ime.c -o $(TARGET) $(LIBS)
+SRC = main.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c
+
+$(TARGET): $(SRC) game.h
+	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
 
 clean:
 	rm -f sweetspot sweetspot.exe ai_vs_ai
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
-sim: tools/ai_vs_ai.c main.c
+sim: tools/ai_vs_ai.c $(SRC) game.h
 	$(CC) -std=c99 -O2 -DRAYMATH_STATIC_INLINE -I$(RAYLIB_INC) tools/ai_vs_ai.c -o ai_vs_ai -lm -Wl,--unresolved-symbols=ignore-all
 	./ai_vs_ai
