@@ -1633,13 +1633,6 @@ static void LogRecordBall(PlayLog *L, const Ball *ball)
 }
 
 #define AIM_SENS 0.015f   // マウス 1 ピクセルで狙いが動く距離（m）
-#define DROP_ZONE -5.0f   // タッチショットで、狙いがネットからこれより近ければドロップ、遠ければロブ
-
-static ShotType TouchShot(bool left, float aimDepth)
-{
-    if (aimDepth > DROP_ZONE) return SHOT_DROP;
-    return left ? SHOT_TOP_LOB : SHOT_SLICE_LOB;
-}
 
 // 実際に狙う場所：球種と立ち位置で、狙える深さを制限する
 //   普通のショットはネットから 6m より短くは狙えない（ネットに近いほど短く：ネット前なら 2.5m）
@@ -1657,6 +1650,8 @@ static Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDept
     }
     return (Vector3){ x, 0.0f, z };
 }
+
+typedef enum { APP_TITLE, APP_PLAY, APP_PAUSE } AppState;
 
 // Windows で日本語入力（IME）を切る（platform_ime.c。Windows 以外では何もしない）
 void DisableIme(void *hwnd);
@@ -1676,8 +1671,7 @@ int main(void)
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
     // マウス：マイクラと同じようにカーソルをウィンドウに固定して隠す。Esc で外す／戻す（Esc で終了しない）
     SetExitKey(KEY_NULL);
-    DisableCursor();
-    bool mouseLocked = true;
+    bool mouseLocked = false;      // タイトルメニューではカーソルを出す
 
     static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
     LogOpen(&plog);
@@ -1759,6 +1753,15 @@ int main(void)
     bool  autopilot = false;           // B：自分側も AI が操作する（観戦モード）
     Opponent bot = { 0 };              // 自分側を操作する AI（座標は 180° 回した世界）
 
+    // メニュー
+    AppState app = APP_TITLE;
+    int   menuSel = 0;
+    float aimSens = 1.0f;          // マウス感度（倍率）
+    bool  forceRestart = false;    // メニューでモードや AI を変えたら、戻ったときにやり直す
+    bool  quitGame = false;
+    bool  skipMouseDelta = false;
+    int   menuFrames = 0;              // メニューを開いてからのフレーム数
+
     // 直前のフレームの物理ステップごとのボールの状態。
     // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
     // その間で一番いいタイミングの瞬間を採用する（入力の粗さで損をしないように）
@@ -1770,15 +1773,119 @@ int main(void)
     float bounceT = 10.0f;
     int prevBounces = 0;
 
-    while (!WindowShouldClose()) {
+    while (!WindowShouldClose() && !quitGame) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
+
+        // ================= メニュー（タイトル / 一時停止） =================
+        if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
+        if (app != APP_PLAY) {
+            enum { MI_PLAY, MI_MODE, MI_AI, MI_STYLE, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            int items[12], n = 0;
+            items[n++] = MI_PLAY;
+            items[n++] = MI_MODE; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_ASSIST;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_CAMERA;
+            if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
+            items[n++] = MI_QUIT;
+            static const char *assistNames[3] = { "OFF", "TIMING", "TIMING + SPOT" };
+            static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
+
+            int W = GetScreenWidth(), H = GetScreenHeight();
+            int pw = 640, rowH = 40, ph = 150 + n * rowH + 110;
+            int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+            int rowY0 = py + 110;
+
+            // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定。マウス：左クリックで次、右クリックで前
+            int change = 0; bool activate = false;
+            if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP))   menuSel = (menuSel + n - 1) % n;
+            if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) menuSel = (menuSel + 1) % n;
+            if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT))  change = -1;
+            if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT)) change = +1;
+            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) activate = true;
+            Vector2 mp = GetMousePosition();
+            for (int i = 0; i < n; i++) {
+                Rectangle rr = { (float)px + 20, (float)(rowY0 + i * rowH), (float)pw - 40, (float)rowH - 4 };
+                if (CheckCollisionPointRec(mp, rr)) {
+                    if (menuFrames > 10 && Vector2Length(GetMouseDelta()) > 0.0f) menuSel = i;   // 開いた直後のマウスの跳びは無視
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))  { menuSel = i; activate = true; }
+                    if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
+                }
+            }
+            if (app == APP_PAUSE && IsKeyPressed(KEY_ESCAPE)) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
+            int it = items[menuSel];
+            if (activate && it != MI_PLAY && it != MI_RESTART && it != MI_TITLE && it != MI_QUIT) { change = +1; activate = false; }
+            if (change != 0) {
+                switch (it) {
+                    case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
+                    case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
+                    case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
+                    case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
+                    case MI_FEED:   proFeed = !proFeed; break;
+                    case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
+                    case MI_CAMERA: camMode = (camMode + 3 + change) % 3; break;
+                    default: break;
+                }
+            }
+            if (activate) {
+                if (it == MI_PLAY || it == MI_RESTART) {
+                    if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
+                    app = APP_PLAY;
+                    mouseLocked = true; DisableCursor(); skipMouseDelta = true;
+                } else if (it == MI_TITLE) {
+                    app = APP_TITLE; menuSel = 0;
+                } else if (it == MI_QUIT) {
+                    quitGame = true;
+                }
+            }
+
+            BeginDrawing();
+            ClearBackground((Color){ 30, 70, 60, 255 });
+            // 背景：コートの線をうっすら
+            for (int i = 0; i < 9; i++) DrawLine(W / 2 - 300 + i * 75, H, W / 2 - 120 + i * 30, 0, Fade(RAYWHITE, 0.06f));
+            DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f));
+            DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f));
+            const char *title = app == APP_TITLE ? "SWEET SPOT" : "PAUSED";
+            DrawText(title, W / 2 - MeasureText(title, 52) / 2, py + 24, 52, YELLOW);
+            const char *sub = app == APP_TITLE ? "real tennis where contact point and spin matter" : "Esc: resume";
+            DrawText(sub, W / 2 - MeasureText(sub, 18) / 2, py + 82, 18, LIGHTGRAY);
+            for (int i = 0; i < n; i++) {
+                int ry = rowY0 + i * rowH;
+                bool sel = i == menuSel;
+                if (sel) DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
+                const char *label = "", *value = "";
+                switch (items[i]) {
+                    case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
+                    case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
+                    case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
+                    case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
+                    case MI_ASSIST:  label = "Assist";          value = assistNames[assistLevel]; break;
+                    case MI_FEED:    label = "Practice feed";   value = proFeed ? "PRO" : "CLUB"; break;
+                    case MI_SENS:    label = "Mouse sensitivity"; value = TextFormat("%.2f", aimSens); break;
+                    case MI_CAMERA:  label = "Camera";          value = camNames[camMode]; break;
+                    case MI_RESTART: label = "RESTART"; break;
+                    case MI_TITLE:   label = "BACK TO TITLE"; break;
+                    case MI_QUIT:    label = "QUIT"; break;
+                }
+                DrawText(label, px + 40, ry + 8, 24, sel ? YELLOW : RAYWHITE);
+                if (value[0]) {
+                    const char *v = TextFormat("<  %s  >", value);
+                    DrawText(v, px + pw - 40 - MeasureText(v, 24), ry + 8, 24, sel ? YELLOW : RAYWHITE);
+                }
+            }
+            int hy = rowY0 + n * rowH + 14;
+            DrawText("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", px + 30, hy, 16, LIGHTGRAY);
+            DrawText("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", px + 30, hy + 24, 16, LIGHTGRAY);
+            DrawText("Shift+click lob, Ctrl+click drop, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
+            EndDrawing();
+            continue;
+        }
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
-        bool restart = false;
+        bool restart = forceRestart;
+        forceRestart = false;
         if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
         for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
@@ -1926,17 +2033,19 @@ int main(void)
 
         // ---- マウス：カーソルの固定と、狙いの移動 ----
         bool clickConsumed = false;
-        if (IsKeyPressed(KEY_ESCAPE)) {
-            mouseLocked = !mouseLocked;
-            if (mouseLocked) DisableCursor(); else EnableCursor();
+        if (IsKeyPressed(KEY_ESCAPE)) {   // Esc：一時停止して設定メニュー
+            app = APP_PAUSE; menuSel = 0;
+            mouseLocked = false; EnableCursor();
+            chargingShot = -1; chargingServe = -1;
         }
         if (!mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
             mouseLocked = true; DisableCursor(); clickConsumed = true;   // クリックで戻す（このクリックでは打たない）
         }
         {
             Vector2 md = mouseLocked ? GetMouseDelta() : (Vector2){ 0 };
-            aimX     += md.x * AIM_SENS;
-            aimDepth += md.y * AIM_SENS;          // マウスを奥に（上に）動かすと深く
+            if (skipMouseDelta) { md = (Vector2){ 0 }; skipMouseDelta = false; }   // メニューから戻った直後の跳びを無視
+            aimX     += md.x * AIM_SENS * aimSens;
+            aimDepth += md.y * AIM_SENS * aimSens;   // マウスを奥に（上に）動かすと深く
             // キーボードでも動かせる（U/O で左右、I/、で深さ）
             if (IsKeyDown(KEY_U)) aimX -= 6.0f * frameDt;
             if (IsKeyDown(KEY_O)) aimX += 6.0f * frameDt;
@@ -2102,17 +2211,20 @@ int main(void)
         if (!playerServing && mode != MODE_SERVE && !botControls && playerDownT <= 0.0f) {
             if (chargingShot < 0) {
                 bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+                bool ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
                 for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
                     if (IsKeyPressed(shotKeys[s])) {
-                        chargingShot = shift ? s + SHOT_NORMAL_COUNT : s;
+                        chargingShot = ctrl ? SHOT_DROP : (shift ? s + SHOT_NORMAL_COUNT : s);
                         chargeSrc = SRC_KEY;
                         charge = 0.0f;
                     }
                 }
                 // マウス：左＝トップスピン、右＝スライス、スペース＋クリック＝フラット、
-                //          Shift＋クリック＝タッチ（狙いがネット近くならドロップ、奥ならロブ）
+                //          Shift＋クリック＝ロブ（左＝トップスピンロブ、右＝スライスロブ）、Ctrl＋クリック＝ドロップ。
+                //          どこに落とすかは狙い（マウス）で自由に決める
                 if (chargingShot < 0 && (lmbDown || rmbDown)) {
-                    if (shift)          chargingShot = TouchShot(lmbDown, aimDepth);
+                    if (ctrl)           chargingShot = SHOT_DROP;
+                    else if (shift)     chargingShot = lmbDown ? SHOT_TOP_LOB : SHOT_SLICE_LOB;
                     else if (spaceHeld) chargingShot = SHOT_FLAT;
                     else                chargingShot = lmbDown ? SHOT_TOP : SHOT_SLICE;
                     chargeSrc = lmbDown ? SRC_LMB : SRC_RMB;
@@ -2125,9 +2237,6 @@ int main(void)
                 if (ball.active && ball.lastHitter == HITTER_OPP)
                     playerAnim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, player) < 6.0f ? 2
                                           : (ball.pos.x >= player.x ? 0 : 1);
-                // タッチショットは、狙いを動かせばドロップとロブが切り替わる
-                if (chargingShot >= SHOT_NORMAL_COUNT && chargeSrc != SRC_KEY)
-                    chargingShot = TouchShot(chargeSrc == SRC_LMB, aimDepth);
                 bool released = chargeSrc == SRC_KEY ? IsKeyReleased(shotKeys[chargingShot])
                               : IsMouseButtonReleased(chargeSrc == SRC_LMB ? MOUSE_BUTTON_LEFT : MOUSE_BUTTON_RIGHT);
                 if (released) {
@@ -2651,7 +2760,7 @@ int main(void)
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob/drop  Esc cursor", 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
         else
