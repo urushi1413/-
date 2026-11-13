@@ -22,7 +22,7 @@ SWEET SPOT の効果音フォルダ
   bounce_grass  芝のバウンド（なければ bounce_hard）
   net           ネットに当たった音
   whiff         空振り（風を切る音）
-  squeak        ハードで靴がこすれる音（なければ slide）
+  squeak        ハードの靴の「キュッ」（_2〜_5 も）。滑るとき 1 回、球に寄って距離を詰めるとき 2〜3 回続けて（なければ slide）
   slide         クレー・芝で滑る音
   crowd         観客のざわめき（試合中ずっと繰り返す。数秒〜数十秒）
   applause      ポイント後の拍手（短め）

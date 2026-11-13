@@ -145,6 +145,7 @@ int main(void)
     float toastT = 0.0f;
     bool  playerGrunt = false, aiGrunt = false, botGrunt = false;   // この球で、打つ前の声を鳴らし始めたか
     bool  playerGruntTried = false, aiGruntTried = false, botGruntTried = false;   // この球で、打つ前の声をもう鳴らしたか
+    bool  playerFoot = false, aiFoot = false;   // この球で、フットワークの音をもう鳴らしたか
     bool  aiTossing = false;           // AI がトスを上げている
     float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
@@ -902,6 +903,12 @@ int main(void)
             if (!botControls) LogRecordBall(&plog, &ball);
 
             // AI のスイング（物理と同じ細かさで）
+            // AI のフットワークの音：打つ 0.6 秒前に、まだ動いていたら
+            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiFoot && ball.age >= ai.swingAge - 0.6f &&
+                Vector3Length(ai.vel) > 1.0f && !ai.sliding) {
+                SfxFootwork(2 + GetRandomValue(0, 1), Vector3Distance(cam.position, ai.pos));
+                aiFoot = true;
+            }
             // AI の打つ前の声：6 割の確率で。ネット前は声なし
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiGruntTried && ball.bounces >= 1 &&
                 ball.age >= ai.swingAge - GRUNT_LEAD) {
@@ -969,6 +976,18 @@ int main(void)
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
         prevAiSliding = ai.sliding;
         SfxCrowd(mode == MODE_MATCH, 1.0f);
+        SfxUpdate();
+        // フットワークの音（自分）：打つ 0.6 秒ほど前に、まだ動いて位置を合わせていたら「キュッ」を 2〜3 回
+        if (!ball.active || ball.lastHitter != HITTER_OPP) playerFoot = false;
+        else if (!playerFoot && !botControls && mode != MODE_SERVE && ball.age > 0.2f && Vector3Length(P.vel) > 1.0f && !P.sliding) {
+            ShotType ft = P.chargingShot >= 0 ? (ShotType)P.chargingShot : SHOT_TOP;
+            Assist fa = ComputeAssist(P.pos, P.vel, &ball, ft, 0.5f);
+            if (fa.timingValid && fa.qBest > 0.15f && fa.tBest <= 0.65f && fa.tBest >= 0.40f) {
+                SfxFootwork(2 + GetRandomValue(0, 1), Vector3Distance(cam.position, P.pos));
+                playerFoot = true;
+            }
+        }
+        if (!ball.active || ball.lastHitter != HITTER_PLAYER) aiFoot = false;
 
         // ---- プレイ記録：来た球の追跡と、打球の結果 ----
         if (!botControls) {

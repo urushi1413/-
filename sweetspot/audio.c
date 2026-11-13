@@ -5,7 +5,7 @@
 #include "game.h"
 
 #define POOL      3          // 同じ音が重なっても鳴るように、同じ音を何個か読み込む
-#define VARIANTS  4          // 1 つの音につき、録音の種類（_2, _3, _4）
+#define VARIANTS  6          // 1 つの音につき、録音の種類（_2〜_6）
 
 typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 
@@ -178,7 +178,7 @@ void SfxNet(float speed, float dist) { Play(S_NET, -1, Clamp01(0.4f + speed / 30
 // 滑り込み・急な切り返し：ハードは靴の音、クレーと芝は滑る音
 void SfxSlide(float dist)
 {
-    if (gSurface == SURF_HARD) Play(S_SQUEAK, S_SLIDE, 0.8f * DistVol(dist), Jitter());
+    if (gSurface == SURF_HARD) Play(S_SQUEAK, S_SLIDE, 0.6f * DistVol(dist), Jitter());   // 滑るときは「キュッ」1 回
     else                       Play(S_SLIDE, -1, (gSurface == SURF_CLAY ? 0.9f : 0.5f) * DistVol(dist), Jitter());
 }
 
@@ -214,4 +214,27 @@ void SfxStopApplause(void)
     for (int i = 0; i < 2; i++)
         for (int v = 0; v < gSlot[ids[i]].nVar; v++)
             for (int k = 0; k < POOL; k++) if (IsSoundPlaying(gSlot[ids[i]].s[v][k])) StopSound(gSlot[ids[i]].s[v][k]);
+}
+
+// ---- フットワーク：球に寄って距離を詰めるとき、「キュッ」を 2〜3 回続けて（ハードだけ） ----
+typedef struct { double t; float vol; } QueuedSfx;
+static QueuedSfx gQ[8];
+static int gQn = 0;
+void SfxFootwork(int n, float dist)
+{
+    if (!gAudioOk || gSurface != SURF_HARD || gSlot[S_SQUEAK].nVar == 0) return;
+    double t = GetTime();
+    for (int i = 0; i < n && gQn < 8; i++) {
+        gQ[gQn++] = (QueuedSfx){ t, (0.35f + 0.15f * (GetRandomValue(0, 100) / 100.0f)) * DistVol(dist) };
+        t += 0.09 + GetRandomValue(0, 40) / 1000.0;   // 0.09〜0.13 秒おき
+    }
+}
+// 毎フレーム呼ぶ：時間が来た音を鳴らす
+void SfxUpdate(void)
+{
+    double now = GetTime();
+    for (int i = 0; i < gQn; ) {
+        if (gQ[i].t <= now) { Play(S_SQUEAK, -1, gQ[i].vol, Jitter()); gQ[i] = gQ[--gQn]; }
+        else i++;
+    }
 }
