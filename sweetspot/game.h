@@ -572,7 +572,7 @@ void  SfxInit(void);
 void  SfxClose(void);
 void  SfxSetVolume(float v);
 float SfxGetVolume(void);
-void  SfxHit(float q, float kmh, bool slice, bool voice, float dist);
+void  SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float dist);
 void  SfxServe(float q, float kmh, bool voice, float dist);
 void  SfxWhiff(void);
 void  SfxBounce(float speed, float dist);

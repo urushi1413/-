@@ -10,13 +10,13 @@
 typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 
 enum {
-    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_GRUNT_PRE, S_SERVE,
+    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_HIT_VOICE_SOFT, S_GRUNT_PRE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
     S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
-    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "grunt_pre", "serve",
+    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "hit_voice_soft", "grunt_pre", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
     "crowd", "applause", "applause_big", "call_fault"
 };
@@ -122,10 +122,17 @@ static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVa
 
 // voice：この打球の前に声（SfxGruntPre）を出し始めたか。出し始めたときだけ「打球音と声の続き」を鳴らす
 //   （途中で声が切れたり、始まりのない声の続きだけが鳴ったりしないように）
-void SfxHit(float q, float kmh, bool slice, bool voice, float dist)
+//   defensive：守りの球（伸びて取った・飛びついた・ロブ・速い球を浅く返した）。7 割で控えめな声を出す（打球音のあとに声）
+static double gVoiceUntil = 0.0;
+void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
     if (voice && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, 1.0f); return; }   // 声から続くので音の高さは変えない
+    if (defensive && !slice && gSlot[S_HIT_VOICE_SOFT].nVar && GetTime() >= gVoiceUntil && GetRandomValue(0, 99) < 70) {
+        gVoiceUntil = GetTime() + 0.45;   // 声は一度に 1 人
+        Play(S_HIT_VOICE_SOFT, -1, vol, 1.0f);
+        return;
+    }
     if (q < 0.18f)      Play(S_HIT_FRAME, S_HIT_BAD, vol, Jitter());
     else if (slice)     Play(S_HIT_SLICE, q < 0.5f ? S_HIT_BAD : S_HIT_OK, vol, Jitter());
     else if (q < 0.45f) Play(S_HIT_BAD, S_HIT_OK, vol, Jitter());
@@ -135,7 +142,7 @@ void SfxHit(float q, float kmh, bool slice, bool voice, float dist)
 
 void SfxServe(float q, float kmh, bool voice, float dist)
 {
-    SfxHit(q, kmh, false, voice, dist);
+    SfxHit(q, kmh, false, voice, false, dist);
 }
 
 // 試しに鳴らす（M で音をオンにしたとき）
@@ -148,7 +155,6 @@ void SfxTest(void)
 
 // 打つ前の声：打つ GRUNT_LEAD 秒前に鳴らし始める（溜めの間に声が出て、そのまま打球音と声の続きにつながる）
 //   声は一度に 1 人だけ：前の声（打つ前＋続き）が鳴り終わるまでは始めない。始めたら true
-static double gVoiceUntil = 0.0;
 bool SfxGruntPre(float dist)
 {
     if (!gAudioOk || gSlot[S_GRUNT_PRE].nVar == 0 || gSlot[S_HIT_VOICE].nVar == 0 || gVolume <= 0.0f) return false;

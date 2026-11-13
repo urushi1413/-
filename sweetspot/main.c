@@ -62,6 +62,14 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     DrawText(footer, px + pw / 2 - MeasureText(footer, 20) / 2, y + 10, 20, LIGHTGRAY);
 }
 
+// 守りの声を出す球か：伸びて取った・飛びついた・体から遠い・トップスピンロブ・速い球を浅く押して返した。
+//   スライス・ボレー・ネット前（distFromNet が VOICE_NET_Z より近い）は声なし
+static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, float hold)
+{
+    if (IsSliceShot(t) || (c->volley && !c->overhead) || distFromNet < VOICE_NET_Z) return false;
+    return c->lunge || c->dive || c->qDist < 0.5f || t == SHOT_TOP_LOB || (hold < 0.5f && c->inKmh > 90.0f);
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -840,7 +848,8 @@ int main(void)
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
-                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt, Vector3Distance(cam.position, ball.pos));
+                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
+                               DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;
                         rallyHits++;
                         P.lastAimTarget = target;
@@ -904,7 +913,8 @@ int main(void)
             if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
-                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt, Vector3Distance(cam.position, ball.pos));
+                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
+                           DefensiveVoice(&ai.anim.lastContact, ai.lastType, -ai.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     aiGrunt = false;
                     rallyHits++;
                     trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
@@ -915,7 +925,8 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
-                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt, Vector3Distance(cam.position, ball.pos));
+                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt,
+                           DefensiveVoice(&bot.anim.lastContact, bot.lastType, P.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     botGrunt = false;
                     rallyHits++;
                     trailColor = SHOTS[bot.lastType].color;
