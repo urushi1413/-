@@ -132,6 +132,8 @@ int main(void)
     int   rallyHits = 0;           // このポイントで打った回数（拍手の大きさ）
     bool  prevHitNet = false, prevAiSliding = false;
     float soundVolBeforeMute = 0.8f;
+    char  toast[96] = { 0 };           // 画面の真ん中下に少しの間だけ出すお知らせ
+    float toastT = 0.0f;
     bool  aiTossing = false;           // AI がトスを上げている
     float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
@@ -289,8 +291,13 @@ int main(void)
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
         if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
-            if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); }
-            else SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
+            if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "SOUND OFF  (M)"); }
+            else {
+                SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
+                snprintf(toast, sizeof(toast), "SOUND ON  %.0f%%  (M)", SfxGetVolume() * 100.0f);
+                SfxTest();   // 鳴るかどうか、その場でわかるように
+            }
+            toastT = 1.8f;
         }
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
@@ -1491,6 +1498,12 @@ int main(void)
             DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
                                 sd > SERVICE_Z ? "  LONG" : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
         }
+        if (toastT > 0.0f) {
+            toastT -= frameDt;
+            int tw = MeasureText(toast, 30);
+            DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, GetScreenHeight() - 210, tw + 32, 44, Fade(BLACK, 0.75f));
+            DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
+        }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
         {
             static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
@@ -1503,6 +1516,15 @@ int main(void)
             DrawText(TextFormat("H assist: %s", an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
             DrawText(TextFormat("N style: %s", STYLE_NAMES[style]), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);
             DrawText(TextFormat("Court: %s", SURFACES[gSurface].name), 780, GetScreenHeight() - 30, 18, LIGHTGRAY);
+            // 音の状態（いつも出す）
+            {
+                const char *st; Color sc = LIGHTGRAY;
+                if (!SfxDeviceOk())               { st = "Sound: no audio device"; sc = RED; }
+                else if (SfxLoadedCount() == 0)   { st = TextFormat("Sound: no files in %s", SfxDir()); sc = RED; }
+                else if (SfxGetVolume() <= 0.0f)  { st = "Sound: OFF (M)"; sc = ORANGE; }
+                else                               st = TextFormat("Sound: %.0f%%  %d files (M)", SfxGetVolume() * 100.0f, SfxLoadedCount());
+                DrawText(st, 560, GetScreenHeight() - 52, 16, sc);
+            }
         }
         EndDrawing();
     }

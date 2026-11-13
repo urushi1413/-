@@ -580,6 +580,7 @@ void  SfxCrowd(bool on, float level);
 void  SfxPointEnd(int rallyHits, bool winner);
 int   SfxLoadedCount(void);
 bool  SfxDeviceOk(void);
+void  SfxTest(void);
 const char *SfxDir(void);
 
 #endif

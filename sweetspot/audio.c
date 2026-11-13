@@ -125,6 +125,9 @@ void SfxServe(float q, float kmh, float dist)
     else                     SfxHit(q, kmh, false, false, dist);
 }
 
+// 試しに鳴らす（M で音をオンにしたとき）
+void SfxTest(void) { int id = First3(S_HIT_VOICE, S_HIT_GOOD, S_HIT_OK); if (id >= 0) Play(id, -1, 0.9f, 1.0f); }
+
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
 
 void SfxBounce(float speed, float dist)
