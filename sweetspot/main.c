@@ -101,7 +101,7 @@ static bool gCasual = false;     // 自分の打球を評価している間だ�
 // 球種表の km/h は「REF_IN_KMH の球を打ち返したとき」の値として、そこからラケットの速さを逆算する
 #define RACKET_EA        0.40f
 #define REF_IN_KMH       60.0f
-#define VOLLEY_POWER     0.40f   // ボレーは振らないので、自分の力は 4 割しか乗らない
+#define VOLLEY_POWER     0.60f   // ボレーは大きく振らない（パンチ）ので、自分の力は 6 割。スマッシュ（頭上）は全力で振るので減らさない
 
 // ---- 打球のばらつき（標準偏差、度）----
 // 実際のばらつき = (BASE + (1 - 質)^2 * Q) × 勢いの倍率
@@ -543,7 +543,7 @@ static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotTy
     //   芯を外すと（質が低いと）どちらも落ちる。ボレーは自分のスイングがほとんど乗らない
     float specKmh   = Lerp(sp->minKmh, sp->maxKmh, charge);
     float racketKmh = fmaxf(specKmh - RACKET_EA * REF_IN_KMH, 0.0f) / (1.0f + RACKET_EA);
-    if (c->volley) racketKmh *= VOLLEY_POWER;
+    if (c->volley && !c->overhead) racketKmh *= VOLLEY_POWER;   // スマッシュはノーバウンドでもフルスイング
     float step = Clamp(c->stepIn / STEP_FULL, -1.0f, 1.0f);
     racketKmh += fmaxf(step, 0.0f) * STEP_POWER_KMH;
     float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
@@ -2059,6 +2059,8 @@ int main(void)
                     if (IsKeyDown(KEY_U)) aimX = fmaxf(aimX - 6.0f * frameDt, -lim);
                     if (IsKeyDown(KEY_O)) aimX = fminf(aimX + 6.0f * frameDt,  lim);
                     float deep = asp->deepDepth, shrt = asp->shortDepth;
+                    // ネットに近いほど、短いアングルを狙える（サービスライン付近なら 4m、ネット前なら 2.5m まで）
+                    if (player.z < SERVICE_Z + 1.0f) shrt = fmaxf(shrt, -Lerp(2.5f, 4.0f, Clamp01((player.z - 1.0f) / (SERVICE_Z))));
                     if (IsKeyDown(KEY_I))     aimDepth = fmaxf(aimDepth - 6.0f * frameDt, deep);
                     if (IsKeyDown(KEY_COMMA)) aimDepth = fminf(aimDepth + 6.0f * frameDt, shrt);
                 }
