@@ -146,9 +146,9 @@ typedef struct {
 
 static const ShotSpec SHOTS[SHOT_COUNT] = {
     //                     name         km/h            rpm               高さ(理想,許容) 距離許容 深さ(普通, S, W)    高い弾道 固定角
-    [SHOT_FLAT]      = { "FLAT",      90.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE },
-    [SHOT_TOP]       = { "TOPSPIN",   70.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 } },
-    [SHOT_SLICE]     = { "SLICE",     60.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, 1.10f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 } },
+    [SHOT_FLAT]      = { "FLAT",     110.0f, 190.0f,   500.0f,   900.0f, 1.20f, 0.60f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE },
+    [SHOT_TOP]       = { "TOPSPIN",   95.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 } },
+    [SHOT_SLICE]     = { "SLICE",     75.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, 1.10f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 } },
     [SHOT_SLICE_LOB] = { "SLICE LOB", 50.0f,  65.0f,  -800.0f, -1500.0f, 0.80f, 1.00f, 1.10f, -10.0f, -8.0f, -11.0f, true, 0.0f, (Color){ 150, 160, 255, 255 } },
     [SHOT_TOP_LOB]   = { "TOP LOB",   60.0f,  90.0f,  2000.0f,  3500.0f, 1.00f, 0.80f, 0.80f, -10.0f, -8.0f, -11.0f, false, 0.0f, (Color){ 255, 130, 40, 255 } },
     [SHOT_DROP]      = { "DROP",       0.0f,   0.0f, -1500.0f, -2500.0f, 0.90f, 0.90f, 0.90f,  -2.5f, -1.8f,  -4.0f, false, 28.0f, (Color){ 200, 120, 255, 255 } },
@@ -703,7 +703,7 @@ static Ball MachineServe(void)
 }
 
 // 球出しマシン：相手のベースラインから、ランダムな場所・球種で出す
-// pro=false: 打ち出し 80〜110km/h くらい（スクール）、pro=true: 105〜140km/h（プロのラリー）
+// pro=false: 打ち出し 70〜105km/h くらい（スクール）、pro=true: 105〜140km/h（プロのラリー）
 static Ball MachineFeed(bool pro)
 {
     Vector3 from   = { RandRange(-1.0f, 1.0f), 1.0f, -HALF_LEN - 0.5f };
@@ -711,10 +711,13 @@ static Ball MachineFeed(bool pro)
     ShotType t = (ShotType)(rand() % SHOT_NORMAL_COUNT);
     float charge = pro ? RandRange(0.5f, 0.8f) : RandRange(0.1f, 0.5f);
     float kmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, charge);
-    if (pro) {
-        const float lo[SHOT_NORMAL_COUNT] = { 115.0f, 105.0f,  90.0f };   // フラット / トップ / スライス
-        const float hi[SHOT_NORMAL_COUNT] = { 140.0f, 135.0f, 115.0f };
-        kmh = RandRange(lo[t], hi[t]);
+    {
+        // フラット / トップ / スライス
+        const float proLo[SHOT_NORMAL_COUNT]  = { 115.0f, 105.0f,  90.0f };
+        const float proHi[SHOT_NORMAL_COUNT]  = { 140.0f, 135.0f, 115.0f };
+        const float clubLo[SHOT_NORMAL_COUNT] = {  85.0f,  75.0f,  65.0f };
+        const float clubHi[SHOT_NORMAL_COUNT] = { 105.0f, 100.0f,  85.0f };
+        kmh = pro ? RandRange(proLo[t], proHi[t]) : RandRange(clubLo[t], clubHi[t]);
     }
     float rpm = Lerp(SHOTS[t].minRpm, SHOTS[t].maxRpm, charge);
     Ball b = AimedShot(from, target, kmh, rpm, false, NULL);
