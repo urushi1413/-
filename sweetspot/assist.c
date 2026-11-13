@@ -72,7 +72,7 @@ AssistPlan PlanAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotT
         if (!hittable) continue;
         if (b.bounces == 1 && i % 8 == 0 && p.nPath < ASSIST_PATH_MAX) {
             p.path[p.nPath] = b.pos;
-            p.good[p.nPath] = fabsf(b.pos.y - idealLow) <= tol * 0.6f;
+            p.good[p.nPath] = HeightErr(&SHOTS[type], b.pos.y, Vector3Length(b.vel) * 3.6f) <= tol * 0.6f;
             p.nPath++;
         }
         if (i % 2 != 0) continue;

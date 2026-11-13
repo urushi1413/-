@@ -6,6 +6,16 @@
 // charge が大きい（大きく振る）ほど、タイミングの許容幅が狭くなる
 // moveToward: ボールの方向へ走っている速さ（m/s）。速ければ飛びつける
 // reachBonus: スライド中などで伸びるリーチ（m）
+// 打ちやすい高さからどれだけ外れているか。理想より下はそのまま、上は highBand の幅までは 0。
+// 上から叩けるのは、浮いた遅い球だけ。速くて重い高い球（キックサーブ、深いトップスピン）は肩の上だと押される
+//   来た球 50km/h 以下で幅いっぱい、90km/h 以上で幅なし
+float HeightErr(const ShotSpec *sp, float y, float inKmh)
+{
+    if (y < sp->idealHeight) return sp->idealHeight - y;
+    float band = sp->highBand * Clamp01((90.0f - inKmh) / 40.0f);
+    return fmaxf(y - sp->idealHeight - band, 0.0f);
+}
+
 Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward, float reachBonus)
 {
     Contact c = { 0 };
@@ -43,7 +53,8 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     if (c.overhead) {
         // 頭上：高さがタイミング（落ちてくる球をどこで叩くか）、体の前右の点からの距離が位置
         float ox = fabsf(dx) - OVERHEAD_SIDE, oz = dz - OVERHEAD_FWD;
-        c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / (OVERHEAD_TOL_H * hk), 0.10f, 1.0f);
+        float otol = bp.y < OVERHEAD_IDEAL_H ? OVERHEAD_TOL_H_LOW : OVERHEAD_TOL_H;
+        c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / (otol * hk), 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - sqrtf(ox * ox + oz * oz) / (OVERHEAD_TOL_R * tk), 0.10f, 1.0f);
         c.qHeight = 1.0f;
     } else {
@@ -51,7 +62,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + reachBonus) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
-        c.qHeight = Clamp(1.0f - fabsf(bp.y - sp->idealHeight) / (sp->tolHeight * hk), 0.10f, 1.0f);
+        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y, c.inKmh) / (sp->tolHeight * hk), 0.10f, 1.0f);
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
     if (c.dive) c.quality *= DIVE_QUALITY;

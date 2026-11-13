@@ -96,6 +96,7 @@ typedef struct {
 #define OVERHEAD_MIN_H   1.85f   // これより高い球は頭上で打つ（スマッシュ・ハイボレー）
 #define OVERHEAD_IDEAL_H 2.55f   // 頭上の理想の打点
 #define OVERHEAD_TOL_H   0.70f
+#define OVERHEAD_TOL_H_LOW 1.20f // 理想より低い頭上の球（2m 前後）は、少し低くても叩ける
 #define OVERHEAD_MAX_H   3.05f   // ジャンプして届く高さ
 #define OVERHEAD_FWD     0.45f   // 頭上の理想の打点：体より少し前、少し右
 #define OVERHEAD_SIDE    0.30f
@@ -185,6 +186,7 @@ typedef struct {
     Color color;
     float tolTiming;        // タイミングの許容幅の倍率（スライスは面を合わせるだけなので広い、フラットは狭い）
     float reach;            // リーチの上乗せ（m）。スライスは片手で腕を伸ばして届く
+    float highBand;         // 理想の高さより上でも質が落ちない幅（m）。フラットは肩の高さから上から叩ける、トップスピンは肩より上だと振り上げにくい
 } ShotSpec;
 
 typedef struct {
@@ -396,6 +398,7 @@ float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, float angl
 float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm, bool high);
 float SolveSpeed(Vector3 from, Vector3 dirFlat, float dist, float angle, float rpm);
 Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool high, float *outAngle);
+float HeightErr(const ShotSpec *sp, float y, float inKmh);
 Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward, float reachBonus);
 Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type, float charge, float *outKmh, float *outRpm, float *outAngle);
 Vector3 SpinVector(Vector3 dirFlat, float top, float side, float gyro);
