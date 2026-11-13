@@ -45,6 +45,13 @@
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
 #define PLAYER_ACCEL     9.0f    // 加速（m/s^2）。最高速まで 0.67 秒
 #define PLAYER_BRAKE     20.0f   // 減速（m/s^2）。最高速から 0.3 秒・0.9m で止まる
+#define CHARGE_MOVE      0.85f   // 溜めている（テイクバックしている）間の走る速さの割合
+// スライド：溜めながら速く走っていて減速・切り返しをすると、足を滑らせながら打てる（止まる必要がない）
+#define SLIDE_MIN_SPEED  3.0f    // これより速く走っているとスライドになる
+#define SLIDE_DECEL      7.0f    // 滑っている間の減速（m/s^2）。ハードコートで滑るときの摩擦くらい。6m/s から 2.6m 滑る
+#define SLIDE_END_SPEED  0.8f
+#define SLIDE_REACH      0.30f   // スライド中は低く広い構えになり、リーチがこれだけ伸びる
+#define NO_BRAKE         1e6f    // TravelTime に渡すと「止まらずに滑り込む」計算になる
 // 打点は「体のまわりの立体的な範囲」で考える。上から見て、体の中心からボールまでの
 //   距離 r と、向き θ（真横が 0°、真正面が 90°、後ろがマイナス）で評価する
 #define IDEAL_FWD        0.40f   // 理想の打点：体より 40cm 前
@@ -192,6 +199,8 @@ typedef struct {
     float   windup;        // 溜め（0〜1）
     int     windStroke;    // 構え：0=フォア 1=バック 2=頭上
     float   runPhase;      // 走りの足の動き
+    bool    sliding;       // 滑っている（低く広い構え）
+    float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
 } SwingAnim;
 
 // ネットは中央 0.914m、ポスト 1.07m。その間は直線でたるむとみなす
@@ -447,7 +456,8 @@ static Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool h
 // player はプレイヤーの足元の位置。相手コート（-z）を向いて立っている
 // charge が大きい（大きく振る）ほど、タイミングの許容幅が狭くなる
 // moveToward: ボールの方向へ走っている速さ（m/s）。速ければ飛びつける
-static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward)
+// reachBonus: スライド中などで伸びるリーチ（m）
+static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward, float reachBonus)
 {
     Contact c = { 0 };
     Vector3 bp = ball->pos;
@@ -469,9 +479,9 @@ static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, 
     if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
     if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
     if (!c.overhead && ang < BEHIND_LIMIT) { c.miss = MISS_LATE; return c; }
-    float reach = c.overhead ? 1.6f : REACH_SIDE;
+    float reach = c.overhead ? 1.6f : REACH_SIDE + reachBonus;
     if (r > reach) {
-        bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE && moveToward >= DIVE_MIN_SPEED;
+        bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE + reachBonus && moveToward >= DIVE_MIN_SPEED;
         if (!canDive) { c.miss = (ang > 55.0f) ? MISS_EARLY : (ang < -20.0f ? MISS_LATE : MISS_FAR); return c; }
         c.dive = true;
     }
@@ -487,7 +497,7 @@ static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, 
         float idealAng = c.volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f);
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
-        c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / sp->tolSide, 0.10f, 1.0f);   // 届けば最低限は当たる
+        c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / (sp->tolSide + reachBonus), 0.10f, 1.0f);   // 届けば最低限は当たる
         c.qHeight = Clamp(1.0f - fabsf(bp.y - sp->idealHeight) / sp->tolHeight, 0.10f, 1.0f);
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
@@ -843,11 +853,19 @@ static void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAni
         return;
     }
 
-    // 足（走っていれば交互に振る）
     float swingAmt = Clamp(speed / 6.0f, 0.0f, 1.0f) * 0.32f;
     float ph = a->runPhase;
-    DrawCapsule(W( 0.11f, 0.9f, 0.0f), W( 0.13f, 0.06f,  sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
-    DrawCapsule(W(-0.11f, 0.9f, 0.0f), W(-0.13f, 0.06f, -sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+    if (a->sliding) {
+        // スライド：腰を落として足を大きく開く。足元に滑った跡
+        float sd = a->slideSide >= 0.0f ? 1.0f : -1.0f;
+        DrawCapsule(W( sd * 0.12f, 0.72f, 0.0f), W( sd * 0.75f, 0.05f, 0.05f), 0.075f, 6, 3, pants);
+        DrawCapsule(W(-sd * 0.12f, 0.72f, 0.0f), W(-sd * 0.55f, 0.05f, -0.1f), 0.075f, 6, 3, pants);
+        DrawCylinderEx(W(sd * 0.75f, 0.01f, 0.05f), W(sd * 1.35f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
+    } else {
+        // 足（走っていれば交互に振る）
+        DrawCapsule(W( 0.11f, 0.9f, 0.0f), W( 0.13f, 0.06f,  sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+        DrawCapsule(W(-0.11f, 0.9f, 0.0f), W(-0.13f, 0.06f, -sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+    }
     // 胴と頭
     DrawCapsule(W(0.0f, 0.95f, 0.0f), W(0.0f, 1.42f, 0.0f), 0.17f, 8, 4, shirt);
     DrawSphere(W(0.0f, 1.68f, 0.0f), 0.12f, skin);
@@ -968,6 +986,7 @@ typedef struct {
     Hitter  watching;     // 最後に見た打者（打者が変わったら反応を始める）
     int     level;
     float   downTimer;    // 飛びついて倒れている間は動けない
+    bool    sliding;      // 滑り込んでいる
     bool    planFore;     // フォアで打つ予定
     SwingAnim anim;
     // 最後のショット（HUD 用）
@@ -1085,7 +1104,7 @@ static void AiPlan(Opponent *ai, const Ball *worldBall)
             Vector3 toStand = Vector3Subtract(st, me);
             float dStand = Vector3Length(toStand);
             float v0 = (dStand > 0.01f) ? Vector3DotProduct(Rot180(ai->vel), Vector3Scale(toStand, 1.0f / dStand)) : 0.0f;
-            float need = TravelTime(dStand, v0, lv->speed, PLAYER_ACCEL, PLAYER_BRAKE);
+            float need = TravelTime(dStand, v0, lv->speed, PLAYER_ACCEL, NO_BRAKE);   // 滑り込めば止まらなくていい
             if (need <= t) {
                 if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; bestBallX = q.pos.x; }
             } else if (need - t < lateCost) {
@@ -1171,9 +1190,10 @@ static bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     Vector3 meVel = Rot180(ai->vel);
     Vector3 toBall = { b.pos.x - me.x, 0.0f, b.pos.z - me.z };
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
-    Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward);
+    float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
+    Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
-    c = EvaluateContact(me, &b, t, charge, moveToward);
+    c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
     c.stepIn = -meVel.z;
     ai->anim.lastContact = c;
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
@@ -1255,8 +1275,35 @@ static void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->seeTimer -= dt;
         if (ai->seeTimer <= 0.0f) AiPlan(ai, ball);
     }
-    // 走る（加速・減速あり）
-    ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
+    // 走る（加速・減速あり）。止まっていては間に合わないときは、全速で走って滑り込む
+    if (ai->sliding) {
+        float v = Vector3Length(ai->vel);
+        float nv = v - SLIDE_DECEL * dt;
+        if (nv < SLIDE_END_SPEED) { ai->sliding = false; ai->vel = Vector3Scale(ai->vel, fmaxf(nv, 0.0f) / fmaxf(v, 1e-4f)); }
+        else ai->vel = Vector3Scale(ai->vel, nv / v);
+        ai->pos = Vector3Add(ai->pos, Vector3Scale(ai->vel, dt));
+    } else {
+        bool slideIn = false;
+        Vector3 d = Vector3Subtract(ai->standPos, ai->pos); d.y = 0.0f;
+        float dist = Vector3Length(d);
+        if (ai->planned && dist > 0.05f) {
+            float v0 = Vector3DotProduct(ai->vel, Vector3Scale(d, 1.0f / dist));
+            float tLeft = ai->swingAge - ball->age;
+            slideIn = TravelTime(dist, v0, lv->speed, PLAYER_ACCEL, PLAYER_BRAKE) > tLeft;
+        }
+        if (slideIn) {
+            // 全速で目的地へ。着いたら滑り始める
+            Vector3 want = Vector3Scale(d, lv->speed / dist);
+            ai->vel = Accelerate(ai->vel, want, PLAYER_ACCEL, PLAYER_BRAKE, dt);
+            Vector3 step = Vector3Scale(ai->vel, dt);
+            if (Vector3Length(step) >= dist && Vector3Length(ai->vel) > SLIDE_MIN_SPEED) ai->sliding = true;
+            ai->pos = Vector3Add(ai->pos, step);
+        } else {
+            ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
+        }
+    }
+    ai->anim.sliding = ai->sliding;
+    if (Vector3Length(ai->vel) > 0.3f) ai->anim.slideSide = -ai->vel.x;   // AI は +z 向きなので右＝-x
     // 打つ 0.6 秒前から構える（見た目）
     if (ai->planned) {
         ai->anim.windup = Clamp01(1.0f - (ai->swingAge - ball->age) / 0.6f);
@@ -1355,7 +1402,7 @@ static Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball,
         bool hittable = b.bounces <= 1 && b.pos.z > 0.0f && !b.hitNet && (!b.isServe || b.bounces == 1);
         if (!hittable) continue;
         // タイミング：今の位置のまま、いつ振るのが一番いいか
-        Contact c = EvaluateContact(player, &b, type, charge, 0.0f);
+        Contact c = EvaluateContact(player, &b, type, charge, 0.0f, 0.0f);
         if (c.miss == MISS_NONE && c.quality > a.qBest) {
             a.qBest = c.quality; a.tBest = t; a.fore = c.forehand; a.overhead = c.overhead; a.timingValid = true;
         }
@@ -1376,7 +1423,7 @@ static Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball,
             Vector3 to = Vector3Subtract(cand[k], player);
             float d = Vector3Length(to);
             float v0 = (d > 0.01f) ? Vector3DotProduct(playerVel, Vector3Scale(to, 1.0f / d)) : 0.0f;
-            if (TravelTime(d, v0, PLAYER_SPEED, PLAYER_ACCEL, PLAYER_BRAKE) > t) continue;
+            if (TravelTime(d, v0, PLAYER_SPEED, PLAYER_ACCEL, NO_BRAKE) > t) continue;   // 滑り込めば間に合う
             float cost = fabsf(b.pos.y - idealH) + 0.4f * fmaxf(b.pos.z - (HALF_LEN + 2.0f), 0.0f) + 0.05f * d;
             if (cost < bestCost) { bestCost = cost; a.stand = cand[k]; a.ballAt = b.pos; a.standValid = true; }
         }
@@ -1472,7 +1519,7 @@ static void LogTimingAnalysis(const PlayLog *L, Vector3 player, const Ball *pre,
         }
         bool hittable = b.active && b.bounces <= 1 && b.pos.z > 0.0f && !b.hitNet && (!b.isServe || b.bounces == 1);
         if (!hittable) continue;
-        Contact c = EvaluateContact(player, &b, type, charge, 0.0f);
+        Contact c = EvaluateContact(player, &b, type, charge, 0.0f, 0.0f);
         if (c.miss == MISS_NONE && c.quality > *bestQ) { *bestQ = c.quality; bestAge = b.age; }
     }
     if (bestAge >= 0.0f) *offsetMs = (pre->age - bestAge) * 1000.0f;   // プラス＝遅い、マイナス＝早い
@@ -1549,6 +1596,9 @@ static void LogRecordBall(PlayLog *L, const Ball *ball)
     if (L->ringN < LOG_RING) L->ringN++;
 }
 
+// Windows で日本語入力（IME）を切る（platform_ime.c。Windows 以外では何もしない）
+void DisableIme(void *hwnd);
+
 typedef enum { MODE_MATCH, MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
@@ -1561,6 +1611,7 @@ int main(void)
     InitWindow(1280, 720, "SWEET SPOT");
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
+    DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
 
     static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
     LogOpen(&plog);
@@ -1577,6 +1628,7 @@ int main(void)
     Vector3 playerVel = { 0 };
     SwingAnim playerAnim = { .swingT = -1.0f };
     float playerDownT = 0.0f;           // 飛びついて倒れている残り時間
+    bool  playerSliding = false;        // 滑り込んでいる
     Vector3 lastIdealPos = { 0 };       // 最後に振ったときの理想の打点（ワールド座標）
 
     Ball ball = { 0 };
@@ -1673,6 +1725,7 @@ int main(void)
             ai.anim.swingT = -1.0f;
             playerAnim = (SwingAnim){ .swingT = -1.0f };
             playerDownT = 0.0f;
+            playerSliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
             needSetup = true;
@@ -1697,6 +1750,8 @@ int main(void)
             ai.downTimer = 0.0f; ai.anim = (SwingAnim){ .swingT = -1.0f };
             playerAnim = (SwingAnim){ .swingT = -1.0f };
             playerDownT = 0.0f;
+            playerSliding = false;
+            ai.sliding = false; bot.sliding = false;
             chargingShot = -1; chargingServe = -1;
             if (server == 0) {
                 player = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
@@ -1764,9 +1819,20 @@ int main(void)
             playerVel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
-            float spd = PLAYER_SPEED * (chargingShot >= 0 ? 0.6f : 1.0f);
+            float spd = PLAYER_SPEED * (chargingShot >= 0 ? CHARGE_MOVE : 1.0f);
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
-            playerVel = Accelerate(playerVel, want, PLAYER_ACCEL, PLAYER_BRAKE, simDt);
+            float v = Vector3Length(playerVel);
+            // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
+            if (!playerSliding && chargingShot >= 0 && v > SLIDE_MIN_SPEED &&
+                Vector3DotProduct(want, Vector3Scale(playerVel, 1.0f / v)) < v * 0.5f)
+                playerSliding = true;
+            if (playerSliding) {
+                float nv = v - SLIDE_DECEL * simDt;
+                if (nv < SLIDE_END_SPEED) { playerSliding = false; playerVel = Vector3Scale(playerVel, fmaxf(nv, 0.0f) / fmaxf(v, 1e-4f)); }
+                else playerVel = Vector3Scale(playerVel, nv / v);
+            } else {
+                playerVel = Accelerate(playerVel, want, PLAYER_ACCEL, PLAYER_BRAKE, simDt);
+            }
             player = Vector3Add(player, Vector3Scale(playerVel, simDt));
             player.x = Clamp(player.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
             player.z = Clamp(player.z, 0.5f, HALF_LEN + 5.0f);
@@ -1775,6 +1841,8 @@ int main(void)
         // 見た目のタイマー
         if (playerAnim.swingT >= 0.0f) playerAnim.swingT = fminf(playerAnim.swingT + simDt, 5.0f);
         playerAnim.downT = playerDownT;
+        playerAnim.sliding = playerSliding;
+        if (Vector3Length(playerVel) > 0.3f) playerAnim.slideSide = playerVel.x;   // 自分は -z 向きなので右＝+x
         playerAnim.runPhase += Vector3Length(playerVel) * simDt * 2.2f;
 
         // ---- サーブ（自分）----
@@ -1954,7 +2022,7 @@ int main(void)
                         if (!hittable) continue;
                         Vector3 toBall = { hb->pos.x - player.x, 0.0f, hb->pos.z - player.z };
                         float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(playerVel, Vector3Normalize(toBall)) : 0.0f;
-                        Contact hc = EvaluateContact(player, hb, type, charge, moveToward);
+                        Contact hc = EvaluateContact(player, hb, type, charge, moveToward, playerSliding ? SLIDE_REACH : 0.0f);
                         bool better = (bestIdx < 0) ||
                                       (hc.miss == MISS_NONE && (c.miss != MISS_NONE || hc.quality > c.quality)) ||
                                       (hc.miss != MISS_NONE && c.miss != MISS_NONE);

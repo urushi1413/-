@@ -7,7 +7,7 @@ ifeq ($(OS),Windows_NT)
     # raylib の Windows インストーラーを入れた場合の場所（違う場所なら make RAYLIB_PATH=... で指定）
     RAYLIB_PATH ?= C:/raylib/raylib/src
     CFLAGS += -I$(RAYLIB_PATH)
-    LIBS = -L$(RAYLIB_PATH) -lraylib -lopengl32 -lgdi32 -lwinmm
+    LIBS = -L$(RAYLIB_PATH) -lraylib -lopengl32 -lgdi32 -lwinmm -limm32
     TARGET := $(TARGET).exe
 else
     UNAME := $(shell uname -s)
@@ -18,8 +18,8 @@ else
     endif
 endif
 
-$(TARGET): main.c
-	$(CC) $(CFLAGS) main.c -o $(TARGET) $(LIBS)
+$(TARGET): main.c platform_ime.c
+	$(CC) $(CFLAGS) main.c platform_ime.c -o $(TARGET) $(LIBS)
 
 clean:
 	rm -f sweetspot sweetspot.exe ai_vs_ai
