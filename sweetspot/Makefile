@@ -4,7 +4,10 @@ CFLAGS ?= -std=c99 -Wall -O2
 TARGET  = sweetspot
 
 ifeq ($(OS),Windows_NT)
-    LIBS = -lraylib -lopengl32 -lgdi32 -lwinmm
+    # raylib の Windows インストーラーを入れた場合の場所（違う場所なら make RAYLIB_PATH=... で指定）
+    RAYLIB_PATH ?= C:/raylib/raylib/src
+    CFLAGS += -I$(RAYLIB_PATH)
+    LIBS = -L$(RAYLIB_PATH) -lraylib -lopengl32 -lgdi32 -lwinmm
     TARGET := $(TARGET).exe
 else
     UNAME := $(shell uname -s)
