@@ -37,9 +37,11 @@ void AwardPoint(Score *s, int w)
     s->tiebreak = false;
     s->server = 1 - firstServer;
     if (setWon) {
+        if (s->nSetsDone < 5) { s->setScore[s->nSetsDone][0] = s->games[0]; s->setScore[s->nSetsDone][1] = s->games[1]; s->nSetsDone++; }
         s->sets[w]++;
         s->games[0] = s->games[1] = 0;
-        s->over = true;   // 今は 1 セットマッチ
+        s->nGames = 0;    // ゲームの流れはセットごと
+        s->over = s->sets[w] >= (s->setsToWin > 0 ? s->setsToWin : 1);
     } else if (s->games[0] == 6 && s->games[1] == 6) {
         s->tiebreak = true;
     }

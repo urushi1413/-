@@ -4,6 +4,64 @@
 
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
+// 試合の統計（中継のマッチサマリーの形）。mst はサーブの入り [0=1st 打数 1=1st 入 2=2nd 打数 3=2nd 入 4=返されなかった 5=DF]
+static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6])
+{
+    int W = GetScreenWidth(), H = GetScreenHeight();
+    int pw = 700, rowH = 34, nRows = 11;
+    int ph = 132 + nRows * rowH + 44;
+    int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+    Color head = { 70, 40, 110, 240 }, rowA = { 20, 80, 50, 235 }, rowB = { 25, 95, 60, 235 };
+    Color you = RAYWHITE, aiC = (Color){ 255, 215, 90, 255 };
+    DrawRectangle(px, py, pw, 70, head);
+    DrawText(title, px + 24, py + 18, 36, RAYWHITE);
+    // セットのスコア
+    char sets[64] = { 0 };
+    for (int i = 0; i < sc->nSetsDone; i++)
+        snprintf(sets + strlen(sets), sizeof(sets) - strlen(sets), "%s%d-%d", i ? "  " : "", sc->setScore[i][0], sc->setScore[i][1]);
+    DrawText(sets, px + pw - 24 - MeasureText(sets, 26), py + 24, 26, RAYWHITE);
+    int y = py + 74;
+    DrawRectangle(px, y, pw, 40, rowB);
+    DrawText("YOU", px + 70 - MeasureText("YOU", 24) / 2, y + 8, 24, you);
+    DrawText("AI", px + pw - 70 - MeasureText("AI", 24) / 2, y + 8, 24, aiC);
+    y += 44;
+    for (int r = 0; r < nRows; r++) {
+        const char *label = "";
+        char v[2][24];
+        for (int k = 0; k < 2; k++) {
+            const MatchStats *m = &ms[k];
+            int o = 1 - k;
+            int retFaced = mst[o][1] + mst[o][3], retIn = retFaced - mst[o][4];
+            #define PCT(a, b) snprintf(v[k], sizeof(v[k]), "%d%%", (b) > 0 ? (a) * 100 / (b) : 0)
+            #define NUM(a)    snprintf(v[k], sizeof(v[k]), "%d", (a))
+            #define FRAC(a, b) snprintf(v[k], sizeof(v[k]), "%d / %d", (a), (b))
+            switch (r) {
+                case 0:  label = "Aces";                    NUM(m->aces); break;
+                case 1:  label = "Double Faults";           NUM(mst[k][5]); break;
+                case 2:  label = "1st Serves IN";           PCT(mst[k][1], mst[k][0]); break;
+                case 3:  label = "1st Serve Points Won";    PCT(m->s1Won, m->s1Pts); break;
+                case 4:  label = "2nd Serve Points Won";    PCT(m->s2Won, m->s2Pts); break;
+                case 5:  label = "Total Serve Returns IN";  PCT(retIn, retFaced); break;
+                case 6:  label = "Break Points Won";        FRAC(m->bpWon, m->bpTotal); break;
+                case 7:  label = "Net Approach Points Won"; FRAC(m->netWon, m->netPts); break;
+                case 8:  label = "Total Unforced Errors";   NUM(m->unforced); break;
+                case 9:  label = "Total Winners";           NUM(m->winners); break;
+                default: label = "Total Points Won";        NUM(m->points); break;
+            }
+            #undef PCT
+            #undef NUM
+            #undef FRAC
+        }
+        DrawRectangle(px, y, pw, rowH - 2, (r % 2) ? rowB : rowA);
+        DrawText(v[0], px + 70 - MeasureText(v[0], 22) / 2, y + 6, 22, you);
+        DrawText(label, px + pw / 2 - MeasureText(label, 22) / 2, y + 6, 22, RAYWHITE);
+        DrawText(v[1], px + pw - 70 - MeasureText(v[1], 22) / 2, y + 6, 22, aiC);
+        y += rowH;
+    }
+    DrawRectangle(px, y, pw, 40, Fade(BLACK, 0.75f));
+    DrawText(footer, px + pw / 2 - MeasureText(footer, 20) / 2, y + 10, 20, LIGHTGRAY);
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -64,6 +122,12 @@ int main(void)
     int   mst[2][6] = { { 0 } };
     bool  retPending = false;          // 入ったサーブの、リターンの結果待ち
     int   retServer = 0;
+    MatchStats ms[2] = { 0 };          // 試合の統計（マッチサマリー）
+    bool  netFlag[2] = { false };      // このポイントでネットに出たか
+    int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
+    bool  setBreak = false;            // セット間：統計を見せて、Enter / クリックで次のセットへ
+    float summaryT = 0.0f;
+    bool  showSummary = false;         // Tab の 2 回目：試合の統計
 
     // 試合
     Opponent ai = { 0 };
@@ -106,10 +170,10 @@ int main(void)
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
-            enum { MI_PLAY, MI_MODE, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
-            int items[13], n = 0;
+            enum { MI_PLAY, MI_MODE, MI_SETS, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            int items[16], n = 0;
             items[n++] = MI_PLAY;
-            items[n++] = MI_MODE; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
+            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
             items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
@@ -144,6 +208,7 @@ int main(void)
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
+                    case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
                     case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
@@ -183,6 +248,7 @@ int main(void)
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
+                    case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
                     case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
                     case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
                     case MI_COURT:   label = "Court";           value = gSurface == SURF_CLAY ? "CLAY (slow, high)"
@@ -219,7 +285,12 @@ int main(void)
         for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
         if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
-        if (IsKeyPressed(KEY_TAB)) showStats = !showStats;
+        if (IsKeyPressed(KEY_TAB)) {
+            // Tab：セッションの統計 → （試合中なら）試合の統計 → 閉じる
+            if (!showStats && !showSummary) showStats = true;
+            else if (showStats && mode == MODE_MATCH) { showStats = false; showSummary = true; }
+            else { showStats = false; showSummary = false; }
+        }
         if (IsKeyPressed(KEY_H)) assistLevel = (assistLevel + 2) % 3;
         if (IsKeyPressed(KEY_N)) style = (PlayStyle)((style + 1) % STYLE_COUNT);
         plog.assist = assistLevel;
@@ -243,7 +314,9 @@ int main(void)
             P.sliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
+            score.setsToWin = setsToWin;
             memset(mst, 0, sizeof(mst)); retPending = false;
+            memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
             pointMsg = "";
             trailCount = 0;
@@ -253,6 +326,7 @@ int main(void)
         int server = CurrentServer(&score);
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
+            netFlag[0] = netFlag[1] = false;
             bool deuce = DeuceCourt(&score);
             deuceSide = deuce;
             ball = (Ball){ 0 };
@@ -774,6 +848,11 @@ int main(void)
         if (mode == MODE_MATCH && phase == PH_PLAY) {
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
+            bool returnShot = retPending && !ball.isServe;   // 今飛んでいるのはリターン
+            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト
+            // ネットに出たか：サービスラインより前に入った
+            if (P.pos.z < SERVICE_Z) netFlag[0] = true;
+            if (ai.pos.z > -SERVICE_Z) netFlag[1] = true;
             // リターンが入ったかどうか（入らなければ「返されなかったサーブ」）
             if (retPending && !ball.isServe && ball.bounces >= 1 && ball.result != RESULT_NONE) {
                 if (ball.result != RESULT_IN) mst[retServer][4]++;
@@ -795,14 +874,17 @@ int main(void)
                 } else {
                     winner = 1 - hitter;
                     pointMsg = "Double fault";
+                    endKind = 4;
                 }
             } else if (!ball.isServe || serveJudged) {
                 if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
                     winner = 1 - hitter;
+                    endKind = 3;
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
                                                            : (hitter == 0 ? "Your error (out)" : "AI error (out)");
                 } else if (ball.bounces >= 2) {
                     winner = hitter;
+                    endKind = ball.isServe ? 1 : 2;
                     if (ball.isServe) { pointMsg = (hitter == 0) ? "Your ace / unreturned serve" : "AI ace / unreturned serve";
                                         mst[hitter][4]++; retPending = false; }
                     else              pointMsg = (hitter == 0) ? "Your winner" : "AI winner";
@@ -810,10 +892,41 @@ int main(void)
             }
             if (winner >= 0) {
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
+                // ---- 試合の統計 ----
+                {
+                    int sv = server, rv = 1 - server;
+                    ms[winner].points++;
+                    if (serveNo == 1) { ms[sv].s1Pts++; if (winner == sv) ms[sv].s1Won++; }
+                    else              { ms[sv].s2Pts++; if (winner == sv) ms[sv].s2Won++; }
+                    if (!score.tiebreak) {
+                        // ブレークポイント：レシーバーがこのポイントを取ればゲーム
+                        Score tmp = score;
+                        AwardPoint(&tmp, rv);
+                        if (tmp.games[rv] != score.games[rv] || tmp.sets[rv] != score.sets[rv]) {
+                            ms[rv].bpTotal++;
+                            if (winner == rv) ms[rv].bpWon++;
+                        }
+                    }
+                    for (int k = 0; k < 2; k++) if (netFlag[k]) { ms[k].netPts++; if (winner == k) ms[k].netWon++; }
+                    if (endKind == 1) { ms[hitter].aces++; ms[hitter].winners++; }
+                    if (endKind == 2) ms[hitter].winners++;
+                    if (endKind == 3 && !returnShot) {
+                        // アンフォーストエラー：来た球が遅めで、飛びつきでも伸びきりでもなかったのにミス
+                        const Contact *hc = (hitter == 1) ? &ai.anim.lastContact
+                                                          : (autopilot ? &bot.anim.lastContact : &P.anim.lastContact);
+                        if (!hc->dive && hc->inKmh < 85.0f && hc->qDist >= 0.5f) ms[hitter].unforced++;
+                    }
+                }
                 int gamesBefore = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
+                int setsBefore = score.nSetsDone;
                 AwardPoint(&score, winner);
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
-                if (score.over)                   snprintf(scoreCall, sizeof(scoreCall), "GAME, SET  %s", winner == 0 ? "YOU" : "AI");
+                if (score.nSetsDone != setsBefore) {
+                    int *g = score.setScore[score.nSetsDone - 1];
+                    snprintf(scoreCall, sizeof(scoreCall), "GAME, SET%s  %s   (%d - %d)", score.over ? " AND MATCH" : "",
+                             winner == 0 ? "YOU" : "AI", g[0], g[1]);
+                    if (!score.over) { setBreak = true; summaryT = 0.0f; }
+                }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
                     snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : "AI", score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
@@ -823,7 +936,14 @@ int main(void)
         } else if (mode == MODE_MATCH && (phase == PH_BETWEEN || phase == PH_POINT_OVER)) {
             phaseTimer -= simDt;
             if (phase == PH_POINT_OVER) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
-            if (phaseTimer <= 0.0f) {
+            if (phaseTimer <= 0.0f && setBreak) {
+                // セット間：統計を出して待つ（オートパイロットなら 6 秒で進む）
+                summaryT += frameDt;
+                scoreCall[0] = 0; pointMsg = "";
+                if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && summaryT > 6.0f))
+                    setBreak = false;
+            }
+            if (phaseTimer <= 0.0f && !setBreak) {
                 if (phase == PH_POINT_OVER) serveNo = 1;
                 needSetup = true;
                 pointMsg = "";
@@ -1157,10 +1277,11 @@ int main(void)
         // スコア（試合）
         if (mode == MODE_MATCH) {
             // スコア表（中継のような形）：サーブの印、名前、ゲーム、ポイント
-            int sbw = 300, sx = GetScreenWidth() - sbw - 10, sy = 10;
+            int so = 30 * score.nSetsDone;   // 終わったセットの列
+            int sbw = 300 + so, sx = GetScreenWidth() - sbw - 10, sy = 10;
             DrawRectangle(sx, sy, sbw, 96, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
-            DrawText("GAMES", sx + 166, sy + 4, 12, LIGHTGRAY);
-            DrawText(score.tiebreak ? "TIEBREAK" : "POINT", sx + 222, sy + 4, 12, LIGHTGRAY);
+            DrawText("GAMES", sx + 166 + so, sy + 4, 12, LIGHTGRAY);
+            DrawText(score.tiebreak ? "TIEBREAK" : "POINT", sx + 222 + so, sy + 4, 12, LIGHTGRAY);
             for (int k = 0; k < 2; k++) {
                 int ry = sy + 20 + k * 36;
                 Color nameC = (k == 0) ? RAYWHITE : (Color){ 140, 170, 255, 255 };
@@ -1170,10 +1291,14 @@ int main(void)
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
                 DrawText(k == 0 ? "YOU" : "AI", sx + 58, ry + 3, 24, nameC);
-                DrawText(TextFormat("%d", score.games[k]), sx + 176, ry + 3, 24, RAYWHITE);
-                DrawRectangle(sx + 212, ry, 76, 30, Fade(YELLOW, 0.15f));
+                for (int i = 0; i < score.nSetsDone; i++) {
+                    bool won = score.setScore[i][k] > score.setScore[i][1 - k];
+                    DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
+                }
+                DrawText(TextFormat("%d", score.games[k]), sx + 176 + so, ry + 3, 24, RAYWHITE);
+                DrawRectangle(sx + 212 + so, ry, 76, 30, Fade(YELLOW, 0.15f));
                 const char *pl = PointLabel(&score, k);
-                DrawText(pl, sx + 250 - MeasureText(pl, 24) / 2, ry + 3, 24, YELLOW);
+                DrawText(pl, sx + 250 + so - MeasureText(pl, 24) / 2, ry + 3, 24, YELLOW);
             }
             // ゲームの流れ：取った方の色。ブレーク（レシーバーが取ったゲーム）は B
             for (int g = 0; g < score.nGames; g++) {
@@ -1200,12 +1325,14 @@ int main(void)
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
                 DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
             }
-            if (score.over) {
-                const char *m = score.sets[0] > score.sets[1] ? "YOU WIN THE SET!  (Enter: new match)" : "AI WINS THE SET  (Enter: new match)";
-                int w = MeasureText(m, 30);
-                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 220, w + 32, 46, Fade(BLACK, 0.7f));
-                DrawText(m, GetScreenWidth() / 2 - w / 2, 228, 30, RAYWHITE);
-            }
+            // 試合の統計：セット間と試合の後（Tab でもいつでも）
+            if (score.over && phaseTimer <= 0.0f)
+                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : "MATCH SUMMARY - AI WINS",
+                                 "Enter: new match", &score, ms, mst);
+            else if (setBreak && phaseTimer <= 0.0f)
+                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst);
+            else if (showSummary)
+                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst);
         }
 
         // 統計（Tab）

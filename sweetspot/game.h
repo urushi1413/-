@@ -306,7 +306,22 @@ typedef struct {
     int nGames;              // ここまでのゲーム数
     int gameWinner[16];      // 各ゲームを取った方
     int gameServer[16];      // 各ゲームのサーバー（取った方と違えばブレーク）
+    int setsToWin;           // 何セット取ったら勝ちか（1 / 2 / 3）。0 なら 1
+    int nSetsDone;           // 終わったセットの数
+    int setScore[5][2];      // 終わったセットのゲーム数
 } Score;
+
+// 試合の統計（中継のマッチサマリーと同じ項目）。1st サーブの入り・ダブルフォールトは mst から
+typedef struct {
+    int aces;
+    int s1Pts, s1Won;        // 1st サーブで始まったポイント / 取った数
+    int s2Pts, s2Won;        // 2nd サーブ（ダブルフォールト含む）
+    int bpTotal, bpWon;      // ブレークポイント（レシーバーとして）
+    int netPts, netWon;      // ネットに出たポイント（サービスラインより前に入った）
+    int unforced;            // アンフォーストエラー（時間も体勢もあったのにミス）
+    int winners;             // ウィナー（エース含む）
+    int points;              // 取ったポイント
+} MatchStats;
 
 typedef struct {
     bool    timingValid;  // タイミングの輪を出せる
