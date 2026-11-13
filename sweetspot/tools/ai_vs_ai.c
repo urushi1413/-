@@ -1,5 +1,5 @@
 // AI 同士で試合をさせて、バランスの数字を出すツール。
-//   make sim  （tennis/ ディレクトリで）
+//   make sim  （sweetspot/ ディレクトリで）
 // main.c をそのまま取り込んで、main だけ名前を変えている。描画は使わない。
 #define main game_main
 #include "../main.c"

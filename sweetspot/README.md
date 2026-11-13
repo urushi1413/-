@@ -1,4 +1,4 @@
-# 3D テニス（raylib / C）
+# SWEET SPOT
 
 コンセプト：**打点と球種がちゃんと結果に効く、球足の速いリアル系テニス**
 
@@ -126,7 +126,7 @@ AI 同士で 300 ポイント戦わせた結果（PRO 同士）：
 
 ```sh
 make
-./tennis
+./sweetspot      # Windows は sweetspot.exe
 ```
 
 ## 次のステップ候補

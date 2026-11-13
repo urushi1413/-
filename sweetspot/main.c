@@ -1,5 +1,5 @@
-// 3D テニス：ステップ3「打点システム」
-// 球出しマシンの球を、動いて・溜めて・タイミングよく離して打ち返す。
+// SWEET SPOT — 打点と球種がちゃんと結果に効く、球足の速いリアル系テニス
+// AI と試合をする（練習モード：ラリー・リターン・サーブもある）。
 // 打点（タイミング・体からの距離・高さ）の良し悪しで、球速・回転・コースのずれが決まる。
 // 単位はすべてメートル・秒・ラジアン。座標系: x=横, y=上, z=縦（自分側が +z、相手側が -z）
 #include "raylib.h"
@@ -1106,7 +1106,7 @@ typedef enum { PH_SERVE, PH_PLAY, PH_BETWEEN, PH_POINT_OVER } MatchPhase;
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
-    InitWindow(1280, 720, "Tennis");
+    InitWindow(1280, 720, "SWEET SPOT");
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
 

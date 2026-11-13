@@ -1,7 +1,7 @@
 # raylib がインストール済みの前提（pkg-config / Homebrew / w64devkit など）
 CC     ?= gcc
 CFLAGS ?= -std=c99 -Wall -O2
-TARGET  = tennis
+TARGET  = sweetspot
 
 ifeq ($(OS),Windows_NT)
     LIBS = -lraylib -lopengl32 -lgdi32 -lwinmm
@@ -19,7 +19,7 @@ $(TARGET): main.c
 	$(CC) $(CFLAGS) main.c -o $(TARGET) $(LIBS)
 
 clean:
-	rm -f tennis tennis.exe ai_vs_ai
+	rm -f sweetspot sweetspot.exe ai_vs_ai
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
