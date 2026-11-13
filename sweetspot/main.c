@@ -1630,6 +1630,7 @@ int main(void)
     bool  serveJudged = false;
     float phaseTimer = 0.0f;
     const char *pointMsg = "";
+    char  scoreCall[64] = "";          // ポイントの後に大きく出すコール（DEUCE、GAME など）
     bool  needSetup = true;            // 次のポイント（またはセカンドサーブ）の準備をする
     bool  autopilot = false;           // B：自分側も AI が操作する（観戦モード）
     Opponent bot = { 0 };              // 自分側を操作する AI（座標は 180° 回した世界）
@@ -2130,7 +2131,13 @@ int main(void)
             }
             if (winner >= 0) {
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
+                int gamesBefore = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 AwardPoint(&score, winner);
+                int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
+                if (score.over)                   snprintf(scoreCall, sizeof(scoreCall), "GAME, SET  %s", winner == 0 ? "YOU" : "AI");
+                else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
+                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : "AI", score.games[0], score.games[1]);
+                else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
             }
@@ -2141,6 +2148,7 @@ int main(void)
                 if (phase == PH_POINT_OVER) serveNo = 1;
                 needSetup = true;
                 pointMsg = "";
+                scoreCall[0] = 0;
             }
         }
 
@@ -2366,6 +2374,13 @@ int main(void)
                 int w = MeasureText(pointMsg, 34);
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));
                 DrawText(pointMsg, GetScreenWidth() / 2 - w / 2, 158, 34, YELLOW);
+            }
+            if (scoreCall[0] && !score.over) {
+                // スコアのコール（40-15、DEUCE、ADVANTAGE、GAME）を大きく
+                const char *call = TextToUpper(scoreCall);
+                int w = MeasureText(call, 48);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
+                DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
             }
             if (score.over) {
                 const char *m = score.sets[0] > score.sets[1] ? "YOU WIN THE SET!  (Enter: new match)" : "AI WINS THE SET  (Enter: new match)";
