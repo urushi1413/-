@@ -212,9 +212,13 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     float sgnK = (strokeK == 1) ? -1.0f : 1.0f;
     float yaw = 0.0f;
     bool swinging = a->swingT >= 0.0f && a->swingT < SWING_TIME;
-    if (swinging)            yaw = sgnK * Lerp(50.0f, -35.0f, EaseOut(a->swingT / SWING_TIME));
-    else if (a->windup > 0)  yaw = sgnK * 55.0f * Clamp01(a->windup * 1.4f);
+    // 構えでは横を向く（ストロークは 75°、サーブ・スマッシュはほぼ真横の 90°）。腰は肩の 6 割回る
+    float turn = (strokeK == 2) ? 90.0f : 75.0f;
+    if (swinging)            yaw = sgnK * Lerp(turn, -35.0f, EaseOut(a->swingT / SWING_TIME));
+    else if (a->windup > 0)  yaw = sgnK * turn * Clamp01(a->windup * 1.4f);
     yaw *= DEG2RAD;
+    float hipYaw = yaw * 0.6f;
+    float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
 
     // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
     float hipY = 0.86f - 0.04f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
@@ -237,40 +241,69 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         pos.y += jump;
     }
 
-    if (a->sliding) {
-        // スライド：腰を落として足を大きく開く。足元に滑った跡
-        float sd = a->slideSide >= 0.0f ? 1.0f : -1.0f;
-        hipY = 0.70f;
-        Vector3 h1 = { sd * 0.10f, hipY, 0.0f }, f1 = { sd * 0.80f, 0.06f, 0.05f };
-        Vector3 h2 = { -sd * 0.10f, hipY, 0.0f }, f2 = { -sd * 0.35f, 0.06f, -0.15f };
+    // ---- 跳んで伸びて取る（リターンなどで遠い球）：球の方へ跳び、体を倒して足を大きく開く ----
+    bool lunging = a->lungeT > 0.0f && !overheadPose;
+    if (lunging) {
+        float pr = 1.0f - a->lungeT / LUNGE_TIME;
+        float jl = 0.22f * sinf(PI * Clamp01(pr * 1.3f));
+        pos.y += jl;
+        float sd = a->lungeSide;
+        leanV = (Vector3){ sd * 0.28f, 0.0f, 0.10f };
+        hipY = 0.76f;
+        hipYaw = 0.0f;
+    }
+
+    if (a->sliding || lunging) {
+        // スライド・飛びつき：腰を落として足を大きく開く。スライドは足元に滑った跡
+        float sd = lunging ? a->lungeSide : (a->slideSide >= 0.0f ? 1.0f : -1.0f);
+        if (!lunging) hipY = 0.70f;
+        float lift = lunging ? 0.10f : 0.0f;
+        Vector3 h1 = { sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }, f1 = { sd * 0.85f, 0.06f, 0.10f };
+        Vector3 h2 = { -sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }, f2 = { -sd * 0.40f, 0.06f + lift, -0.20f };
         Vector3 k1 = TwoBone(h1, f1, 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
         Vector3 k2 = TwoBone(h2, f2, 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
         DrawCapsule(W(h1.x, h1.y, h1.z), W(k1.x, k1.y, k1.z), 0.075f, 6, 3, pants);
         DrawCapsule(W(k1.x, k1.y, k1.z), W(f1.x, f1.y, f1.z), 0.065f, 6, 3, pants);
         DrawCapsule(W(h2.x, h2.y, h2.z), W(k2.x, k2.y, k2.z), 0.075f, 6, 3, pants);
         DrawCapsule(W(k2.x, k2.y, k2.z), W(f2.x, f2.y, f2.z), 0.065f, 6, 3, pants);
-        DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
+        DrawCapsule(W(f1.x, f1.y - 0.02f, f1.z), W(f1.x + sd * 0.10f, f1.y - 0.03f, f1.z + 0.08f), 0.045f, 6, 3, RAYWHITE);
+        DrawCapsule(W(f2.x, f2.y - 0.02f, f2.z), W(f2.x + sd * 0.12f, f2.y - 0.03f, f2.z + 0.04f), 0.045f, 6, 3, RAYWHITE);
+        if (!lunging) DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
     } else {
         // 足：股関節・膝・足首。構えでは足を広げて膝を曲げ、走ると交互に踏み出して足を上げる
+        Vector3 hips[2];
         for (int i = 0; i < 2; i++) {
             float sd = i == 0 ? 1.0f : -1.0f;
             float p = ph + (i == 0 ? 0.0f : PI);
             float width = 0.14f + 0.10f * (1.0f - move);
             float stride = 0.42f * move;
-            Vector3 hip  = { sd * 0.10f + leanV.x * 0.3f, hipY, leanV.z * 0.3f };
-            Vector3 foot = { sd * width + mdx * sinf(p) * stride, 0.06f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
-                             mdz * sinf(p) * stride };
+            // 構え・振り：前足（フォアなら左）を踏み出し、後ろ足を引く。足と腰は横を向く
+            float hc = cosf(hipYaw), hs = sinf(hipYaw);
+            float bx = sd * width, bz = (sd == -sgnK ? 0.20f : -0.10f) * stanceK;
+            Vector3 hip  = { sd * 0.10f * hc + leanV.x * 0.3f, hipY, -sd * 0.10f * hs + leanV.z * 0.3f };
+            Vector3 foot = { bx * hc + bz * hs + mdx * sinf(p) * stride, 0.06f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
+                             -bx * hs + bz * hc + mdz * sinf(p) * stride };
+            float toe = hipYaw + sd * 0.30f;                             // つま先の向き（少し外向き）
             if (overheadPose) {
-                // 左足を前（ネット側）、右足を後ろに開いて構える。跳んだら右足を後ろに蹴り上げる
-                foot = (sd < 0) ? (Vector3){ -0.15f, 0.06f - jump, 0.28f }
-                                : (Vector3){ 0.22f, 0.06f - jump + 0.25f * ohU, -0.28f - 0.20f * ohU };
+                // 横向きに構える：左足を前（つま先は右前のポストの方）、右足は後ろでベースラインと平行。
+                //   跳んだら右足を後ろに蹴り上げる
+                foot = (sd < 0) ? (Vector3){ -0.10f, 0.06f - jump, 0.26f }
+                                : (Vector3){ 0.26f, 0.06f - jump + 0.25f * ohU, -0.24f - 0.20f * ohU };
                 if (jump > 0.0f) foot.y += jump * 0.6f;   // 跳んでいる間は足も浮く
+                toe = (sd < 0) ? 0.75f : 1.50f;
+                hip.x = sd * 0.10f * cosf(0.9f); hip.z = -sd * 0.10f * sinf(0.9f) + leanV.z * 0.3f;
             }
-            Vector3 knee = TwoBone(hip, foot, 0.44f, 0.44f, (Vector3){ sd * 0.25f, 0.0f, 1.0f });
+            Vector3 hint = { sd * 0.25f * cosf(hipYaw) + sinf(hipYaw), 0.0f, -sd * 0.25f * sinf(hipYaw) + cosf(hipYaw) };
+            Vector3 knee = TwoBone(hip, foot, 0.44f, 0.44f, hint);
             DrawCapsule(W(hip.x, hip.y, hip.z), W(knee.x, knee.y, knee.z), 0.075f, 6, 3, pants);
             DrawCapsule(W(knee.x, knee.y, knee.z), W(foot.x, foot.y, foot.z), 0.062f, 6, 3, pants);
-            DrawCapsule(W(foot.x, foot.y - 0.02f, foot.z - 0.04f), W(foot.x, foot.y - 0.03f, foot.z + 0.13f), 0.045f, 6, 3, RAYWHITE);
+            float tx = sinf(toe), tz = cosf(toe);
+            DrawCapsule(W(foot.x - tx * 0.04f, foot.y - 0.02f, foot.z - tz * 0.04f),
+                        W(foot.x + tx * 0.13f, foot.y - 0.03f, foot.z + tz * 0.13f), 0.045f, 6, 3, RAYWHITE);
+            hips[i] = hip;
         }
+        // 腰の線（腰が回っているのが見えるように）
+        DrawCapsule(W(hips[0].x, hips[0].y + 0.03f, hips[0].z), W(hips[1].x, hips[1].y + 0.03f, hips[1].z), 0.085f, 6, 3, pants);
     }
 
     // ---- 胴：骨盤から胸まで。肩の線はひねりに合わせて回る ----

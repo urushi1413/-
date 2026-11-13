@@ -443,6 +443,7 @@ int main(void)
 
         // 見た目のタイマー
         if (P.anim.swingT >= 0.0f) P.anim.swingT = fminf(P.anim.swingT + simDt, 5.0f);
+        if (P.anim.lungeT > 0.0f) P.anim.lungeT -= simDt;
         P.anim.downT = P.downT;
         P.anim.sliding = P.sliding;
         if (Vector3Length(P.vel) > 0.3f) P.anim.slideSide = P.vel.x;   // 自分は -z 向きなので右＝+x
@@ -731,6 +732,7 @@ int main(void)
                     // スイングの見た目と、理想の打点との比較用
                     Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
                     P.anim.lastContact = c;
+                    if (c.miss == MISS_NONE && c.lunge && !c.dive) { P.anim.lungeT = LUNGE_TIME; P.anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
                     P.anim.slice = IsSliceShot(type);
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
                     P.anim.swingT = 0.0f;

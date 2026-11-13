@@ -20,9 +20,10 @@ Ball RotBall(Ball b)
 
 const AiLevel AI_LEVELS[3] = {
     //          走る  反応   タイミング 位置   強気   見極め  1st     2nd     サーブの安定感
-    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f },
-    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f },
-    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f },
+    //                                                                                コースの厳しさ 深さ
+    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f, 0.60f, 5.7f },
+    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f, 0.42f, 5.8f },
+    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
 };
 
 // 速さ v0（目的地方向の成分）から距離 d を走って止まるまでの時間
@@ -281,6 +282,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
     c.stepIn = -meVel.z;
     ai->anim.lastContact = c;
+    if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     if (c.miss != MISS_NONE) return false;
@@ -330,11 +332,14 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     charge = (wantKmh / (0.80f + 0.20f * q) - ssp->minKmh) / (ssp->maxKmh - ssp->minKmh);
     float x0, x1;
     ServiceBox(me.x, -1, &x0, &x1);
-    const float course[3] = { x1 - 0.35f, x0 + 0.35f, 0.5f * (x0 + x1) };   // T / ワイド / ボディ（デュース側）
-    int ci = rand() % 3;
+    // コース：強い AI ほどライン際の深いところへ（返されないのはスピードよりコース）。セカンドは安全に内側・浅め
+    float m = lv->serveMargin + (first ? 0.0f : 0.30f);
+    float depth = lv->serveDepth - (first ? 0.0f : 0.45f);
+    const float course[3] = { x1 - m, x0 + m, 0.5f * (x0 + x1) };   // T / ワイド / ボディ（デュース側）
+    int ci = (RandRange(0.0f, 1.0f) < 0.5f + 0.4f * lv->aggression) ? rand() % 2 : 2;   // 強い AI ほどコーナーへ（PRO で 8 割）
     float tx = course[ci];
-    if (!deuce) tx = (ci == 0) ? x0 + 0.35f : (ci == 1 ? x1 - 0.35f : 0.5f * (x0 + x1));
-    Vector3 target = { tx, 0.0f, -5.7f };
+    if (!deuce) tx = (ci == 0) ? x0 + m : (ci == 1 ? x1 - m : 0.5f * (x0 + x1));
+    Vector3 target = { tx, 0.0f, -depth };
     float kmh;
     Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
     b.lastHitter = HITTER_OPP;
@@ -366,6 +371,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     }
     // 見た目のタイマー
     if (ai->anim.swingT >= 0.0f) ai->anim.swingT = fminf(ai->anim.swingT + dt, 5.0f);
+    if (ai->anim.lungeT > 0.0f) ai->anim.lungeT -= dt;
     if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
     ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
     ai->anim.velX = -ai->vel.x; ai->anim.velZ = ai->vel.z;   // AI は +z 向き

@@ -66,6 +66,10 @@ typedef struct {
 #define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
 #define SLICE_SIDE_RATIO 0.80f  // スライスの横回転：逆回転の何割（フォアは右、バックは左に曲がる）
 #define REBOUND_VY_KEEP  0.60f   // 跳ね返りの分が持ち続ける、来た球の上下の速さの割合
+#define RETURN_REACH     0.45f   // リターンは跳んで伸びて取る：届く範囲と、距離の許容幅の上乗せ（m）
+#define RETURN_SWING     0.65f   // リターンはコンパクトに合わせる：自分のスイングの分はこの割合（入るが浮きやすい）
+#define LUNGE_TIME       0.40f   // 跳んで伸びる見た目の長さ（秒）
+#define LUNGE_R          1.35f   // これより遠い球は、足を大きく踏み出して取る（見た目）
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
@@ -238,6 +242,8 @@ typedef struct {
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
     float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）
     float inKmh;       // 来た球の速さ
+    bool  isReturn;    // サーブのリターン
+    bool  lunge;       // 足を大きく踏み出して（跳んで）伸びて取った
     float sit;         // 上から叩ける球の度合い（0〜1）。高くて遅い球ほど大きい
     float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
@@ -260,6 +266,8 @@ typedef struct {
     float   runPhase;      // 走りの足の動き
     bool    sliding;       // 滑っている（低く広い構え）
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
+    float   lungeT;        // 跳んで伸びて取った後の残り時間（見た目）
+    float   lungeSide;     // 跳んだ向き（体から見て右 +1、左 -1）
     float   velX, velZ;    // 走っている速さ（体から見て：x=右、z=前）
     bool    slice;         // スライス系（スライス・スライスロブ・ドロップ）：上から下に切る振り方。バックは片手
 } SwingAnim;
@@ -297,6 +305,8 @@ typedef struct {
     float serve1Kmh;      // ファーストサーブの速さの目安
     float serve2Kmh;      // セカンドサーブの速さの目安（キック）
     float serveSkill;     // サーブの安定感（打点の質に掛ける。低いほどぶれて入りにくい）
+    float serveMargin;    // サーブのコースの厳しさ：ラインからどれだけ内側を狙うか（m）。小さいほどライン際
+    float serveDepth;     // サーブの深さ：ネットからの距離（m）。サービスラインは 6.4
 } AiLevel;
 
 typedef struct {

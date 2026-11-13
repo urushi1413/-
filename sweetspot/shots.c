@@ -48,6 +48,9 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
     if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
     if (gCasual) reachBonus += CASUAL_REACH;
+    c.isReturn = ball->isServe;
+    float qualityReach = reachBonus + (ball->isServe ? 0.5f * RETURN_REACH : 0.0f);   // 当たりの質（距離）に効く分：伸びた分の半分は合わせられる
+    if (c.isReturn) reachBonus += RETURN_REACH;   // リターンは跳んで伸びて取る（遠いサーブでも届く）。届くだけで、伸びた分だけ当たりは悪い
     reachBonus += SHOTS[type].reach;   // 球種ごとのリーチ（スライスは腕を伸ばして届く）
     if (!c.overhead && ang < (gCasual ? -80.0f : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
@@ -57,6 +60,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         c.dive = true;
     }
 
+    c.lunge = !c.overhead && r > LUNGE_R;
     const ShotSpec *sp = &SHOTS[type];
     float tk = gCasual ? CASUAL_TOL : 1.0f, hk = gCasual ? CASUAL_TOL_H : 1.0f;
     tk *= 1.0f + SIT_POS_BONUS * c.sit;   // チャンスボールは前後左右に多少ずれても打てる
@@ -71,7 +75,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float idealAng = c.volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
-        c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + reachBonus) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
+        c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + qualityReach + sp->reach) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
         c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y, c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
     }
     c.quality = c.qTiming * c.qDist * c.qHeight;
@@ -98,6 +102,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     float specKmh   = Lerp(sp->minKmh, sp->maxKmh, charge);
     float racketKmh = fmaxf(specKmh - RACKET_EA * REF_IN_KMH, 0.0f) / (1.0f + RACKET_EA);
     if (c->volley && !c->overhead) racketKmh *= VOLLEY_POWER;   // スマッシュはノーバウンドでもフルスイング
+    if (c->isReturn) racketKmh *= RETURN_SWING;                 // リターンは合わせるだけ：遅くなる分、弾道が高くなって入るが浮く
     float step = Clamp(c->stepIn / STEP_FULL, -1.0f, 1.0f);
     racketKmh += fmaxf(step, 0.0f) * STEP_POWER_KMH;
     float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
@@ -141,7 +146,9 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
         //   うまく当てるほど面で抑えられるが、半分は残る
         float vin = fmaxf(c->inKmh / 3.6f, 1.0f);
-        angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q);
+        //   リターンは遅く合わせる分もともと高い弾道になるので、上へのずれは半分（入るが浮く）
+        angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
+                * (c->isReturn ? 0.5f : 1.0f);
         ang += angErr;
     }
 
