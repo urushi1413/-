@@ -88,7 +88,7 @@ static bool gCasual = false;     // 自分の打球を評価している間だ�
 #define CASUAL_TOL_H     1.6f    // 高さの許容幅 1.6 倍
 #define CASUAL_QFLOOR    0.35f   // 当たりの質は最低 35%
 #define CASUAL_ERR       0.45f   // ぶれ 45%
-#define CASUAL_WAIT      0.60f   // 早く離したとき、この時間まで先の一番いい瞬間を待って振る
+#define CASUAL_WAIT      1.00f   // 早く離したとき、この時間まで先の一番いい瞬間を待って振る
 #define TIMING_PULL      0.15f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
 
 // ---- 来た球の勢い ----
