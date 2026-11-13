@@ -1015,6 +1015,7 @@ int main(void)
                 if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
                     winner = 1 - hitter;
                     endKind = 3;
+                    if (ball.result == RESULT_OUT) SfxCallOut();
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
                                                            : (hitter == 0 ? "Your error (out)" : "AI error (out)");
                 } else if (ball.bounces >= 2) {

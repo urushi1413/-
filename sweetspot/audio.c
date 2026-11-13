@@ -12,13 +12,13 @@ typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 enum {
     S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_HIT_VOICE_SOFT, S_GRUNT_PRE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
-    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_COUNT
+    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_CALL_OUT, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
     "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "hit_voice_soft", "grunt_pre", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
-    "crowd", "applause", "applause_big", "call_fault"
+    "crowd", "applause", "applause_big", "call_fault", "call_out"
 };
 
 static bool    gAudioOk = false;
@@ -202,3 +202,6 @@ void SfxPointEnd(int rallyHits, bool winner)
 
 // 審判のコール「フォルト」
 void SfxCallFault(void) { Play(S_CALL_FAULT, -1, 0.85f, 1.0f); }
+
+// 審判のコール「アウト」（ラリー中の球がアウトになったとき）
+void SfxCallOut(void) { Play(S_CALL_OUT, -1, 0.85f, 1.0f); }
