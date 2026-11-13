@@ -66,6 +66,7 @@ int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "SWEET SPOT");
+    SfxInit();
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
@@ -128,6 +129,9 @@ int main(void)
     bool  setBreak = false;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
     bool  showSummary = false;
+    int   rallyHits = 0;           // このポイントで打った回数（拍手の大きさ）
+    bool  prevHitNet = false, prevAiSliding = false;
+    float soundVolBeforeMute = 0.8f;
     bool  aiTossing = false;           // AI がトスを上げている
     float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
 
@@ -172,11 +176,12 @@ int main(void)
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
-            enum { MI_PLAY, MI_MODE, MI_SETS, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
+            enum { MI_PLAY, MI_MODE, MI_SETS, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
             int items[16], n = 0;
             items[n++] = MI_PLAY;
             items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_CAMERA;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
             static const char *assistNames[3] = { "OFF", "TIMING", "TIMING + SPOT" };
@@ -217,6 +222,7 @@ int main(void)
                     case MI_FEED:   proFeed = !proFeed; break;
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
                     case MI_CAMERA: camMode = (camMode + 3 + change) % 3; break;
+                    case MI_SOUND:  SfxSetVolume(roundf(Clamp(SfxGetVolume() + 0.1f * change, 0.0f, 1.0f) * 10.0f) / 10.0f); break;
                     default: break;
                 }
             }
@@ -258,6 +264,7 @@ int main(void)
                     case MI_ASSIST:  label = "Assist";          value = assistNames[assistLevel]; break;
                     case MI_FEED:    label = "Practice feed";   value = proFeed ? "PRO" : "CLUB"; break;
                     case MI_SENS:    label = "Mouse sensitivity"; value = TextFormat("%.2f", aimSens); break;
+                    case MI_SOUND:   label = "Sound volume";    value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : "OFF"; break;
                     case MI_CAMERA:  label = "Camera";          value = camNames[camMode]; break;
                     case MI_RESTART: label = "RESTART"; break;
                     case MI_TITLE:   label = "BACK TO TITLE"; break;
@@ -272,12 +279,16 @@ int main(void)
             int hy = rowY0 + n * rowH + 14;
             DrawText("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", px + 30, hy, 16, LIGHTGRAY);
             DrawText("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", px + 30, hy + 24, 16, LIGHTGRAY);
-            DrawText("Shift+click lob, Ctrl+click drop, Q crouch, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
+            DrawText("Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
             EndDrawing();
             continue;
         }
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
+        if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
+            if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); }
+            else SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
+        }
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
@@ -374,6 +385,8 @@ int main(void)
             phaseTimer -= simDt;
             if (phaseTimer <= 0.0f) {
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
+                SfxServe(bot.anim.lastContact.quality, bot.lastKmh, Vector3Distance(cam.position, ball.pos));
+                rallyHits = 1;
                 P.pos = Rot180(bot.pos);
                 trailColor = RAYWHITE;
                 trailCount = 0;
@@ -428,7 +441,7 @@ int main(void)
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
             if (!P.sliding && P.chargingShot >= 0 && v > SLIDE_MIN_SPEED &&
                 Vector3DotProduct(want, Vector3Scale(P.vel, 1.0f / v)) < v * 0.5f)
-                P.sliding = true;
+            { P.sliding = true; SfxSlide(Vector3Distance(cam.position, P.pos)); }
             if (P.sliding) {
                 float nv = v - SLIDE_DECEL * simDt;
                 if (nv < SLIDE_END_SPEED) { P.sliding = false; P.vel = Vector3Scale(P.vel, fmaxf(nv, 0.0f) / fmaxf(v, 1e-4f)); }
@@ -515,6 +528,7 @@ int main(void)
                     if (mode == MODE_SERVE) svStats[serveNo - 1][0]++;
                     if (best < 0) {
                         serveMsg = "WHIFF (ball above reach)";   // 空振りはフォルト
+                        SfxWhiff();
                         P.lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
                         if (plog.f) {
@@ -547,6 +561,8 @@ int main(void)
                         P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
+                        SfxServe(q, P.lastServeKmh, Vector3Distance(cam.position, ball.pos));
+                        rallyHits = 1;
                         P.lastAimTarget = target;
                         gCasual = false; gCrouch = false;
                         ball.lastHitter = HITTER_PLAYER;
@@ -627,6 +643,8 @@ int main(void)
                 aiTossing = false;
                 ai.anim.windup = 0.0f;
                 ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
+                SfxServe(ai.anim.lastContact.quality, ai.lastKmh, Vector3Distance(cam.position, ball.pos));
+                rallyHits = 1;
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
                 trailCount = 0;
                 phase = PH_PLAY;
@@ -787,9 +805,12 @@ int main(void)
                         }
                     }
 
+                    if (c.miss != MISS_NONE && c.miss != MISS_NO_BALL) SfxWhiff();
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
+                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), Vector3Distance(cam.position, ball.pos));
+                        rallyHits++;
                         P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -839,6 +860,8 @@ int main(void)
             // AI のスイング（物理と同じ細かさで）
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
+                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), Vector3Distance(cam.position, ball.pos));
+                    rallyHits++;
                     trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
                     trailCount = 0;
                 }
@@ -847,6 +870,8 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
+                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), Vector3Distance(cam.position, ball.pos));
+                    rallyHits++;
                     trailColor = SHOTS[bot.lastType].color;
                     trailCount = 0;
                 }
@@ -872,10 +897,16 @@ int main(void)
         // バウンドを見つけて目印を出す
         bounceT += simDt;
         if (ball.bounces > prevBounces && ball.bounces <= 2) {
+            SfxBounce(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
             bouncePos = ball.pos; bounceT = 0.0f;
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
         prevBounces = ball.bounces;
+        if (ball.active && ball.hitNet && !prevHitNet) SfxNet(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
+        prevHitNet = ball.active && ball.hitNet;
+        if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
+        prevAiSliding = ai.sliding;
+        SfxCrowd(mode == MODE_MATCH, 1.0f);
 
         // ---- プレイ記録：来た球の追跡と、打球の結果 ----
         if (!botControls) {
@@ -935,6 +966,7 @@ int main(void)
             }
             if (winner >= 0) {
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
+                SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
                 // ---- 試合の統計 ----
                 {
                     int sv = server, rv = 1 - server;
@@ -1322,7 +1354,7 @@ int main(void)
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  M mute  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
         else
@@ -1474,6 +1506,7 @@ int main(void)
 
     LogFlush(&plog, "?");
     if (plog.f) fclose(plog.f);
+    SfxClose();
     CloseWindow();
     return 0;
 }

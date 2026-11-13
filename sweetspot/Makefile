@@ -18,7 +18,7 @@ else
     endif
 endif
 
-SRC = main.c player.c input.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c
+SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c
 
 $(TARGET): $(SRC) game.h
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
