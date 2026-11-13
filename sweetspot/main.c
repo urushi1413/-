@@ -467,6 +467,7 @@ int main(void)
                     P.chargeSrc = in.source;
                     P.chargingServe = s;
                     P.charge = 0.0f;
+                    P.serveT = 0.0f;
                     P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
                     ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f, tossIdeal.z + P.tossOffset.y };
@@ -480,6 +481,7 @@ int main(void)
                 }
             } else if (P.sv == SV_TOSS) {
                 P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
+                P.serveT += simDt;
                 P.anim.windup = 0.3f + 0.7f * P.charge;
                 P.anim.windStroke = 2;
                 bool serveReleased = in.released[P.chargeSrc];
@@ -518,10 +520,10 @@ int main(void)
                         float qH = Clamp01(1.0f - fmaxf(SERVE_IDEAL_H - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
                         float qT = Clamp01(1.0f - Vector2Length(P.tossOffset) / TOSS_TOL);
                         float q = qH * qT;
-                        // コース：マウス（または U/O/I/、）で動かした狙い。サービスボックスの中
+                        // コース：左右はマウスの印（サービスボックスの中）、深さはトスから離すまでの時間
                         float x0, x1;
                         ServiceBox(P.pos.x, -1, &x0, &x1);
-                        Vector3 target = { Clamp(P.aimX, x0 + 0.2f, x1 - 0.2f), 0.0f, Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
+                        Vector3 target = { Clamp(P.aimX, x0 + 0.2f, x1 - 0.2f), 0.0f, ServeDepthFromTime(P.serveT) };
                         P.lastServeH = hb.pos.y;
                         P.lastServeQ = q;
                         P.lastContactPos = hb.pos;
@@ -604,9 +606,11 @@ int main(void)
                     P.chargingShot = in.shot;
                     P.chargeSrc = in.source;
                     P.charge = 0.0f;
+                    P.hold = 0.0f;
                 }
             } else {
-                P.charge = fminf(P.charge + frameDt / CHARGE_TIME, 1.0f);
+                P.hold = fminf(P.hold + frameDt / CHARGE_TIME, style == STYLE_CASUAL ? 1.0f : HOLD_MAX);
+                P.charge = fminf(P.hold, 1.0f);
                 // 構えの見た目：ボールのある側で構える（高い球なら頭上）
                 P.anim.windup = P.charge;
                 if (ball.active && ball.lastHitter == HITTER_OPP)
@@ -619,7 +623,7 @@ int main(void)
                     P.chargingShot = -1;
                     P.anim.windup = 0.0f;
                     P.swingQ.active = true; P.swingQ.type = rt; P.swingQ.charge = rcharge;
-                    P.swingQ.target = EffectiveAim(rt, P.pos.z, P.aimX, P.aimDepth, style);
+                    P.swingQ.target = AimFromHold(rt, P.pos.z, P.aimX, P.hold, style);   // 深さは押した長さ、左右はマウス
                     P.swingQ.age = -1.0f;   // すぐ振る
                     P.swingQ.releaseAge = ball.age;
                     P.swingQ.penalty = 1.0f;
@@ -746,7 +750,8 @@ int main(void)
                     }
 
                     if (c.miss == MISS_NONE) {
-                        ball = PlayerShot(&c, ball.pos, target, type, swingCharge, &P.lastKmh, &P.lastRpm, &P.lastAngle);
+                        ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (1.0f - HOLD_POWER_BASE) * swingCharge,
+                                          &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -1119,15 +1124,23 @@ int main(void)
 
             // 狙い：相手コートに印（溜めている間は球種の色、それ以外は白）
             if (!botControls && (playerServing || (mode != MODE_SERVE && (P.chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
-                Vector3 et = (P.chargingShot >= 0) ? EffectiveAim((ShotType)P.chargingShot, P.pos.z, P.aimX, P.aimDepth, style)
-                                                 : (Vector3){ P.aimX, 0.0f, P.aimDepth };
+                // 左右はマウス、深さは押している長さ。押していない間は、浅い〜深いの範囲を線で出す
+                ShotType mt = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
+                bool pressing = P.chargingShot >= 0 || P.chargingServe >= 0;
+                Vector3 et = AimFromHold(mt, P.pos.z, P.aimX, pressing ? P.hold : 0.0f, style);
+                Vector3 r0 = AimFromHold(mt, P.pos.z, P.aimX, 0.0f, style), r1 = AimFromHold(mt, P.pos.z, P.aimX, 1.0f, style);
+                bool longOut = et.z < -HALF_LEN;
                 if (playerServing) {
                     float bx0, bx1;
                     ServiceBox(P.pos.x, -1, &bx0, &bx1);
-                    et = (Vector3){ Clamp(P.aimX, bx0 + 0.2f, bx1 - 0.2f), 0.0f, Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
+                    float sx = Clamp(P.aimX, bx0 + 0.2f, bx1 - 0.2f);
+                    et = (Vector3){ sx, 0.0f, ServeDepthFromTime(P.chargingServe >= 0 ? P.serveT : 0.0f) };
+                    r0 = (Vector3){ sx, 0.0f, SERVE_DEPTH_SHORT }; r1 = (Vector3){ sx, 0.0f, -SERVICE_Z };
+                    longOut = et.z < -SERVICE_Z;
                 }
+                DrawLine3D((Vector3){ r0.x, 0.013f, r0.z }, (Vector3){ r1.x, 0.013f, r1.z }, Fade(RAYWHITE, 0.5f));
                 Vector3 am = { et.x, 0.015f, et.z };
-                Color ac = (P.chargingShot >= 0) ? SHOTS[P.chargingShot].color
+                Color ac = longOut ? RED : (P.chargingShot >= 0) ? SHOTS[P.chargingShot].color
                          : (P.chargingServe >= 0 ? SERVES[P.chargingServe].color : Fade(RAYWHITE, 0.7f));
                 DrawCircle3D(am, 0.45f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
                 DrawCircle3D(am, 0.25f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
@@ -1208,7 +1221,7 @@ int main(void)
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
                 DrawText(serveMsg, 20, y, 22, mc); y += 30;
             } else {
-                DrawText("A/D: position.  Mouse: aim in the box.", 20, y, 18, RAYWHITE); y += 22;
+                DrawText("A/D: position.  Mouse: left/right.  Later release = deeper", 20, y, 18, RAYWHITE); y += 22;
                 DrawText("Hold L-click kick / R-click slice / Space+click flat", 20, y, 18, RAYWHITE); y += 22;
                 DrawText("to toss, release to hit. Hold to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
             }
@@ -1254,7 +1267,7 @@ int main(void)
                 y += 24;
             }
         } else {
-            DrawText("Move to the ball. Hold a mouse button, release to swing", 20, y, 18, RAYWHITE);
+            DrawText("Move to the ball. Hold longer = deeper (red = long). Release to swing", 20, y, 18, RAYWHITE);
         }
         // 下：成績と操作説明（コートの奥を隠さない場所）
         y = GetScreenHeight() - 98;
@@ -1380,17 +1393,26 @@ int main(void)
         if (P.chargingShot >= 0) {
             const ShotSpec *sp = &SHOTS[P.chargingShot];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
-            DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
+            // 押している長さ＝深さ。白い線が一番深いところ、その先（赤）はアウト
+            float full = (float)gw / HOLD_MAX;
+            DrawRectangle(gx, gy, (int)(full * fminf(P.hold, 1.0f)), 20, sp->color);
+            if (P.hold > 1.0f) DrawRectangle(gx + (int)full, gy, (int)(full * (P.hold - 1.0f)), 20, RED);
+            DrawRectangle(gx + (int)full - 1, gy - 4, 3, 28, RAYWHITE);
+            float pw = HOLD_POWER_BASE + (1.0f - HOLD_POWER_BASE) * P.charge;
+            float dz = -AimFromHold((ShotType)P.chargingShot, P.pos.z, P.aimX, P.hold, style).z;
             if (sp->touchAngle > 0.0f)
-                DrawText(TextFormat("%s  %.0f rpm", sp->name, Lerp(sp->minRpm, sp->maxRpm, P.charge)), gx, gy - 24, 20, RAYWHITE);
+                DrawText(TextFormat("%s  depth %.1f m", sp->name, dz), gx, gy - 24, 20, RAYWHITE);
             else
-                DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge)), gx, gy - 24, 20, RAYWHITE);
+                DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, pw), dz,
+                                    dz > HALF_LEN ? "  LONG" : ""), gx, gy - 24, 20, dz > HALF_LEN ? RED : RAYWHITE);
         }
         if (P.chargingServe >= 0) {
             const ServeSpec *sp = &SERVES[P.chargingServe];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
             DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
-            DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge)), gx, gy - 24, 20, RAYWHITE);
+            float sd = -ServeDepthFromTime(P.serveT);
+            DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
+                                sd > SERVICE_Z ? "  LONG" : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
         }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
         {

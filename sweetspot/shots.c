@@ -149,3 +149,21 @@ Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, Play
     }
     return (Vector3){ x, 0.0f, z };
 }
+
+// 押す長さで深さを決める：0 で球種の一番浅いところ、1 で一番深いところ、それより長いとさらに深く（アウト）
+//   左右はマウスの印。ネットの近くから打つときは、もっと浅く（角度をつけて）打てる
+Vector3 AimFromHold(ShotType t, float playerZ, float aimX, float hold, PlayStyle style)
+{
+    float shrt = SHOTS[t].shortDepth;
+    if (t < SHOT_NORMAL_COUNT) shrt = EffectiveAim(t, playerZ, aimX, 0.0f, style).z;   // 一番浅いところ
+    float z = shrt + (SHOTS[t].deepDepth - shrt) * hold;                                // 1 を超えたら延長
+    Vector3 a = EffectiveAim(t, playerZ, aimX, -1.0f, style);                           // 左右の制限だけ使う
+    return (Vector3){ a.x, 0.0f, z };
+}
+
+// サーブの深さ：トスを上げてから離すまでの時間。早いと浅く、遅いと深く（遅すぎるとロング）
+float ServeDepthFromTime(float t)
+{
+    float u = (t - SERVE_DEPTH_T0) / (SERVE_DEPTH_T1 - SERVE_DEPTH_T0);
+    return SERVE_DEPTH_SHORT + (SERVE_DEPTH_LONG - SERVE_DEPTH_SHORT) * Clamp(u, 0.0f, 1.2f);
+}

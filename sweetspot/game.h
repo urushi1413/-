@@ -60,13 +60,15 @@ typedef struct {
 #define RPM_TO_RADS      (2.0f * PI / 60.0f)
 #define PHYS_DT          (1.0f / 240.0f)   // 物理は固定ステップで回す（速い球でもすり抜けない）
 #define TRAIL_N          900
-#define CHARGE_TIME      0.8f              // 最大まで溜めるのにかかる秒数
+#define CHARGE_TIME      0.5f              // 押す長さ：これだけ押すとベースライン近くまで深く（強さも最大）
+#define HOLD_MAX         1.5f              // 押しすぎるとさらに深く＝アウト（0.75 秒で約 0.6m 長い）。CASUAL は 1.0 まで
+#define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
 #define PLAYER_ACCEL     9.0f    // 加速（m/s^2）。最高速まで 0.67 秒
 #define PLAYER_BRAKE     20.0f   // 減速（m/s^2）。最高速から 0.3 秒・0.9m で止まる
-#define CHARGE_MOVE      0.85f   // 溜めている（テイクバックしている）間の走る速さの割合
+#define CHARGE_MOVE      1.00f   // 溜めている（テイクバックしている）間の走る速さの割合
 // スライド：溜めながら速く走っていて減速・切り返しをすると、足を滑らせながら打てる（止まる必要がない）
 #define SLIDE_MIN_SPEED  (SURFACES[gSurface].slideMin)     // これより速く走っているとスライドになる（クレーは遅くても滑れる）
 #define SLIDE_DECEL      (SURFACES[gSurface].slideDecel)   // 滑っている間の減速。ハード 7（6m/s から 2.6m）、クレー 4.5（4m）、芝 9
@@ -151,6 +153,11 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define SERVE_REACH      2.80f   // 腕とラケットを伸ばした打点の高さ
 #define SERVE_IDEAL_H    2.90f   // これ以上の高さで打てば満点（腕を伸ばしきった一番高いところ）。低いと減点
 #define SERVE_CHARGE_TIME 0.45f  // サーブの溜めが最大になるまで（トスの一番上までに溜めきれる）
+// サーブの深さ：トスを上げてから離すまでの時間で決まる（0.30 秒で浅い、0.70 秒でサービスラインの 0.8m 外）
+#define SERVE_DEPTH_T0    0.30f
+#define SERVE_DEPTH_T1    0.70f
+#define SERVE_DEPTH_SHORT (-4.0f)
+#define SERVE_DEPTH_LONG  (-7.2f)
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
 #define SERVE_OVERREACH  0.25f   // 理想の打点よりこれだけ高い球まで、背伸びして届く。トスの最高点（2.95m）は必ず届く
 #define TOSS_SPEED       4.55f   // トスの初速（上向き、m/s）。手から 1.9m で離すと最高点 2.95m（届く高さの中）
@@ -465,6 +472,8 @@ const char *MissName(MissReason m);
 void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vector3 playerVel, bool charging, const char *mode, const char *level);
 void LogRecordBall(PlayLog *L, const Ball *ball);
 Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style);
+Vector3 AimFromHold(ShotType t, float playerZ, float aimX, float hold, PlayStyle style);
+float ServeDepthFromTime(float t);
 void DisableIme(void *hwnd);   // platform_ime.c（Windows で日本語入力を切る）
 
 // ---- プレイヤー（自分。将来は 2 人目も） ----
@@ -484,7 +493,9 @@ typedef struct {
     float aimX, aimDepth;      // 狙い（マウスで動かす。ずっと残る）
     int   chargingShot;        // 溜めている球種（-1：溜めていない）
     int   chargingServe;       // 溜めているサーブ（-1：溜めていない）
-    float charge;              // 溜め（0〜1）
+    float charge;              // 強さ（0〜1）
+    float hold;                // 押している長さ（CHARGE_TIME で 1、HOLD_MAX まで）。深さを決める
+    float serveT;              // トスを上げてからの時間（秒）。サーブの深さを決める
     InputSource chargeSrc;     // 何で溜め始めたか
     QueuedSwing swingQ;
     // 最後のショット（画面表示用）
