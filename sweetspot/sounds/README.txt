@@ -11,6 +11,7 @@ SWEET SPOT の効果音フォルダ
   hit_bad       外した当たり（なければ hit_ok）
   hit_frame     フレームに当たった音（なければ hit_bad）
   hit_slice     スライス（なければ hit_ok）
+  hit_voice     声つきの打球音。スライスとボレー以外の打球とサーブで使う（なければ普通の打球音）
   serve         サーブ（なければ hit_good）
   bounce_hard   ハードコートのバウンド
   bounce_clay   クレーのバウンド（なければ bounce_hard）

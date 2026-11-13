@@ -1,0 +1,6 @@
+
+# 効果音の録音（配布の許可がないものを誤って上げないように）
+sweetspot/sounds/*.wav
+sweetspot/sounds/*.ogg
+sweetspot/sounds/*.mp3
+sweetspot/sounds/*.flac

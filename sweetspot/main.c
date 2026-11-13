@@ -809,7 +809,7 @@ int main(void)
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
-                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), Vector3Distance(cam.position, ball.pos));
+                        SfxHit(c.quality, P.lastKmh, IsSliceShot(type), c.volley && !c.overhead, Vector3Distance(cam.position, ball.pos));
                         rallyHits++;
                         P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
@@ -860,7 +860,7 @@ int main(void)
             // AI のスイング（物理と同じ細かさで）
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
-                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), Vector3Distance(cam.position, ball.pos));
+                    SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), ai.anim.lastContact.volley && !ai.anim.lastContact.overhead, Vector3Distance(cam.position, ball.pos));
                     rallyHits++;
                     trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
                     trailCount = 0;
@@ -870,7 +870,7 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
-                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), Vector3Distance(cam.position, ball.pos));
+                    SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), bot.anim.lastContact.volley && !bot.anim.lastContact.overhead, Vector3Distance(cam.position, ball.pos));
                     rallyHits++;
                     trailColor = SHOTS[bot.lastType].color;
                     trailCount = 0;

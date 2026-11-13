@@ -10,13 +10,13 @@
 typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 
 enum {
-    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_SERVE,
+    S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
     S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
-    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "serve",
+    "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
     "crowd", "applause", "applause_big"
 };
@@ -96,9 +96,14 @@ static void Play(int id, int fallback, float vol, float pitch)
 static float DistVol(float dist) { return Clamp01(1.3f / (1.0f + dist / 14.0f)); }
 static float Jitter(void) { return 1.0f + GetRandomValue(-20, 20) / 1000.0f; }   // 毎回少しだけ音の高さを変える
 
-void SfxHit(float q, float kmh, bool slice, float dist)
+// 最初に見つかった音の番号（なければ -1）
+static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVar ? b : gSlot[c].nVar ? c : -1; }
+
+// volley：ボレー。スライスとボレーは声を出さない（それ以外の打球は声つき）
+void SfxHit(float q, float kmh, bool slice, bool volley, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
+    if (!slice && !volley && q >= 0.18f && gSlot[S_HIT_VOICE].nVar) { Play(S_HIT_VOICE, -1, vol, Jitter()); return; }
     if (q < 0.18f)      Play(S_HIT_FRAME, S_HIT_BAD, vol, Jitter());
     else if (slice)     Play(S_HIT_SLICE, q < 0.5f ? S_HIT_BAD : S_HIT_OK, vol, Jitter());
     else if (q < 0.45f) Play(S_HIT_BAD, S_HIT_OK, vol, Jitter());
@@ -108,8 +113,9 @@ void SfxHit(float q, float kmh, bool slice, float dist)
 
 void SfxServe(float q, float kmh, float dist)
 {
-    if (q > 0.6f) Play(S_SERVE, S_HIT_GOOD, (0.6f + 0.4f * Clamp01(kmh / 200.0f)) * DistVol(dist), Jitter());
-    else          SfxHit(q, kmh, false, dist);
+    int id = First3(S_SERVE, S_HIT_VOICE, S_HIT_GOOD);
+    if (q > 0.6f && id >= 0) Play(id, -1, (0.6f + 0.4f * Clamp01(kmh / 200.0f)) * DistVol(dist), Jitter());
+    else                     SfxHit(q, kmh, false, false, dist);
 }
 
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
