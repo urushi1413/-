@@ -294,10 +294,12 @@ int main(void)
             if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "SOUND OFF  (M)"); }
             else {
                 SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
-                snprintf(toast, sizeof(toast), "SOUND ON  %.0f%%  (M)", SfxGetVolume() * 100.0f);
+                if (!SfxDeviceOk())             snprintf(toast, sizeof(toast), "SOUND ON - but no audio device");
+                else if (SfxLoadedCount() == 0) snprintf(toast, sizeof(toast), "SOUND ON - beep test. No files in sounds/");
+                else                            snprintf(toast, sizeof(toast), "SOUND ON %.0f%% - %d files (M)", SfxGetVolume() * 100.0f, SfxLoadedCount());
                 SfxTest();   // 鳴るかどうか、その場でわかるように
             }
-            toastT = 1.8f;
+            toastT = 3.0f;
         }
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;

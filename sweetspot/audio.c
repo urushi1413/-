@@ -26,6 +26,8 @@ static float   gVolume  = 0.8f;
 static SfxSlot gSlot[S_COUNT];
 static int     gLoaded = 0;
 static char    gDir[600] = "sounds";
+static Sound   gBeep;                 // 確認用の「ピッ」（ファイルがなくても鳴る）
+static bool    gBeepOk = false;
 
 static bool LoadVariant(SfxSlot *slot, const char *base)
 {
@@ -67,6 +69,19 @@ void SfxInit(void)
         }
     }
     TraceLog(LOG_INFO, "SFX: %d / %d sounds loaded from %s", gLoaded, S_COUNT, dir);
+    // 確認用の「ピッ」（880Hz、0.15 秒）
+    {
+        int n = 44100 * 15 / 100;
+        short *pcm = (short *)MemAlloc(n * sizeof(short));
+        for (int i = 0; i < n; i++) {
+            float t = (float)i / 44100.0f, e = fminf(1.0f, fminf(t / 0.005f, (0.15f - t) / 0.02f));
+            pcm[i] = (short)(sinf(2.0f * PI * 880.0f * t) * e * 0.5f * 32767.0f);
+        }
+        Wave w = { .frameCount = (unsigned int)n, .sampleRate = 44100, .sampleSize = 16, .channels = 1, .data = pcm };
+        gBeep = LoadSoundFromWave(w);
+        MemFree(pcm);
+        gBeepOk = true;
+    }
 }
 
 void SfxClose(void)
@@ -75,6 +90,7 @@ void SfxClose(void)
     for (int i = 0; i < S_COUNT; i++)
         for (int v = 0; v < gSlot[i].nVar; v++)
             for (int k = 0; k < POOL; k++) UnloadSound(gSlot[i].s[v][k]);
+    if (gBeepOk) UnloadSound(gBeep);
     CloseAudioDevice();
     gAudioOk = false;
 }
@@ -126,7 +142,12 @@ void SfxServe(float q, float kmh, float dist)
 }
 
 // 試しに鳴らす（M で音をオンにしたとき）
-void SfxTest(void) { int id = First3(S_HIT_VOICE, S_HIT_GOOD, S_HIT_OK); if (id >= 0) Play(id, -1, 0.9f, 1.0f); }
+void SfxTest(void)
+{
+    int id = First3(S_HIT_VOICE, S_HIT_GOOD, S_HIT_OK);
+    if (id >= 0) { Play(id, -1, 0.9f, 1.0f); return; }
+    if (gAudioOk && gBeepOk) { SetSoundVolume(gBeep, gVolume); PlaySound(gBeep); }   // ファイルがないときは「ピッ」
+}
 
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
 
