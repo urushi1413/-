@@ -264,7 +264,10 @@ int main(void)
                     case MI_ASSIST:  label = "Assist";          value = assistNames[assistLevel]; break;
                     case MI_FEED:    label = "Practice feed";   value = proFeed ? "PRO" : "CLUB"; break;
                     case MI_SENS:    label = "Mouse sensitivity"; value = TextFormat("%.2f", aimSens); break;
-                    case MI_SOUND:   label = "Sound volume";    value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : "OFF"; break;
+                    case MI_SOUND:   label = !SfxDeviceOk() ? "Sound (no audio device)"
+                                           : SfxLoadedCount() == 0 ? "Sound (no files in sounds/)"
+                                           : TextFormat("Sound (%d files)", SfxLoadedCount());
+                                     value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : "OFF"; break;
                     case MI_CAMERA:  label = "Camera";          value = camNames[camMode]; break;
                     case MI_RESTART: label = "RESTART"; break;
                     case MI_TITLE:   label = "BACK TO TITLE"; break;

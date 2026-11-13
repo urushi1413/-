@@ -25,6 +25,7 @@ static bool    gAudioOk = false;
 static float   gVolume  = 0.8f;
 static SfxSlot gSlot[S_COUNT];
 static int     gLoaded = 0;
+static char    gDir[600] = "sounds";
 
 static bool LoadVariant(SfxSlot *slot, const char *base)
 {
@@ -48,7 +49,11 @@ void SfxInit(void)
     gAudioOk = IsAudioDeviceReady();
     if (!gAudioOk) return;
     // 実行したフォルダの sounds、なければ実行ファイルの隣の sounds を探す
-    const char *dir = DirectoryExists("sounds") ? "sounds" : TextFormat("%s/sounds", GetApplicationDirectory());
+    // TextFormat の結果は使い回されて上書きされるので、自分の配列に写しておく
+    static char dir[512];
+    if (DirectoryExists("sounds")) snprintf(dir, sizeof(dir), "sounds");
+    else                          snprintf(dir, sizeof(dir), "%ssounds", GetApplicationDirectory());
+    snprintf(gDir, sizeof(gDir), "%s", dir);
     for (int i = 0; i < S_COUNT; i++) {
         char base[512];
         snprintf(base, sizeof(base), "%s/%s", dir, SFX_NAMES[i]);
@@ -77,6 +82,8 @@ void SfxClose(void)
 void  SfxSetVolume(float v) { gVolume = Clamp01(v); }
 float SfxGetVolume(void)    { return gVolume; }
 int   SfxLoadedCount(void)  { return gLoaded; }
+bool  SfxDeviceOk(void)     { return gAudioOk; }
+const char *SfxDir(void)    { return gDir; }
 
 // 鳴らす。ないときは代わりの音を使う（なければ鳴らさない）
 static void Play(int id, int fallback, float vol, float pitch)
