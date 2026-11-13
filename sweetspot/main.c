@@ -42,14 +42,29 @@
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
 #define PLAYER_ACCEL     9.0f    // 加速（m/s^2）。最高速まで 0.67 秒
 #define PLAYER_BRAKE     20.0f   // 減速（m/s^2）。最高速から 0.3 秒・0.9m で止まる
+// 打点は「体のまわりの立体的な範囲」で考える。上から見て、体の中心からボールまでの
+//   距離 r と、向き θ（真横が 0°、真正面が 90°、後ろがマイナス）で評価する
 #define IDEAL_FWD        0.40f   // 理想の打点：体より 40cm 前
 #define IDEAL_SIDE       0.85f   // 理想の打点：体から横に 85cm
-#define TOL_FWD_COMPACT  0.95f   // タイミングの許容幅（前後にこれだけずれると質 0）。溜めなしのコンパクトなスイング
-#define TOL_FWD_FULL     0.75f   //   〃 フルスイング。大きく振るほどシビア
-#define VOLLEY_TOL_BONUS 1.20f   // ボレーはテイクバックが小さいので許容幅が広い
-#define REACH_FWD        1.00f   // これ以上前後にずれたら空振り
-#define REACH_SIDE       2.10f   // これ以上遠いと空振り。腕＋ラケット 1.6m ＋最後の踏み込み 0.5m
-#define REACH_HEIGHT     2.30f
+#define IDEAL_R          0.94f   //   → 体からの距離 94cm
+#define IDEAL_ANGLE      25.0f   //   → 向き 25°（横やや前）
+#define VOLLEY_ANGLE     40.0f   // ボレーはもっと前で触る
+#define TOL_ANG_COMPACT  55.0f   // タイミング（向き）の許容幅。溜めなしのコンパクトなスイング
+#define TOL_ANG_FULL     40.0f   //   〃 フルスイング。大きく振るほどシビア
+#define VOLLEY_TOL_BONUS 1.30f   // ボレーはテイクバックが小さいので許容幅が広い
+#define BEHIND_LIMIT    -55.0f   // これより後ろに入られたら振り遅れ（空振り）
+#define REACH_SIDE       2.10f   // これ以上遠いと届かない。腕＋ラケット 1.6m ＋最後の踏み込み 0.5m
+#define REACH_DIVE       2.80f   // 走っている勢いで飛びつけば、ここまで届く（打った後は倒れる）
+#define DIVE_MIN_SPEED   2.5f    // 飛びつくには、ボールの方向にこの速さ（m/s）以上で走っている必要がある
+#define DIVE_QUALITY     0.35f   // 飛びついた球の質は 35% に落ちる
+#define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
+#define OVERHEAD_MIN_H   1.85f   // これより高い球は頭上で打つ（スマッシュ・ハイボレー）
+#define OVERHEAD_IDEAL_H 2.55f   // 頭上の理想の打点
+#define OVERHEAD_TOL_H   0.70f
+#define OVERHEAD_MAX_H   3.05f   // ジャンプして届く高さ
+#define OVERHEAD_FWD     0.45f   // 頭上の理想の打点：体より少し前、少し右
+#define OVERHEAD_SIDE    0.30f
+#define OVERHEAD_TOL_R   0.90f
 #define TIMING_PULL      0.15f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
 
 // ---- 来た球の勢い ----
@@ -146,10 +161,13 @@ typedef struct {
 } Ball;
 
 // 打点の評価結果
-typedef enum { MISS_NONE, MISS_EARLY, MISS_LATE, MISS_FAR, MISS_HIGH, MISS_NO_BALL } MissReason;
+typedef enum { MISS_NONE, MISS_EARLY, MISS_LATE, MISS_FAR, MISS_HIGH, MISS_LOW, MISS_NO_BALL } MissReason;
 typedef struct {
     MissReason miss;
     bool  forehand;
+    bool  overhead;    // 頭上で打った（スマッシュ・ハイボレー）
+    bool  dive;        // 飛びついて打った
+    float angleDeg;    // 上から見たボールの向き（真横 0°、正面 90°）
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
     float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）
     float inKmh;       // 来た球の速さ
@@ -160,6 +178,17 @@ typedef struct {
     float qTiming, qDist, qHeight;
     float quality;     // 0〜1。3つの積
 } Contact;
+
+// 見た目用：体とラケットの動き
+typedef struct {
+    float   swingT;        // 振ってからの時間（秒）。マイナスなら振っていない
+    Contact lastContact;   // 最後のスイングの評価
+    Vector3 contactLocal;  // 振った瞬間のボールの位置（体から見た座標：x=右, y=高さ, z=前）
+    float   downT;         // 飛びついて倒れている残り時間
+    float   windup;        // 溜め（0〜1）
+    int     windStroke;    // 構え：0=フォア 1=バック 2=頭上
+    float   runPhase;      // 走りの足の動き
+} SwingAnim;
 
 // ネットは中央 0.914m、ポスト 1.07m。その間は直線でたるむとみなす
 static float NetHeightAt(float x)
@@ -413,31 +442,52 @@ static Ball AimedShot(Vector3 from, Vector3 target, float kmh, float rpm, bool h
 // ---- 打点の評価 ----
 // player はプレイヤーの足元の位置。相手コート（-z）を向いて立っている
 // charge が大きい（大きく振る）ほど、タイミングの許容幅が狭くなる
-static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge)
+// moveToward: ボールの方向へ走っている速さ（m/s）。速ければ飛びつける
+static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float charge, float moveToward)
 {
     Contact c = { 0 };
-    Vector3 ballPos = ball->pos;
-    float lateral = ballPos.x - player.x;
-    c.forehand = lateral >= 0.0f;
-    c.side     = fabsf(lateral);
-    c.height   = ballPos.y;
-    c.fwdErr   = (player.z - IDEAL_FWD) - ballPos.z;   // プラス＝ボールがまだ前にある＝振るのが早い
+    Vector3 bp = ball->pos;
+    float dx = bp.x - player.x;          // 右（フォア側）がプラス
+    float dz = player.z - bp.z;          // 前がプラス
+    float r  = sqrtf(dx * dx + dz * dz);
+    float ang = atan2f(dz, fabsf(dx)) * RAD2DEG;
+    c.forehand = dx >= 0.0f;
+    c.side     = r;
+    c.angleDeg = ang;
+    c.height   = bp.y;
+    c.fwdErr   = dz - IDEAL_FWD;         // プラス＝ボールがまだ前にある＝振るのが早い
     c.volley   = ball->bounces == 0;
     c.inKmh    = Vector3Length(ball->vel) * 3.6f;
-    float vz = fmaxf(ball->vel.z, 1.0f);
-    c.timeErrMs = c.fwdErr / vz * 1000.0f;
+    c.timeErrMs = c.fwdErr / fmaxf(Vector3Length(ball->vel), 1.0f) * 1000.0f;
+    c.overhead = bp.y > OVERHEAD_MIN_H;
 
-    if (c.fwdErr >  REACH_FWD)   { c.miss = MISS_EARLY; return c; }
-    if (c.fwdErr < -REACH_FWD)   { c.miss = MISS_LATE;  return c; }
-    if (c.side   >  REACH_SIDE)  { c.miss = MISS_FAR;   return c; }
-    if (c.height >  REACH_HEIGHT){ c.miss = MISS_HIGH;  return c; }
+    // 届くか
+    if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
+    if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
+    if (!c.overhead && ang < BEHIND_LIMIT) { c.miss = MISS_LATE; return c; }
+    float reach = c.overhead ? 1.6f : REACH_SIDE;
+    if (r > reach) {
+        bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE && moveToward >= DIVE_MIN_SPEED;
+        if (!canDive) { c.miss = (ang > 55.0f) ? MISS_EARLY : (ang < -20.0f ? MISS_LATE : MISS_FAR); return c; }
+        c.dive = true;
+    }
 
     const ShotSpec *sp = &SHOTS[type];
-    float tol = Lerp(TOL_FWD_COMPACT, TOL_FWD_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f);
-    c.qTiming = Clamp01(1.0f - fabsf(c.fwdErr) / tol);
-    c.qDist   = Clamp(1.0f - fabsf(c.side - IDEAL_SIDE) / sp->tolSide, 0.10f, 1.0f);   // 届けば最低限は当たる
-    c.qHeight = Clamp01(1.0f - fabsf(c.height - sp->idealHeight) / sp->tolHeight);
+    if (c.overhead) {
+        // 頭上：高さがタイミング（落ちてくる球をどこで叩くか）、体の前右の点からの距離が位置
+        float ox = fabsf(dx) - OVERHEAD_SIDE, oz = dz - OVERHEAD_FWD;
+        c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / OVERHEAD_TOL_H, 0.10f, 1.0f);
+        c.qDist   = Clamp(1.0f - sqrtf(ox * ox + oz * oz) / OVERHEAD_TOL_R, 0.10f, 1.0f);
+        c.qHeight = 1.0f;
+    } else {
+        float idealAng = c.volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
+        float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f);
+        c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
+        c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / sp->tolSide, 0.10f, 1.0f);   // 届けば最低限は当たる
+        c.qHeight = Clamp(1.0f - fabsf(bp.y - sp->idealHeight) / sp->tolHeight, 0.10f, 1.0f);
+    }
     c.quality = c.qTiming * c.qDist * c.qHeight;
+    if (c.dive) c.quality *= DIVE_QUALITY;
     return c;
 }
 
@@ -447,6 +497,8 @@ static Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, 
 static Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type, float charge,
                        float *outKmh, float *outRpm, float *outAngle)
 {
+    // 頭上の球は J/L ならスマッシュ（フラット）、K ならスライスで合わせる
+    if (c->overhead && type < SHOT_NORMAL_COUNT && type != SHOT_SLICE) type = SHOT_FLAT;
     const ShotSpec *sp = &SHOTS[type];
     float q = c->quality;
 
@@ -697,6 +749,145 @@ static void DrawCourt(void)
     DrawCylinder((Vector3){  NET_POST_X, 0, 0 }, 0.05f, 0.05f, NET_H_POST, 8, DARKGRAY);
 }
 
+
+// ================= 体とラケットの描画 =================
+// 体から見た座標（x=右、y=高さ、z=前）をワールド座標に直す。facingNegZ: -z 向き（自分）か +z 向き（AI）か
+static Vector3 LocalToWorld(Vector3 base, bool facingNegZ, Vector3 l)
+{
+    float sx = facingNegZ ? 1.0f : -1.0f;
+    return (Vector3){ base.x + sx * l.x, base.y + l.y, base.z - sx * l.z };
+}
+
+static float EaseOut(float u) { u = Clamp01(u); return 1.0f - (1.0f - u) * (1.0f - u); }
+
+#define SWING_TIME 0.30f   // フォロースルーまでの時間（見た目）
+
+// ラケットの面の中心（ローカル座標）と、ラケットが動いている向き
+static Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
+{
+    const float BACK_FH = -110.0f, BACK_OH = 160.0f;
+    if (a->swingT >= 0.0f && a->swingT < SWING_TIME) {
+        const Contact *c = &a->lastContact;
+        Vector3 cl = a->contactLocal;
+        float u = EaseOut(a->swingT / SWING_TIME);
+        if (c->overhead) {
+            *strokeOut = 2;
+            float ry = cl.y - 1.75f, rz = cl.z;
+            float psiC = atan2f(ry, rz) * RAD2DEG;
+            float rc = Clamp(sqrtf(ry * ry + rz * rz), 0.5f, 1.2f);
+            float psi = (psiC + (-70.0f - psiC) * u) * DEG2RAD;
+            float rr = Lerp(rc, 0.7f, u);
+            *tangent = (Vector3){ 0.0f, -cosf(psi), sinf(psi) };
+            return (Vector3){ 0.3f - 0.6f * u, 1.75f + rr * sinf(psi), rr * cosf(psi) };
+        }
+        float sgn = c->forehand ? 1.0f : -1.0f;
+        *strokeOut = c->forehand ? 0 : 1;
+        float phiC = atan2f(cl.z, sgn * cl.x) * RAD2DEG;
+        float rc = Clamp(sqrtf(cl.x * cl.x + cl.z * cl.z), 0.5f, 1.6f);
+        float hc = Clamp(cl.y, 0.15f, 1.9f);
+        float phi = (phiC + (190.0f - phiC) * u) * DEG2RAD;
+        float rr = Lerp(rc, 0.55f, u);
+        *tangent = (Vector3){ -sgn * sinf(phi), 0.0f, cosf(phi) };
+        return (Vector3){ sgn * cosf(phi) * rr, Lerp(hc, 1.5f, u), sinf(phi) * rr };
+    }
+    if (a->windup > 0.0f) {
+        float w = EaseOut(a->windup * 1.6f);
+        *strokeOut = a->windStroke;
+        if (a->windStroke == 2) {
+            float psi = Lerp(60.0f, BACK_OH, w) * DEG2RAD;
+            *tangent = (Vector3){ 0.0f, cosf(psi), -sinf(psi) };
+            return (Vector3){ 0.3f, 1.75f + 0.8f * sinf(psi), 0.8f * cosf(psi) };
+        }
+        float sgn = a->windStroke == 0 ? 1.0f : -1.0f;
+        float phi = Lerp(60.0f, BACK_FH, w) * DEG2RAD;
+        *tangent = (Vector3){ -sgn * sinf(phi), 0.0f, cosf(phi) };
+        return (Vector3){ sgn * cosf(phi) * Lerp(0.6f, 0.85f, w), Lerp(1.0f, 1.25f, w), sinf(phi) * Lerp(0.6f, 0.85f, w) };
+    }
+    *strokeOut = 0;
+    *tangent = (Vector3){ 0.0f, 0.0f, 1.0f };
+    return (Vector3){ 0.25f, 1.0f, 0.55f };   // 構え：ラケットを前に
+}
+
+// ラケットの面（円）を描く。normal: 面の向き
+static void DrawRacketHead(Vector3 center, Vector3 normal, Color frame)
+{
+    normal = Vector3Normalize(normal);
+    Vector3 z = { 0, 0, 1 };
+    Vector3 axis = Vector3CrossProduct(z, normal);
+    float ang = acosf(Clamp(Vector3DotProduct(z, normal), -1.0f, 1.0f)) * RAD2DEG;
+    if (Vector3Length(axis) < 1e-4f) axis = (Vector3){ 1, 0, 0 };
+    DrawCircle3D(center, 0.14f, Vector3Normalize(axis), ang, frame);
+    DrawCircle3D(center, 0.135f, Vector3Normalize(axis), ang, frame);
+    DrawCylinderEx(Vector3Subtract(center, Vector3Scale(normal, 0.004f)), Vector3Add(center, Vector3Scale(normal, 0.004f)),
+                   0.13f, 0.13f, 14, Fade(RAYWHITE, 0.35f));
+}
+
+static void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
+{
+    Color skin = { 240, 200, 160, 255 }, pants = { 40, 40, 60, 255 }, frame = { 30, 30, 30, 255 };
+    #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ (x), (y), (z) })
+
+    if (a->downT > 0.0f) {
+        // 飛びついて倒れている
+        float s = a->lastContact.forehand ? 1.0f : -1.0f;
+        DrawCapsule(W(s * 0.15f, 0.18f, 0.0f), W(s * 0.95f, 0.22f, 0.15f), 0.17f, 8, 4, shirt);
+        DrawSphere(W(s * 1.2f, 0.22f, 0.2f), 0.12f, skin);
+        DrawCapsule(W(s * 0.1f, 0.12f, 0.0f), W(-s * 0.7f, 0.08f, -0.15f), 0.08f, 6, 3, pants);
+        DrawCapsule(W(s * 0.1f, 0.12f, 0.05f), W(-s * 0.65f, 0.08f, 0.2f), 0.08f, 6, 3, pants);
+        DrawCapsule(W(s * 0.9f, 0.25f, 0.2f), W(s * 1.45f, 0.08f, 0.35f), 0.05f, 6, 3, skin);
+        DrawRacketHead(W(s * 1.95f, 0.06f, 0.45f), (Vector3){ 0, 1, 0 }, frame);
+        return;
+    }
+
+    // 足（走っていれば交互に振る）
+    float swingAmt = Clamp(speed / 6.0f, 0.0f, 1.0f) * 0.32f;
+    float ph = a->runPhase;
+    DrawCapsule(W( 0.11f, 0.9f, 0.0f), W( 0.13f, 0.06f,  sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+    DrawCapsule(W(-0.11f, 0.9f, 0.0f), W(-0.13f, 0.06f, -sinf(ph) * swingAmt), 0.075f, 6, 3, pants);
+    // 胴と頭
+    DrawCapsule(W(0.0f, 0.95f, 0.0f), W(0.0f, 1.42f, 0.0f), 0.17f, 8, 4, shirt);
+    DrawSphere(W(0.0f, 1.68f, 0.0f), 0.12f, skin);
+
+    // ラケットと腕
+    int stroke; Vector3 tan;
+    Vector3 rl = RacketLocal(a, &stroke, &tan);
+    Vector3 shoulder = (stroke == 1) ? (Vector3){ -0.22f, 1.42f, 0.0f } : (Vector3){ 0.22f, 1.42f, 0.0f };
+    Vector3 dir = Vector3Normalize(Vector3Subtract(rl, shoulder));
+    Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));
+    float armLen = Vector3Length(Vector3Subtract(hand, shoulder));
+    if (armLen > 0.75f) hand = Vector3Add(shoulder, Vector3Scale(Vector3Normalize(Vector3Subtract(hand, shoulder)), 0.75f));
+    Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));
+    Vector3 other = (stroke == 1) ? (Vector3){ 0.22f, 1.42f, 0.0f } : (Vector3){ -0.22f, 1.42f, 0.0f };
+    Vector3 otherHand = { other.x * 1.4f, 1.0f, 0.2f };
+
+    // スイングの軌跡（振った直後だけ）
+    if (a->swingT >= 0.0f && a->swingT < SWING_TIME * 0.8f) {
+        SwingAnim tmp = *a;
+        Vector3 prev = { 0 };
+        for (int i = 0; i <= 14; i++) {
+            float t = -0.12f + (a->swingT + 0.12f) * (float)i / 14.0f;   // 少し前から今まで
+            Vector3 p, tg; int sk;
+            if (t < 0.0f) {
+                // 振り始め：テイクバックから当たる点まで
+                tmp.swingT = -1.0f; tmp.windup = 1.0f + t / 0.12f;
+                tmp.windStroke = a->lastContact.overhead ? 2 : (a->lastContact.forehand ? 0 : 1);
+            } else {
+                tmp.swingT = t; tmp.windup = 0.0f;
+            }
+            p = RacketLocal(&tmp, &sk, &tg);
+            if (i > 0) DrawLine3D(W(prev.x, prev.y, prev.z), W(p.x, p.y, p.z), Fade(RAYWHITE, 0.25f + 0.05f * i));
+            prev = p;
+        }
+    }
+
+    DrawCapsule(W(shoulder.x, shoulder.y, shoulder.z), W(hand.x, hand.y, hand.z), 0.05f, 6, 3, skin);
+    DrawCapsule(W(other.x, other.y, other.z), W(otherHand.x, otherHand.y, otherHand.z), 0.05f, 6, 3, skin);
+    DrawCylinderEx(W(hand.x, hand.y, hand.z), W(neck.x, neck.y, neck.z), 0.015f, 0.015f, 6, frame);
+    Vector3 nW = Vector3Subtract(W(tan.x, tan.y, tan.z), W(0, 0, 0));
+    DrawRacketHead(W(rl.x, rl.y, rl.z), nW, frame);
+    #undef W
+}
+
 static const char *ResultText(ShotResult r)
 {
     switch (r) {
@@ -714,6 +905,7 @@ static const char *MissText(MissReason m)
         case MISS_LATE:    return "WHIFF: too late";
         case MISS_FAR:     return "WHIFF: too far";
         case MISS_HIGH:    return "WHIFF: too high";
+        case MISS_LOW:     return "WHIFF: too low";
         case MISS_NO_BALL: return "no ball to hit";
         default:           return "";
     }
@@ -771,6 +963,9 @@ typedef struct {
     float   seeTimer;     // 相手が打ってから反応するまでの残り時間
     Hitter  watching;     // 最後に見た打者（打者が変わったら反応を始める）
     int     level;
+    float   downTimer;    // 飛びついて倒れている間は動けない
+    bool    planFore;     // フォアで打つ予定
+    SwingAnim anim;
     // 最後のショット（HUD 用）
     ShotType lastType;
     float   lastQ, lastKmh;
@@ -860,6 +1055,7 @@ static void AiPlan(Opponent *ai, const Ball *worldBall)
     float t = 0.0f;
     float bestCost = 1e9f, bestT = -1.0f;
     Vector3 bestStand = me;
+    float bestBallX = 0.0f, lateBallX = 0.0f;
     float lateCost = 1e9f, lateT = -1.0f;
     Vector3 lateStand = me;
     for (int i = 0; i < 240 * 4 && q.active && q.bounces < 2; i++) {
@@ -887,13 +1083,14 @@ static void AiPlan(Opponent *ai, const Ball *worldBall)
             float v0 = (dStand > 0.01f) ? Vector3DotProduct(Rot180(ai->vel), Vector3Scale(toStand, 1.0f / dStand)) : 0.0f;
             float need = TravelTime(dStand, v0, lv->speed, PLAYER_ACCEL, PLAYER_BRAKE);
             if (need <= t) {
-                if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; }
+                if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; bestBallX = q.pos.x; }
             } else if (need - t < lateCost) {
-                lateCost = need - t; lateT = t; lateStand = st;   // 間に合わない：一番惜しいところを目指す
+                lateCost = need - t; lateT = t; lateStand = st; lateBallX = q.pos.x;   // 間に合わない：一番惜しいところを目指す
             }
         }
     }
-    if (bestT < 0.0f) { bestT = lateT; bestStand = lateStand; }
+    if (bestT < 0.0f) { bestT = lateT; bestStand = lateStand; bestBallX = lateBallX; }
+    ai->planFore = bestBallX >= bestStand.x;
     if (bestT < 0.0f) { ai->planned = false; ai->standPos = AiHome(); return; }
 
     bestStand.x += RandNormal() * lv->posErr;
@@ -911,13 +1108,14 @@ static ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playe
     const AiLevel *lv = &AI_LEVELS[ai->level];
     ShotType t = SHOT_TOP;
     float r = RandRange(0.0f, 1.0f);
-    bool stretched = c->side > IDEAL_SIDE + 0.45f;
+    bool stretched = c->side > IDEAL_R + 0.45f || c->dive;
     bool playerAtNet = playerAi.z > -7.0f;        // プレイヤーが前に出てきている（AI 座標で相手は -z 側）
     bool playerDeep  = playerAi.z < -(HALF_LEN + 2.0f);
 
     if (c->height < 0.55f || (stretched && r < 0.7f)) t = SHOT_SLICE;          // 低い・遠い → つなぐ
     else if (c->height > 1.05f && c->quality > 0.55f && r < lv->aggression) t = SHOT_FLAT;   // 高くていい打点 → 叩く
     if (playerAtNet && (stretched || r < 0.35f)) t = SHOT_TOP_LOB;              // 前に来たらロブ
+    if (c->overhead) t = SHOT_FLAT;                                             // 頭上はスマッシュ
     if (playerDeep && meAi.z < HALF_LEN - 1.0f && r < 0.15f * lv->aggression) t = SHOT_DROP;
 
     // 球速の目安（打ち出し）。プロのラリーはフラット 130〜150、トップ 110〜135、スライス 80〜100km/h くらい
@@ -966,11 +1164,18 @@ static bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (!hittable) return false;
 
     float charge; Vector3 target;
-    Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f);
+    Vector3 meVel = Rot180(ai->vel);
+    Vector3 toBall = { b.pos.x - me.x, 0.0f, b.pos.z - me.z };
+    float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
+    Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
-    c = EvaluateContact(me, &b, t, charge);
-    c.stepIn = Rot180(ai->vel).z * -1.0f;
+    c = EvaluateContact(me, &b, t, charge, moveToward);
+    c.stepIn = -meVel.z;
+    ai->anim.lastContact = c;
+    ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
+    ai->anim.swingT = 0.0f;
     if (c.miss != MISS_NONE) return false;
+    if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
@@ -1009,6 +1214,10 @@ static Ball AiServe(Opponent *ai, bool deuce, bool first)
     float kmh;
     Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
     b.lastHitter = HITTER_OPP;
+    // 見た目：頭上で打つ
+    ai->anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
+    ai->anim.contactLocal = (Vector3){ contact.x - me.x, contact.y, me.z - contact.z };
+    ai->anim.swingT = 0.0f;
     ai->lastKmh = kmh;
     ai->planned = false;
     return RotBall(b);
@@ -1027,12 +1236,30 @@ static void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
         else ai->standPos = AiHome();   // 自分が打った後：戻る
     }
+    // 見た目のタイマー
+    if (ai->anim.swingT >= 0.0f) ai->anim.swingT = fminf(ai->anim.swingT + dt, 5.0f);
+    if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
+    ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
+    // 飛びついて倒れている間は動けない
+    if (ai->downTimer > 0.0f) {
+        ai->downTimer -= dt;
+        ai->vel = (Vector3){ 0 };
+        ai->planned = false;
+        return;
+    }
     if (ball->lastHitter == HITTER_PLAYER && !ai->planned && !ai->leaving && !ai->swung && ball->active) {
         ai->seeTimer -= dt;
         if (ai->seeTimer <= 0.0f) AiPlan(ai, ball);
     }
     // 走る（加速・減速あり）
     ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
+    // 打つ 0.6 秒前から構える（見た目）
+    if (ai->planned) {
+        ai->anim.windup = Clamp01(1.0f - (ai->swingAge - ball->age) / 0.6f);
+        ai->anim.windStroke = ai->planFore ? 0 : 1;
+    } else {
+        ai->anim.windup = 0.0f;
+    }
 }
 
 // ================= 試合のスコア =================
@@ -1118,6 +1345,9 @@ int main(void)
 
     Vector3 player = { 0.0f, 0.0f, HALF_LEN + 0.8f };   // 足元の位置
     Vector3 playerVel = { 0 };
+    SwingAnim playerAnim = { .swingT = -1.0f };
+    float playerDownT = 0.0f;           // 飛びついて倒れている残り時間
+    Vector3 lastIdealPos = { 0 };       // 最後に振ったときの理想の打点（ワールド座標）
 
     Ball ball = { 0 };
     float feedTimer = 1.0f;          // 0 になったら次の球を出す
@@ -1206,6 +1436,9 @@ int main(void)
             ai = (Opponent){ 0 };
             ai.level = lvl;
             ai.pos = AiHome();
+            ai.anim.swingT = -1.0f;
+            playerAnim = (SwingAnim){ .swingT = -1.0f };
+            playerDownT = 0.0f;
             score = (Score){ 0 };
             score.server = rand() % 2;
             needSetup = true;
@@ -1226,6 +1459,10 @@ int main(void)
             playerVel = (Vector3){ 0 };
             bot.planned = false; bot.leaving = false; bot.swung = false; bot.watching = HITTER_NONE;
             bot.vel = (Vector3){ 0 };
+            bot.downTimer = 0.0f; bot.anim = (SwingAnim){ .swingT = -1.0f };
+            ai.downTimer = 0.0f; ai.anim = (SwingAnim){ .swingT = -1.0f };
+            playerAnim = (SwingAnim){ .swingT = -1.0f };
+            playerDownT = 0.0f;
             chargingShot = -1; chargingServe = -1;
             if (server == 0) {
                 player = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
@@ -1287,6 +1524,10 @@ int main(void)
                 player.x = deuceSide ? Clamp(player.x, 0.2f, SINGLES_W * 0.5f) : Clamp(player.x, -SINGLES_W * 0.5f, -0.2f);
             }
             player.z = HALF_LEN + 0.15f;
+        } else if (playerDownT > 0.0f) {
+            // 飛びついて倒れている：起き上がるまで動けない
+            playerDownT -= simDt;
+            playerVel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
             float spd = PLAYER_SPEED * (chargingShot >= 0 ? 0.6f : 1.0f);
@@ -1296,6 +1537,11 @@ int main(void)
             player.x = Clamp(player.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
             player.z = Clamp(player.z, 0.5f, HALF_LEN + 5.0f);
         }
+
+        // 見た目のタイマー
+        if (playerAnim.swingT >= 0.0f) playerAnim.swingT = fminf(playerAnim.swingT + simDt, 5.0f);
+        playerAnim.downT = playerDownT;
+        playerAnim.runPhase += Vector3Length(playerVel) * simDt * 2.2f;
 
         // ---- サーブ（自分）----
         Vector3 tossIdeal = { player.x + 0.25f, SERVE_REACH, player.z - 0.35f };   // 理想の打点
@@ -1318,7 +1564,10 @@ int main(void)
                 }
             } else if (sv == SV_TOSS) {
                 charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
+                playerAnim.windup = 0.3f + 0.7f * charge;
+                playerAnim.windStroke = 2;
                 if (IsKeyReleased(serveKeys[chargingServe])) {
+                    playerAnim.windup = 0.0f;
                     ServeType type = (ServeType)chargingServe;
                     chargingServe = -1;
                     // 直前のフレームの間で、理想の打点の高さに一番近かった瞬間を使う（高すぎる球は打てない）
@@ -1356,6 +1605,9 @@ int main(void)
                         lastServeH = hb.pos.y;
                         lastServeQ = q;
                         lastContactPos = hb.pos;
+                        playerAnim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
+                        playerAnim.contactLocal = (Vector3){ hb.pos.x - player.x, hb.pos.y, player.z - hb.pos.z };
+                        playerAnim.swingT = 0.0f;
                         ball = HitServe(hb.pos, target, type, charge, q, x0, x1, &lastServeKmh);
                         ball.lastHitter = HITTER_PLAYER;
                         trailColor = SERVES[type].color;
@@ -1413,7 +1665,7 @@ int main(void)
         }
 
         // ---- スイング（ラリー・リターン・試合）----
-        if (!playerServing && mode != MODE_SERVE && !botControls) {
+        if (!playerServing && mode != MODE_SERVE && !botControls && playerDownT <= 0.0f) {
             if (chargingShot < 0) {
                 bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
                 for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
@@ -1424,9 +1676,15 @@ int main(void)
                 }
             } else {
                 charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
+                // 構えの見た目：ボールのある側で構える（高い球なら頭上）
+                playerAnim.windup = charge;
+                if (ball.active && ball.lastHitter == HITTER_OPP)
+                    playerAnim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, player) < 6.0f ? 2
+                                          : (ball.pos.x >= player.x ? 0 : 1);
                 if (IsKeyReleased(shotKeys[chargingShot])) {
                     ShotType type = (ShotType)chargingShot;
                     chargingShot = -1;
+                    playerAnim.windup = 0.0f;
 
                     // コースは「離した瞬間に押している方向」で決まる
                     const ShotSpec *sp = &SHOTS[type];
@@ -1436,7 +1694,7 @@ int main(void)
                     if (IsKeyDown(KEY_W)) target.z = sp->deepDepth;
                     if (IsKeyDown(KEY_S)) target.z = sp->shortDepth;
 
-                    // 直前のフレームの間で、一番タイミングが合っていた瞬間のボールを使う
+                    // 直前のフレームの間で、一番いい当たりになる瞬間のボールを使う
                     Contact c = { .miss = MISS_NO_BALL };
                     int bestIdx = -1;
                     for (int h = 0; h < historyCount; h++) {
@@ -1445,17 +1703,32 @@ int main(void)
                                         hb->bounces <= 1 && hb->pos.z > 0.0f && !hb->hitNet &&
                                         (!hb->isServe || hb->bounces == 1);   // サーブはバウンドしてから
                         if (!hittable) continue;
-                        Contact hc = EvaluateContact(player, hb, type, charge);
-                        if (bestIdx < 0 || fabsf(hc.fwdErr) < fabsf(c.fwdErr)) { c = hc; bestIdx = h; }
+                        Vector3 toBall = { hb->pos.x - player.x, 0.0f, hb->pos.z - player.z };
+                        float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(playerVel, Vector3Normalize(toBall)) : 0.0f;
+                        Contact hc = EvaluateContact(player, hb, type, charge, moveToward);
+                        bool better = (bestIdx < 0) ||
+                                      (hc.miss == MISS_NONE && (c.miss != MISS_NONE || hc.quality > c.quality)) ||
+                                      (hc.miss != MISS_NONE && c.miss != MISS_NONE);
+                        if (better) { c = hc; bestIdx = h; }
                     }
                     if (bestIdx >= 0 && c.miss == MISS_NONE) ball = history[bestIdx];
                     c.stepIn = -playerVel.z;
+
+                    // スイングの見た目と、理想の打点との比較用
+                    Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
+                    playerAnim.lastContact = c;
+                    playerAnim.contactLocal = (Vector3){ sb.x - player.x, sb.y, player.z - sb.z };
+                    playerAnim.swingT = 0.0f;
+                    if (c.overhead) lastIdealPos = (Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD };
+                    else lastIdealPos = (Vector3){ player.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE),
+                                                   SHOTS[type].idealHeight, player.z - IDEAL_FWD };
+                    lastContactPos = sb;
+                    if (c.miss == MISS_NONE && c.dive) { playerDownT = DIVE_DOWN_TIME; playerVel = (Vector3){ 0 }; }
 
                     hasLast = true;
                     lastContact = c;
                     lastType = type;
                     if (c.miss == MISS_NONE) {
-                        lastContactPos = ball.pos;
                         ball = PlayerShot(&c, ball.pos, target, type, charge, &lastKmh, &lastRpm, &lastAngle);
                         ball.lastHitter = HITTER_PLAYER;
                         trailColor = SHOTS[type].color;
@@ -1611,13 +1884,11 @@ int main(void)
         BeginMode3D(cam);
             DrawCourt();
 
-            // プレイヤー（仮）。正面が -z
-            DrawCapsule((Vector3){ player.x, 0.3f, player.z }, (Vector3){ player.x, 1.5f, player.z },
-                        0.25f, 8, 4, (Color){ 230, 120, 60, 255 });
-            // AI
+            // プレイヤー（-z 向き）と AI（+z 向き）
+            DrawFigure(player, true, (Color){ 230, 120, 60, 255 }, botControls ? &bot.anim : &playerAnim,
+                       Vector3Length(playerVel));
             if (mode == MODE_MATCH)
-                DrawCapsule((Vector3){ ai.pos.x, 0.3f, ai.pos.z }, (Vector3){ ai.pos.x, 1.5f, ai.pos.z },
-                            0.25f, 8, 4, (Color){ 70, 90, 200, 255 });
+                DrawFigure(ai.pos, false, (Color){ 70, 90, 200, 255 }, &ai.anim, Vector3Length(ai.vel));
 
             if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
@@ -1630,16 +1901,28 @@ int main(void)
                 // 構えているときはボールを手に持つ
                 if (sv == SV_READY)
                     DrawSphere((Vector3){ player.x + 0.25f, 1.0f, player.z - 0.3f }, BALL_R, (Color){ 210, 240, 40, 255 });
-            } else if (mode != MODE_SERVE) {
-                // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す
+            } else if (mode != MODE_SERVE && !botControls) {
+                // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
+                DrawCircle3D((Vector3){ player.x, 0.01f, player.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
+                DrawCircle3D((Vector3){ player.x, 0.01f, player.z }, REACH_SIDE, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
+                // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す。頭上で構えていれば頭上
                 ShotType t = (chargingShot >= 0) ? (ShotType)chargingShot : SHOT_TOP;
-                float h = SHOTS[t].idealHeight;
                 Color zc = Fade(SHOTS[t].color, 0.8f);
-                DrawSphereWires((Vector3){ player.x + IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
-                DrawSphereWires((Vector3){ player.x - IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
-                // 最後に打った打点
-                if (hasLast && lastContact.miss == MISS_NONE)
-                    DrawSphere(lastContactPos, 0.05f, QualityColor(lastContact.quality));
+                if (chargingShot >= 0 && playerAnim.windStroke == 2) {
+                    DrawSphereWires((Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD }, 0.15f, 6, 8, zc);
+                } else {
+                    float h = SHOTS[t].idealHeight;
+                    DrawSphereWires((Vector3){ player.x + IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
+                    DrawSphereWires((Vector3){ player.x - IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
+                }
+                // 最後に振ったとき：理想の打点（白い網）と、実際のボール（色つき）を線で結ぶ。ずれが一目で分かる
+                if (hasLast && playerAnim.swingT >= 0.0f && playerAnim.swingT < 2.5f && lastContact.miss != MISS_NO_BALL) {
+                    Color qc = lastContact.miss == MISS_NONE ? QualityColor(lastContact.quality) : RED;
+                    DrawSphereWires(lastIdealPos, 0.15f, 6, 8, RAYWHITE);
+                    DrawSphere(lastContactPos, 0.06f, qc);
+                    DrawLine3D(lastIdealPos, lastContactPos, qc);
+                    DrawLine3D((Vector3){ lastContactPos.x, 0.01f, lastContactPos.z }, lastContactPos, Fade(qc, 0.5f));
+                }
             }
 
             // 軌跡
@@ -1682,17 +1965,33 @@ int main(void)
             const Contact *c = &lastContact;
             if (c->miss != MISS_NONE) {
                 DrawText(MissText(c->miss), 20, y, 22, RED); y += 30;
+                if (c->miss != MISS_NO_BALL) {
+                    DrawText(TextFormat("Ball was %.2f m from you, %+.0f deg (side=0, front=90), %.2f m high",
+                                        c->side, c->angleDeg, c->height), 20, y, 16, RAYWHITE); y += 20;
+                    DrawText("White ring on the ground = ideal distance, faint ring = max reach", 20, y, 16, LIGHTGRAY); y += 20;
+                }
             } else {
-                DrawText(TextFormat("%s%s %s  quality %.0f%%", c->forehand ? "Forehand" : "Backhand", c->volley ? " volley" : "",
-                                    SHOTS[lastType].name, c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
+                const char *stroke = c->overhead ? "Overhead" : (c->forehand ? "Forehand" : "Backhand");
+                const char *tag = c->dive ? " DIVE!" : (c->volley ? " volley" : "");
+                DrawText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
+                                    c->overhead && lastType != SHOT_SLICE && lastType < SHOT_NORMAL_COUNT ? "SMASH" : SHOTS[lastType].name,
+                                    c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
                 y += 30;
-                const char *tStr = c->fwdErr > 0.08f ? "early" : (c->fwdErr < -0.08f ? "late" : "good");
-                const char *dStr = c->side < IDEAL_SIDE - 0.15f ? "jammed" : (c->side > IDEAL_SIDE + 0.15f ? "stretched" : "good");
-                const char *hStr = c->height < SHOTS[lastType].idealHeight - 0.2f ? "low"
-                                 : (c->height > SHOTS[lastType].idealHeight + 0.2f ? "high" : "good");
-                DrawText(TextFormat("Timing  %+.2f m (%+.0f ms) %-5s %3.0f%%", c->fwdErr, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
-                DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
-                DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
+                if (c->overhead) {
+                    const char *tStr = c->height > OVERHEAD_IDEAL_H + 0.15f ? "early" : (c->height < OVERHEAD_IDEAL_H - 0.15f ? "late" : "good");
+                    DrawText(TextFormat("Timing  height %.2f m (ideal %.2f) %-5s %3.0f%%", c->height, OVERHEAD_IDEAL_H, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    DrawText(TextFormat("Position under the ball         %3.0f%%", c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    y += 22;
+                } else {
+                    float idealAng = c->volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
+                    const char *tStr = c->angleDeg > idealAng + 8.0f ? "early" : (c->angleDeg < idealAng - 8.0f ? "late" : "good");
+                    const char *dStr = c->side < IDEAL_R - 0.15f ? "jammed" : (c->side > IDEAL_R + 0.15f ? "stretched" : "good");
+                    const char *hStr = c->height < SHOTS[lastType].idealHeight - 0.2f ? "low"
+                                     : (c->height > SHOTS[lastType].idealHeight + 0.2f ? "high" : "good");
+                    DrawText(TextFormat("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
+                }
                 DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
                 if (ball.lastHitter == HITTER_PLAYER) {
                     if (ball.netClearance > -50.0f)
@@ -1764,6 +2063,10 @@ int main(void)
             DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), gx, gy - 24, 20, RAYWHITE);
         }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
+        {
+            static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
+            DrawText(TextFormat("Camera: %s (C)", camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
+        }
         if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
         EndDrawing();
     }
