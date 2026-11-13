@@ -205,3 +205,13 @@ void SfxCallFault(void) { Play(S_CALL_FAULT, -1, 0.85f, 1.0f); }
 
 // 審判のコール「アウト」（ラリー中の球がアウトになったとき）
 void SfxCallOut(void) { Play(S_CALL_OUT, -1, 0.85f, 1.0f); }
+
+// 拍手を止める（サーブのトスを上げたら静かに：ポイント中は観客は静かにする決まり）
+void SfxStopApplause(void)
+{
+    if (!gAudioOk) return;
+    int ids[2] = { S_APPLAUSE, S_APPLAUSE_BIG };
+    for (int i = 0; i < 2; i++)
+        for (int v = 0; v < gSlot[ids[i]].nVar; v++)
+            for (int k = 0; k < POOL; k++) if (IsSoundPlaying(gSlot[ids[i]].s[v][k])) StopSound(gSlot[ids[i]].s[v][k]);
+}

@@ -586,6 +586,7 @@ void  SfxTest(void);
 bool  SfxGruntPre(float dist);
 void  SfxCallFault(void);
 void  SfxCallOut(void);
+void  SfxStopApplause(void);
 const char *SfxDir(void);
 
 #endif

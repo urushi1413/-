@@ -518,6 +518,7 @@ int main(void)
                     P.chargingServe = s;
                     P.charge = 0.0f;
                     P.serveT = 0.0f;
+                    SfxStopApplause();
                     playerGrunt = false; playerGruntTried = false;
                     P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
@@ -650,6 +651,7 @@ int main(void)
                 phaseTimer -= simDt;
                 if (phaseTimer <= 0.0f) {
                     aiTossing = true; aiTossT = 0.0f;
+                    SfxStopApplause();
                     bool dc = DeuceCourt(&score);
                     Vector3 me = { dc ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
                     ball = (Ball){ 0 };
