@@ -67,6 +67,9 @@ typedef struct {
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
+#define SIT_POS_BONUS    0.80f   //   前後（タイミング）と左右（距離）の許容幅を最大でこの割合だけ広げる
+#define AIM_SIDE_REAL    2.90f   // 左右の狙いの限界（サイドラインの約 1.2m 内側。それより外には狙えない）
+#define AIM_SIDE_CASUAL  2.40f
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
@@ -231,6 +234,7 @@ typedef struct {
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
     float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）
     float inKmh;       // 来た球の速さ
+    float sit;         // 上から叩ける球の度合い（0〜1）。高くて遅い球ほど大きい
     float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
     float stepIn;      // 打つ瞬間に前（ネット方向）へ踏み込んでいた速さ（m/s）。マイナスは下がりながら

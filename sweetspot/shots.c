@@ -39,6 +39,8 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     c.inKmh    = Vector3Length(ball->vel) * 3.6f;
     c.easeKmh  = ball->isServe ? 999.0f : c.inKmh;
     c.vyBall   = ball->vel.y;
+    // 上から叩ける球：1.1m から上で効き始め、1.7m で最大。来た球が 50km/h 以下で全部、90km/h 以上で効かない
+    c.sit      = Clamp01((bp.y - SIT_H0) / (SIT_H1 - SIT_H0)) * Clamp01((90.0f - c.easeKmh) / 40.0f);
     c.timeErrMs = c.fwdErr / fmaxf(Vector3Length(ball->vel), 1.0f) * 1000.0f;
     c.overhead = bp.y > OVERHEAD_MIN_H;
 
@@ -57,6 +59,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
 
     const ShotSpec *sp = &SHOTS[type];
     float tk = gCasual ? CASUAL_TOL : 1.0f, hk = gCasual ? CASUAL_TOL_H : 1.0f;
+    tk *= 1.0f + SIT_POS_BONUS * c.sit;   // チャンスボールは前後左右に多少ずれても打てる
     if (c.overhead) {
         // 頭上：高さがタイミング（落ちてくる球をどこで叩くか）、体の前右の点からの距離が位置
         float ox = fabsf(dx) - OVERHEAD_SIDE, oz = dz - OVERHEAD_FWD;
@@ -88,8 +91,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     const ShotSpec *sp = &SHOTS[type];
     // 上から叩ける球（自分より高い、遅い球）は、多少当たりが悪くても威力が出て、ぶれにくい
     //   1.1m から上で効き始め、1.7m で最大。来た球が 50km/h 以下で全部、90km/h 以上で効かない
-    float sit = Clamp01((c->height - SIT_H0) / (SIT_H1 - SIT_H0)) * Clamp01((90.0f - c->easeKmh) / 40.0f);
-    float q = c->quality + (1.0f - c->quality) * SIT_BONUS * sit;
+    float q = c->quality + (1.0f - c->quality) * SIT_BONUS * c->sit;
 
     // 球速 = 来た球の跳ね返り + 自分のスイング
     //   芯を外すと（質が低いと）どちらも落ちる。ボレーは自分のスイングがほとんど乗らない
@@ -148,7 +150,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
 //   タッチショットは自由。簡単モードは左右を少し内側に
 Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style)
 {
-    float lim = style == STYLE_CASUAL ? 2.8f : 3.7f;
+    float lim = style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL;   // 深さと同じく、ラインぎりぎりは狙えない
     float x = Clamp(aimX, -lim, lim);
     float z = aimDepth;
     if (t < SHOT_NORMAL_COUNT) {
