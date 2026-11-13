@@ -584,6 +584,7 @@ int   SfxLoadedCount(void);
 bool  SfxDeviceOk(void);
 void  SfxTest(void);
 bool  SfxGruntPre(float dist);
+void  SfxCallFault(void);
 const char *SfxDir(void);
 
 #endif

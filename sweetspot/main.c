@@ -990,12 +990,14 @@ int main(void)
                 } else if (serveNo == 1) {
                     serveNo = 2;
                     pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
+                    SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
                     phase = PH_BETWEEN;
                     phaseTimer = 1.5f;
                 } else {
                     winner = 1 - hitter;
                     pointMsg = "Double fault";
+                    SfxCallFault();
                     endKind = 4;
                 }
             } else if (!ball.isServe || serveJudged) {

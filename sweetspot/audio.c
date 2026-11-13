@@ -12,13 +12,13 @@ typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 enum {
     S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_GRUNT_PRE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
-    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_COUNT
+    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
     "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "grunt_pre", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
-    "crowd", "applause", "applause_big"
+    "crowd", "applause", "applause_big", "call_fault"
 };
 
 static bool    gAudioOk = false;
@@ -172,7 +172,7 @@ void SfxNet(float speed, float dist) { Play(S_NET, -1, Clamp01(0.4f + speed / 30
 // 滑り込み・急な切り返し：ハードは靴の音、クレーと芝は滑る音
 void SfxSlide(float dist)
 {
-    if (gSurface == SURF_HARD) Play(S_SQUEAK, -1, 0.8f * DistVol(dist), Jitter());
+    if (gSurface == SURF_HARD) Play(S_SQUEAK, S_SLIDE, 0.8f * DistVol(dist), Jitter());
     else                       Play(S_SLIDE, -1, (gSurface == SURF_CLAY ? 0.9f : 0.5f) * DistVol(dist), Jitter());
 }
 
@@ -193,3 +193,6 @@ void SfxPointEnd(int rallyHits, bool winner)
     if (k < 0.6f) Play(S_APPLAUSE, S_APPLAUSE_BIG, 0.35f + 0.6f * k, 1.0f);
     else          Play(S_APPLAUSE_BIG, S_APPLAUSE, 0.5f + 0.4f * Clamp01(k), 1.0f);
 }
+
+// 審判のコール「フォルト」
+void SfxCallFault(void) { Play(S_CALL_FAULT, -1, 0.85f, 1.0f); }
