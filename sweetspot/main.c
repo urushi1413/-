@@ -93,6 +93,7 @@ int main(void)
     // バウンドの目印
     Vector3 bouncePos = { 0 };
     float bounceT = 10.0f;
+    bool  bounceByPlayer = false;      // 自分の打球が落ちた（狙いとのずれを表示する）
     int prevBounces = 0;
 
     while (!WindowShouldClose() && !quitGame) {
@@ -452,6 +453,7 @@ int main(void)
                         P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
+                        P.lastAimTarget = target;
                         gCasual = false;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -668,6 +670,7 @@ int main(void)
 
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, swingCharge, &P.lastKmh, &P.lastRpm, &P.lastAngle);
+                        P.lastAimTarget = target;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
                         {
@@ -747,7 +750,10 @@ int main(void)
 
         // バウンドを見つけて目印を出す
         bounceT += simDt;
-        if (ball.bounces > prevBounces && ball.bounces <= 2) { bouncePos = ball.pos; bounceT = 0.0f; }
+        if (ball.bounces > prevBounces && ball.bounces <= 2) {
+            bouncePos = ball.pos; bounceT = 0.0f;
+            bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
+        }
         prevBounces = ball.bounces;
 
         // ---- プレイ記録：来た球の追跡と、打球の結果 ----
@@ -972,6 +978,17 @@ int main(void)
                 Color mk = Fade((Color){ 120, 55, 25, 255 }, 0.8f * (1.0f - bounceT / 5.0f));
                 DrawCylinder((Vector3){ bouncePos.x, 0.0015f, bouncePos.z }, 0.05f, 0.05f, 0.001f, 12, mk);
                 DrawCylinder((Vector3){ bouncePos.x, 0.0015f, bouncePos.z + 0.06f }, 0.045f, 0.045f, 0.001f, 12, mk);
+            }
+            // 自分の打球：狙った場所と落ちた場所を線で結ぶ（1m 以内は緑、2.5m 以内は黄、それ以上は赤）
+            if (bounceByPlayer && bounceT < 1.8f) {
+                Vector3 at = { P.lastAimTarget.x, 0.02f, P.lastAimTarget.z };
+                Vector3 lp = { bouncePos.x, 0.02f, bouncePos.z };
+                float miss = Vector3Distance(at, lp);
+                Color mc = Fade(miss < 1.0f ? GREEN : (miss < 2.5f ? YELLOW : RED), 1.0f - bounceT / 1.8f);
+                DrawLine3D(at, lp, mc);
+                DrawCircle3D(at, 0.3f, (Vector3){ 1, 0, 0 }, 90.0f, mc);
+                DrawLine3D((Vector3){ at.x - 0.3f, at.y, at.z }, (Vector3){ at.x + 0.3f, at.y, at.z }, mc);
+                DrawLine3D((Vector3){ at.x, at.y, at.z - 0.3f }, (Vector3){ at.x, at.y, at.z + 0.3f }, mc);
             }
             // バウンドした場所に輪を一瞬出す（深さが読みやすい）
             if (bounceT < 0.8f) {

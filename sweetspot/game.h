@@ -112,7 +112,7 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define CASUAL_QFLOOR    0.35f   // 当たりの質は最低 35%
 #define CASUAL_ERR       0.45f   // ぶれ 45%
 #define CASUAL_WAIT      1.00f   // 早く離したとき、この時間まで先の一番いい瞬間を待って振る
-#define TIMING_PULL      0.15f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
+#define TIMING_PULL      0.07f   // タイミングのずれ 1m あたりの方向ずれ（rad）。早いと引っ張り、遅いと流れる
 
 // ---- 来た球の勢い ----
 // ラケットに当たったボールの速さ ≒ EA × 来た球の速さ ＋ (1 + EA) × ラケットの速さ
@@ -128,7 +128,7 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 // 勢いの倍率：ラケット面が δ ずれると、跳ね返る成分は 2δ、自分で振った成分は δ ずれる。
 //            なので来た球が速いほど、同じ面のずれでも狙いが大きく狂う（1〜2 倍）
 #define ERR_YAW_BASE     0.5f
-#define ERR_YAW_Q        5.0f
+#define ERR_YAW_Q        2.5f
 #define ERR_PITCH_BASE   0.2f
 #define ERR_PITCH_Q      3.5f
 // 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
@@ -452,6 +452,7 @@ typedef struct {
     ShotType lastType;
     float lastKmh, lastRpm, lastAngle;
     Vector3 lastContactPos, lastIdealPos;
+    Vector3 lastAimTarget;     // 最後に狙った場所（落ちた場所と比べて表示する）
     // サーブ
     ServeState sv;
     Vector2 tossOffset;
