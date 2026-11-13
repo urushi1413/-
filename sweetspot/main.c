@@ -20,11 +20,9 @@ int main(void)
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_REAL;  // N：難易度
-    // コースの狙い（右手の U/O で左右、I/、で深さ。溜めている間に押し続けると動く）
-    float aimX = 0.0f, aimDepth = -9.0f;   // マウスで動かす狙い（ずっと残る）
-    enum { SRC_KEY, SRC_LMB, SRC_RMB } chargeSrc = SRC_KEY;   // 何で溜め始めたか（離す判定に使う）
-    // 簡単モード：早く離したとき、一番いい瞬間まで待って振る
-    struct { bool active; ShotType type; Vector3 target; float charge; float age; float releaseAge; float penalty; } swingQ = { 0 };
+
+    // 自分（プレイヤー）。2 人目を足すときは、これを配列にする
+    Player P = NewPlayer((Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f });
 
     Camera3D cam = { 0 };
     cam.up = (Vector3){ 0, 1, 0 };
@@ -32,12 +30,6 @@ int main(void)
     cam.projection = CAMERA_PERSPECTIVE;
     int camMode = 0;
 
-    Vector3 player = { 0.0f, 0.0f, HALF_LEN + 0.8f };   // 足元の位置
-    Vector3 playerVel = { 0 };
-    SwingAnim playerAnim = { .swingT = -1.0f };
-    float playerDownT = 0.0f;           // 飛びついて倒れている残り時間
-    bool  playerSliding = false;        // 滑り込んでいる
-    Vector3 lastIdealPos = { 0 };       // 最後に振ったときの理想の打点（ワールド座標）
 
     Ball ball = { 0 };
     float feedTimer = 1.0f;          // 0 になったら次の球を出す
@@ -46,20 +38,9 @@ int main(void)
     float trailTimer = 0.0f;
     Color trailColor = LIGHTGRAY;
 
-    // 溜め打ち：J/K/L を押している間に溜まり、離した瞬間にスイング
-    // L=フラット J=トップスピン K=スライス。Shift を押しながらだと スライスロブ / トップスピンロブ / ドロップ
-    // サーブのときは L=フラット K=スライス J=キック
-    const int shotKeys[SHOT_COUNT] = { KEY_L, KEY_J, KEY_K, KEY_L, KEY_J, KEY_K };
-    const int serveKeys[SERVE_COUNT] = { KEY_L, KEY_K, KEY_J };
-    int   chargingShot = -1;
-    float charge = 0.0f;
+    // 溜め打ち：押している間に溜まり、離した瞬間にスイング（入力の読み方は input.c）
 
     // 最後のショットの記録
-    bool hasLast = false;
-    Contact lastContact = { 0 };
-    ShotType lastType = SHOT_TOP;
-    float lastKmh = 0.0f, lastRpm = 0.0f, lastAngle = 0.0f;
-    Vector3 lastContactPos = { 0 };
     bool scoredLast = true;
 
     int stats[SHOT_COUNT][2] = { 0 };   // [球種][0=打った数, 1=イン]
@@ -69,14 +50,9 @@ int main(void)
     bool proFeed = true;
 
     // サーブ（練習・試合共通）
-    ServeState sv = SV_READY;
     int   serveNo = 1;                  // 1st / 2nd
     bool  deuceSide = true;
-    int   chargingServe = -1;
-    Vector2 tossOffset = { 0 };
     float svTimer = 0.0f;
-    ServeType lastServeType = SERVE_FLAT;
-    float lastServeKmh = 0.0f, lastServeH = 0.0f, lastServeQ = 0.0f;
     const char *serveMsg = "";
     bool  serveAce = false;
     int   svStats[2][2] = { 0 };        // [1st/2nd][0=打った数, 1=イン]
@@ -244,19 +220,19 @@ int main(void)
         if (restart) {
             feedTimer = 0.5f;
             ball = (Ball){ 0 };
-            chargingShot = -1; chargingServe = -1;
-            sv = SV_READY; serveNo = 1; svTimer = 0.0f; serveMsg = "";
-            player = (Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f };
-            playerVel = (Vector3){ 0 };
-            hasLast = false;
+            P.chargingShot = -1; P.chargingServe = -1;
+            P.sv = SV_READY; serveNo = 1; svTimer = 0.0f; serveMsg = "";
+            P.pos = (Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f };
+            P.vel = (Vector3){ 0 };
+            P.hasLast = false;
             int lvl = ai.level;
             ai = (Opponent){ 0 };
             ai.level = lvl;
             ai.pos = AiHome();
             ai.anim.swingT = -1.0f;
-            playerAnim = (SwingAnim){ .swingT = -1.0f };
-            playerDownT = 0.0f;
-            playerSliding = false;
+            P.anim = (SwingAnim){ .swingT = -1.0f };
+            P.downT = 0.0f;
+            P.sliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
             needSetup = true;
@@ -274,30 +250,30 @@ int main(void)
             trailCount = 0;
             ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE;
             ai.vel = (Vector3){ 0 };
-            playerVel = (Vector3){ 0 };
+            P.vel = (Vector3){ 0 };
             bot.planned = false; bot.leaving = false; bot.swung = false; bot.watching = HITTER_NONE;
             bot.vel = (Vector3){ 0 };
             bot.downTimer = 0.0f; bot.anim = (SwingAnim){ .swingT = -1.0f };
             ai.downTimer = 0.0f; ai.anim = (SwingAnim){ .swingT = -1.0f };
-            playerAnim = (SwingAnim){ .swingT = -1.0f };
-            playerDownT = 0.0f;
-            playerSliding = false;
+            P.anim = (SwingAnim){ .swingT = -1.0f };
+            P.downT = 0.0f;
+            P.sliding = false;
             ai.sliding = false; bot.sliding = false;
-            chargingShot = -1; chargingServe = -1;
+            P.chargingShot = -1; P.chargingServe = -1;
             if (server == 0) {
-                player = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+                P.pos = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
                 ai.pos = Rot180(ReturnPos(deuce));
                 ai.standPos = ai.pos;
-                sv = SV_READY;
+                P.sv = SV_READY;
             } else {
-                player = ReturnPos(deuce);
+                P.pos = ReturnPos(deuce);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                 ai.standPos = ai.pos;
                 phaseTimer = 1.5f;
             }
             phase = PH_SERVE;
             serveJudged = false;
-            bot.pos = Rot180(player);
+            bot.pos = Rot180(P.pos);
             bot.standPos = bot.pos;
             if (autopilot && server == 0) phaseTimer = 1.5f;
             TraceLog(LOG_INFO, "POINT start: server=%s %s court, %s serve, games %d-%d, %s",
@@ -312,137 +288,122 @@ int main(void)
             phaseTimer -= simDt;
             if (phaseTimer <= 0.0f) {
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
-                player = Rot180(bot.pos);
+                P.pos = Rot180(bot.pos);
                 trailColor = RAYWHITE;
                 trailCount = 0;
                 phase = PH_PLAY;
                 serveJudged = false;
-                sv = SV_FLIGHT;
+                P.sv = SV_FLIGHT;
             }
             playerServing = false;
         }
 
-        // ---- 移動（WASD）。加速・減速あり ----
-        Vector3 move = { 0 };
-        if (IsKeyDown(KEY_A)) move.x -= 1.0f;
-        if (IsKeyDown(KEY_D)) move.x += 1.0f;
-        if (IsKeyDown(KEY_W)) move.z -= 1.0f;
-        if (IsKeyDown(KEY_S)) move.z += 1.0f;
+        // ---- 入力（キーボード＋マウス）。ゲームパッドや 2 人目も、同じ PlayerInput の形で読む ----
+        bool clickConsumed = false;
+        if (IsKeyPressed(KEY_ESCAPE)) {   // Esc：一時停止して設定メニュー
+            app = APP_PAUSE; menuSel = 0;
+            mouseLocked = false; EnableCursor();
+            P.chargingShot = -1; P.chargingServe = -1;
+        }
+        if (!mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+            mouseLocked = true; DisableCursor(); clickConsumed = true;   // クリックで戻す（このクリックでは打たない）
+        }
+        PlayerInput in;
+        ReadKeyboardMouse(&in, mouseLocked && !clickConsumed, skipMouseDelta, aimSens, frameDt);
+        skipMouseDelta = false;   // メニューから戻った直後のマウスの跳びは無視した
+
+        // ---- 移動。加速・減速あり ----
+        Vector3 move = { in.move.x, 0.0f, -in.move.y };   // 自分は -z を向いているので、前は -z
         if (botControls) {
             // オートパイロット：AI と同じ関数で走る
             if (phase == PH_PLAY || phase == PH_POINT_OVER) {
                 Ball fb = FlipSides(ball);
                 AiUpdate(&bot, &fb, simDt);
-                player = Rot180(bot.pos);
-                playerVel = Rot180(bot.vel);
+                P.pos = Rot180(bot.pos);
+                P.vel = Rot180(bot.vel);
             }
         } else if (playerServing) {
             // サーブ前はベースラインに沿って左右だけ動ける（センターマークを越えない）
-            playerVel = (Vector3){ 0 };
-            if (sv == SV_READY && move.x != 0.0f) {
-                player.x += move.x * 2.0f * frameDt;
-                player.x = deuceSide ? Clamp(player.x, 0.2f, SINGLES_W * 0.5f) : Clamp(player.x, -SINGLES_W * 0.5f, -0.2f);
+            P.vel = (Vector3){ 0 };
+            if (P.sv == SV_READY && move.x != 0.0f) {
+                P.pos.x += move.x * 2.0f * frameDt;
+                P.pos.x = deuceSide ? Clamp(P.pos.x, 0.2f, SINGLES_W * 0.5f) : Clamp(P.pos.x, -SINGLES_W * 0.5f, -0.2f);
             }
-            player.z = HALF_LEN + 0.15f;
-        } else if (playerDownT > 0.0f) {
+            P.pos.z = HALF_LEN + 0.15f;
+        } else if (P.downT > 0.0f) {
             // 飛びついて倒れている：起き上がるまで動けない
-            playerDownT -= simDt;
-            playerVel = (Vector3){ 0 };
+            P.downT -= simDt;
+            P.vel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
-            float spd = PLAYER_SPEED * (chargingShot >= 0 ? CHARGE_MOVE : 1.0f);
+            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f);
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
-            float v = Vector3Length(playerVel);
+            float v = Vector3Length(P.vel);
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
-            if (!playerSliding && chargingShot >= 0 && v > SLIDE_MIN_SPEED &&
-                Vector3DotProduct(want, Vector3Scale(playerVel, 1.0f / v)) < v * 0.5f)
-                playerSliding = true;
-            if (playerSliding) {
+            if (!P.sliding && P.chargingShot >= 0 && v > SLIDE_MIN_SPEED &&
+                Vector3DotProduct(want, Vector3Scale(P.vel, 1.0f / v)) < v * 0.5f)
+                P.sliding = true;
+            if (P.sliding) {
                 float nv = v - SLIDE_DECEL * simDt;
-                if (nv < SLIDE_END_SPEED) { playerSliding = false; playerVel = Vector3Scale(playerVel, fmaxf(nv, 0.0f) / fmaxf(v, 1e-4f)); }
-                else playerVel = Vector3Scale(playerVel, nv / v);
+                if (nv < SLIDE_END_SPEED) { P.sliding = false; P.vel = Vector3Scale(P.vel, fmaxf(nv, 0.0f) / fmaxf(v, 1e-4f)); }
+                else P.vel = Vector3Scale(P.vel, nv / v);
             } else {
-                playerVel = Accelerate(playerVel, want, PLAYER_ACCEL, PLAYER_BRAKE, simDt);
+                P.vel = Accelerate(P.vel, want, PLAYER_ACCEL, PLAYER_BRAKE, simDt);
             }
-            player = Vector3Add(player, Vector3Scale(playerVel, simDt));
-            player.x = Clamp(player.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
-            player.z = Clamp(player.z, 0.5f, HALF_LEN + 5.0f);
+            P.pos = Vector3Add(P.pos, Vector3Scale(P.vel, simDt));
+            P.pos.x = Clamp(P.pos.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
+            P.pos.z = Clamp(P.pos.z, 0.5f, HALF_LEN + 5.0f);
         }
 
         // 見た目のタイマー
-        if (playerAnim.swingT >= 0.0f) playerAnim.swingT = fminf(playerAnim.swingT + simDt, 5.0f);
-        playerAnim.downT = playerDownT;
-        playerAnim.sliding = playerSliding;
-        if (Vector3Length(playerVel) > 0.3f) playerAnim.slideSide = playerVel.x;   // 自分は -z 向きなので右＝+x
-        playerAnim.runPhase += Vector3Length(playerVel) * simDt * 2.2f;
+        if (P.anim.swingT >= 0.0f) P.anim.swingT = fminf(P.anim.swingT + simDt, 5.0f);
+        P.anim.downT = P.downT;
+        P.anim.sliding = P.sliding;
+        if (Vector3Length(P.vel) > 0.3f) P.anim.slideSide = P.vel.x;   // 自分は -z 向きなので右＝+x
+        P.anim.runPhase += Vector3Length(P.vel) * simDt * 2.2f;
 
-        // ---- マウス：カーソルの固定と、狙いの移動 ----
-        bool clickConsumed = false;
-        if (IsKeyPressed(KEY_ESCAPE)) {   // Esc：一時停止して設定メニュー
-            app = APP_PAUSE; menuSel = 0;
-            mouseLocked = false; EnableCursor();
-            chargingShot = -1; chargingServe = -1;
-        }
-        if (!mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
-            mouseLocked = true; DisableCursor(); clickConsumed = true;   // クリックで戻す（このクリックでは打たない）
-        }
-        {
-            Vector2 md = mouseLocked ? GetMouseDelta() : (Vector2){ 0 };
-            if (skipMouseDelta) { md = (Vector2){ 0 }; skipMouseDelta = false; }   // メニューから戻った直後の跳びを無視
-            aimX     += md.x * AIM_SENS * aimSens;
-            aimDepth += md.y * AIM_SENS * aimSens;   // マウスを奥に（上に）動かすと深く
-            // キーボードでも動かせる（U/O で左右、I/、で深さ）
-            if (IsKeyDown(KEY_U)) aimX -= 6.0f * frameDt;
-            if (IsKeyDown(KEY_O)) aimX += 6.0f * frameDt;
-            if (IsKeyDown(KEY_I)) aimDepth -= 6.0f * frameDt;
-            if (IsKeyDown(KEY_COMMA)) aimDepth += 6.0f * frameDt;
-            aimX = Clamp(aimX, -SINGLES_W * 0.5f, SINGLES_W * 0.5f);
-            aimDepth = Clamp(aimDepth, -(HALF_LEN - 0.3f), -1.2f);
-        }
-        bool lmbDown = mouseLocked && !clickConsumed && IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-        bool rmbDown = mouseLocked && !clickConsumed && IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-        bool spaceHeld = IsKeyDown(KEY_SPACE);
+        // ---- 狙い（ずっと残る）。自分は -z を向いているので、深く＝ -z ----
+        P.aimX += in.aim.x;
+        P.aimDepth -= in.aim.y;
+        P.aimX = Clamp(P.aimX, -SINGLES_W * 0.5f, SINGLES_W * 0.5f);
+        P.aimDepth = Clamp(P.aimDepth, -(HALF_LEN - 0.3f), -1.2f);
 
         // ---- サーブ（自分）----
-        Vector3 tossIdeal = { player.x + 0.25f, SERVE_IDEAL_H, player.z - 0.35f };   // 理想の打点（これ以上の高さ）
+        Vector3 tossIdeal = { P.pos.x + 0.25f, SERVE_IDEAL_H, P.pos.z - 0.35f };   // 理想の打点（これ以上の高さ）
         if (playerServing) {
-            if (sv == SV_READY) {
+            if (P.sv == SV_READY) {
                 // サーブの狙いはサービスボックスの中
                 {
                     float x0, x1;
-                    ServiceBox(player.x, -1, &x0, &x1);
-                    aimX = Clamp(aimX, x0 + 0.2f, x1 - 0.2f);
-                    aimDepth = Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f);
+                    ServiceBox(P.pos.x, -1, &x0, &x1);
+                    P.aimX = Clamp(P.aimX, x0 + 0.2f, x1 - 0.2f);
+                    P.aimDepth = Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f);
                 }
-                int mouseServe = -1;
-                if (lmbDown || rmbDown) mouseServe = spaceHeld ? SERVE_FLAT : (lmbDown ? SERVE_KICK : SERVE_SLICE);
                 for (int s = 0; s < SERVE_COUNT; s++) {
-                    bool byKey = IsKeyPressed(serveKeys[s]);
-                    if (!byKey && mouseServe != s) continue;
-                    chargeSrc = byKey ? SRC_KEY : (lmbDown ? SRC_LMB : SRC_RMB);
-                    chargingServe = s;
-                    charge = 0.0f;
-                    tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
+                    if (in.serve != s) continue;
+                    P.chargeSrc = in.source;
+                    P.chargingServe = s;
+                    P.charge = 0.0f;
+                    P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
-                    ball.pos = (Vector3){ tossIdeal.x + tossOffset.x, 1.9f, tossIdeal.z + tossOffset.y };
+                    ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f, tossIdeal.z + P.tossOffset.y };
                     ball.vel = (Vector3){ 0.0f, TOSS_SPEED, 0.0f };
                     ball.active = true;
                     ball.netClearance = -99.0f;
                     trailCount = 0;
-                    sv = SV_TOSS;
+                    P.sv = SV_TOSS;
                     serveMsg = "";
                     break;
                 }
-            } else if (sv == SV_TOSS) {
-                charge = fminf(charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
-                playerAnim.windup = 0.3f + 0.7f * charge;
-                playerAnim.windStroke = 2;
-                bool serveReleased = chargeSrc == SRC_KEY ? IsKeyReleased(serveKeys[chargingServe])
-                                   : IsMouseButtonReleased(chargeSrc == SRC_LMB ? MOUSE_BUTTON_LEFT : MOUSE_BUTTON_RIGHT);
+            } else if (P.sv == SV_TOSS) {
+                P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
+                P.anim.windup = 0.3f + 0.7f * P.charge;
+                P.anim.windStroke = 2;
+                bool serveReleased = in.released[P.chargeSrc];
                 if (serveReleased) {
-                    playerAnim.windup = 0.0f;
-                    ServeType type = (ServeType)chargingServe;
-                    chargingServe = -1;
+                    P.anim.windup = 0.0f;
+                    ServeType type = (ServeType)P.chargingServe;
+                    P.chargingServe = -1;
                     // 直前のフレームの間で、理想の打点の高さに一番近かった瞬間を使う（高すぎる球は打てない）
                     int best = -1;
                     for (int h = 0; h < historyCount; h++) {
@@ -450,16 +411,16 @@ int main(void)
                         if (!hb->active || hb->bounces > 0 || hb->pos.y > SERVE_REACH + SERVE_OVERREACH) continue;
                         if (best < 0 || hb->pos.y > history[best].pos.y) best = h;   // 届く範囲で一番高いところ
                     }
-                    lastServeType = type;
+                    P.lastServeType = type;
                     if (mode == MODE_SERVE) svStats[serveNo - 1][0]++;
                     if (best < 0) {
                         serveMsg = "WHIFF (ball above reach)";   // 空振りはフォルト
-                        lastServeKmh = 0.0f;
+                        P.lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
                         if (plog.f) {
                             fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF,%d,,,%d,%s\n",
-                                    GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
-                                    ball.pos.y, player.x, player.z, plog.assist, plog.style, SURFACES[gSurface].name);
+                                    GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, P.charge,
+                                    ball.pos.y, P.pos.x, P.pos.z, plog.assist, plog.style, SURFACES[gSurface].name);
                             fflush(plog.f);
                         }
                         // フォルトとして判定させる
@@ -467,25 +428,25 @@ int main(void)
                         ball.isServe = true; ball.bounces = 1; ball.result = RESULT_OUT;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.netClearance = -99.0f;
-                        sv = SV_FLIGHT;
+                        P.sv = SV_FLIGHT;
                         if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     } else {
                         Ball hb = history[best];
                         float qH = Clamp01(1.0f - fmaxf(SERVE_IDEAL_H - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
-                        float qT = Clamp01(1.0f - Vector2Length(tossOffset) / TOSS_TOL);
+                        float qT = Clamp01(1.0f - Vector2Length(P.tossOffset) / TOSS_TOL);
                         float q = qH * qT;
                         // コース：マウス（または U/O/I/、）で動かした狙い。サービスボックスの中
                         float x0, x1;
-                        ServiceBox(player.x, -1, &x0, &x1);
-                        Vector3 target = { Clamp(aimX, x0 + 0.2f, x1 - 0.2f), 0.0f, Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
-                        lastServeH = hb.pos.y;
-                        lastServeQ = q;
-                        lastContactPos = hb.pos;
-                        playerAnim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
-                        playerAnim.contactLocal = (Vector3){ hb.pos.x - player.x, hb.pos.y, player.z - hb.pos.z };
-                        playerAnim.swingT = 0.0f;
+                        ServiceBox(P.pos.x, -1, &x0, &x1);
+                        Vector3 target = { Clamp(P.aimX, x0 + 0.2f, x1 - 0.2f), 0.0f, Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
+                        P.lastServeH = hb.pos.y;
+                        P.lastServeQ = q;
+                        P.lastContactPos = hb.pos;
+                        P.anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
+                        P.anim.contactLocal = (Vector3){ hb.pos.x - P.pos.x, hb.pos.y, P.pos.z - hb.pos.z };
+                        P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
-                        ball = HitServe(hb.pos, target, type, charge, q, x0, x1, &lastServeKmh);
+                        ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
                         gCasual = false;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -493,29 +454,29 @@ int main(void)
                         LogFlush(&plog, "?");
                         snprintf(plog.row, sizeof(plog.row),
                                  "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,,%.3f,%.3f,%.3f,,,,%.2f,,,,%.0f,,%.2f,%.2f,,%.2f,%.2f,%.2f,,,",
-                                 GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
-                                 q, qH, qT, hb.pos.y, lastServeKmh, player.x, player.z, hb.pos.x, hb.pos.y, hb.pos.z);
+                                 GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, P.charge,
+                                 q, qH, qT, hb.pos.y, P.lastServeKmh, P.pos.x, P.pos.z, hb.pos.x, hb.pos.y, hb.pos.z);
                         plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = true;
                         plog.pendingLaunch = atan2f(ball.vel.y, sqrtf(ball.vel.x * ball.vel.x + ball.vel.z * ball.vel.z)) * RAD2DEG;
                         plog.pendingApex = ball.pos.y;
                         trailColor = SERVES[type].color;
                         trailCount = 0;
                         serveAce = false;
-                        sv = SV_FLIGHT;
+                        P.sv = SV_FLIGHT;
                         if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     }
                 } else if (ball.pos.y < 1.2f && ball.vel.y < 0.0f) {
                     // 打たずに落とした：トスのやり直し（ペナルティなし）
-                    chargingServe = -1;
+                    P.chargingServe = -1;
                     ball = (Ball){ 0 };
                     serveMsg = "Let the toss drop - toss again";
-                    sv = SV_READY;
+                    P.sv = SV_READY;
                 }
             }
         }
         // サーブ練習：結果の集計と次のサーブ
         if (mode == MODE_SERVE) {
-            if (sv == SV_FLIGHT && ball.result != RESULT_NONE) {
+            if (P.sv == SV_FLIGHT && ball.result != RESULT_NONE) {
                 bool in = ball.result == RESULT_IN;
                 if (in) {
                     svStats[serveNo - 1][1]++;
@@ -529,13 +490,13 @@ int main(void)
                 if (!in && serveNo == 1) serveNo = 2;
                 else { serveNo = 1; deuceSide = !deuceSide; }
                 svTimer = 2.0f;
-                sv = SV_WAIT;
-            } else if (sv == SV_WAIT) {
+                P.sv = SV_WAIT;
+            } else if (P.sv == SV_WAIT) {
                 svTimer -= frameDt;
                 if (svTimer <= 0.0f) {
                     ball = (Ball){ 0 };
-                    player = (Vector3){ deuceSide ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
-                    sv = SV_READY;
+                    P.pos = (Vector3){ deuceSide ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+                    P.sv = SV_READY;
                 }
             }
         }
@@ -553,47 +514,31 @@ int main(void)
         }
 
         // ---- スイング（ラリー・リターン・試合）----
-        if (!playerServing && mode != MODE_SERVE && !botControls && playerDownT <= 0.0f) {
-            if (chargingShot < 0) {
-                bool shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-                bool ctrl  = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-                for (int s = 0; s < SHOT_NORMAL_COUNT; s++) {
-                    if (IsKeyPressed(shotKeys[s])) {
-                        chargingShot = ctrl ? SHOT_DROP : (shift ? s + SHOT_NORMAL_COUNT : s);
-                        chargeSrc = SRC_KEY;
-                        charge = 0.0f;
-                    }
-                }
-                // マウス：左＝トップスピン、右＝スライス、スペース＋クリック＝フラット、
-                //          Shift＋クリック＝ロブ（左＝トップスピンロブ、右＝スライスロブ）、Ctrl＋クリック＝ドロップ。
-                //          どこに落とすかは狙い（マウス）で自由に決める
-                if (chargingShot < 0 && (lmbDown || rmbDown)) {
-                    if (ctrl)           chargingShot = SHOT_DROP;
-                    else if (shift)     chargingShot = lmbDown ? SHOT_TOP_LOB : SHOT_SLICE_LOB;
-                    else if (spaceHeld) chargingShot = SHOT_FLAT;
-                    else                chargingShot = lmbDown ? SHOT_TOP : SHOT_SLICE;
-                    chargeSrc = lmbDown ? SRC_LMB : SRC_RMB;
-                    charge = 0.0f;
+        if (!playerServing && mode != MODE_SERVE && !botControls && P.downT <= 0.0f) {
+            if (P.chargingShot < 0) {
+                if (in.shot >= 0) {
+                    P.chargingShot = in.shot;
+                    P.chargeSrc = in.source;
+                    P.charge = 0.0f;
                 }
             } else {
-                charge = fminf(charge + frameDt / CHARGE_TIME, 1.0f);
+                P.charge = fminf(P.charge + frameDt / CHARGE_TIME, 1.0f);
                 // 構えの見た目：ボールのある側で構える（高い球なら頭上）
-                playerAnim.windup = charge;
+                P.anim.windup = P.charge;
                 if (ball.active && ball.lastHitter == HITTER_OPP)
-                    playerAnim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, player) < 6.0f ? 2
-                                          : (ball.pos.x >= player.x ? 0 : 1);
-                bool released = chargeSrc == SRC_KEY ? IsKeyReleased(shotKeys[chargingShot])
-                              : IsMouseButtonReleased(chargeSrc == SRC_LMB ? MOUSE_BUTTON_LEFT : MOUSE_BUTTON_RIGHT);
+                    P.anim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, P.pos) < 6.0f ? 2
+                                          : (ball.pos.x >= P.pos.x ? 0 : 1);
+                bool released = in.released[P.chargeSrc];
                 if (released) {
-                    ShotType rt = (ShotType)chargingShot;
-                    float rcharge = charge;
-                    chargingShot = -1;
-                    playerAnim.windup = 0.0f;
-                    swingQ.active = true; swingQ.type = rt; swingQ.charge = rcharge;
-                    swingQ.target = EffectiveAim(rt, player.z, aimX, aimDepth, style);
-                    swingQ.age = -1.0f;   // すぐ振る
-                    swingQ.releaseAge = ball.age;
-                    swingQ.penalty = 1.0f;
+                    ShotType rt = (ShotType)P.chargingShot;
+                    float rcharge = P.charge;
+                    P.chargingShot = -1;
+                    P.anim.windup = 0.0f;
+                    P.swingQ.active = true; P.swingQ.type = rt; P.swingQ.charge = rcharge;
+                    P.swingQ.target = EffectiveAim(rt, P.pos.z, P.aimX, P.aimDepth, style);
+                    P.swingQ.age = -1.0f;   // すぐ振る
+                    P.swingQ.releaseAge = ball.age;
+                    P.swingQ.penalty = 1.0f;
                     if (ball.active && ball.lastHitter == HITTER_OPP) {
                         // 早く振ったとき、この先の一番いい瞬間が今より良ければ、ラケットがそこに合わせにいく
                         //   本格：0.2 秒先まで。早かった分だけ質が落ちる
@@ -606,34 +551,34 @@ int main(void)
                             const Ball *hb = &history[h];
                             if (!(hb->active && hb->lastHitter == HITTER_OPP && hb->bounces <= 1 && hb->pos.z > 0.0f &&
                                   !hb->hitNet && (!hb->isServe || hb->bounces == 1))) continue;
-                            Contact hc = EvaluateContact(player, hb, rt, rcharge, 0.0f, 0.0f);
+                            Contact hc = EvaluateContact(P.pos, hb, rt, rcharge, 0.0f, 0.0f);
                             if (hc.miss == MISS_NONE && hc.quality > nowQ) nowQ = hc.quality;
                         }
                         Ball fb = ball;
                         for (int i = 0; i < (int)(window / PHYS_DT) && fb.active && fb.bounces < 2; i++) {
                             StepBall(&fb, PHYS_DT);
                             if (!(fb.bounces <= 1 && fb.pos.z > 0.0f && !fb.hitNet && (!fb.isServe || fb.bounces == 1))) continue;
-                            Contact fc = EvaluateContact(player, &fb, rt, rcharge, 0.0f, 0.0f);
+                            Contact fc = EvaluateContact(P.pos, &fb, rt, rcharge, 0.0f, 0.0f);
                             if (fc.miss == MISS_NONE && fc.quality > bestQ) { bestQ = fc.quality; bestAge = fb.age; }
                         }
                         gCasual = false;
                         if (bestAge > 0.0f && bestQ > nowQ + 0.03f) {
-                            swingQ.age = bestAge;
-                            if (!cas) swingQ.penalty = Clamp(1.0f - (bestAge - ball.age) / ADAPT_PENALTY_T, 0.10f, 1.0f);
-                            playerAnim.windup = rcharge;   // 構えたまま待つ
+                            P.swingQ.age = bestAge;
+                            if (!cas) P.swingQ.penalty = Clamp(1.0f - (bestAge - ball.age) / ADAPT_PENALTY_T, 0.10f, 1.0f);
+                            P.anim.windup = rcharge;   // 構えたまま待つ
                         }
                     }
                 }
             }
         }
         // ---- スイングの実行（すぐ、または簡単モードで待っていた瞬間）----
-        if (swingQ.active && (swingQ.age < 0.0f || ball.age >= swingQ.age - 0.5f / 60.0f ||
+        if (P.swingQ.active && (P.swingQ.age < 0.0f || ball.age >= P.swingQ.age - 0.5f / 60.0f ||
                               !ball.active || ball.lastHitter != HITTER_OPP)) {
-            swingQ.active = false;
-            ShotType type = swingQ.type;
-            Vector3 target = swingQ.target;
-            float swingCharge = swingQ.charge;
-            playerAnim.windup = 0.0f;
+            P.swingQ.active = false;
+            ShotType type = P.swingQ.type;
+            Vector3 target = P.swingQ.target;
+            float swingCharge = P.swingQ.charge;
+            P.anim.windup = 0.0f;
             gCasual = (style == STYLE_CASUAL);
             {
                     // 直前のフレームの間で、一番いい当たりになる瞬間のボールを使う
@@ -645,46 +590,46 @@ int main(void)
                                         hb->bounces <= 1 && hb->pos.z > 0.0f && !hb->hitNet &&
                                         (!hb->isServe || hb->bounces == 1);   // サーブはバウンドしてから
                         if (!hittable) continue;
-                        Vector3 toBall = { hb->pos.x - player.x, 0.0f, hb->pos.z - player.z };
-                        float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(playerVel, Vector3Normalize(toBall)) : 0.0f;
-                        Contact hc = EvaluateContact(player, hb, type, swingCharge, moveToward, playerSliding ? SLIDE_REACH : 0.0f);
+                        Vector3 toBall = { hb->pos.x - P.pos.x, 0.0f, hb->pos.z - P.pos.z };
+                        float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(P.vel, Vector3Normalize(toBall)) : 0.0f;
+                        Contact hc = EvaluateContact(P.pos, hb, type, swingCharge, moveToward, P.sliding ? SLIDE_REACH : 0.0f);
                         bool better = (bestIdx < 0) ||
                                       (hc.miss == MISS_NONE && (c.miss != MISS_NONE || hc.quality > c.quality)) ||
                                       (hc.miss != MISS_NONE && c.miss != MISS_NONE);
                         if (better) { c = hc; bestIdx = h; }
                     }
                     if (bestIdx >= 0 && c.miss == MISS_NONE) ball = history[bestIdx];
-                    c.stepIn = -playerVel.z;
+                    c.stepIn = -P.vel.z;
                     // 早く振ってラケットが合わせにいった分：タイミングの質を落とし、引っ張り気味にする
-                    if (c.miss == MISS_NONE && swingQ.age >= 0.0f) {
-                        float early = fmaxf(swingQ.age - swingQ.releaseAge, 0.0f);
-                        c.qTiming *= swingQ.penalty;
-                        c.quality *= swingQ.penalty;
+                    if (c.miss == MISS_NONE && P.swingQ.age >= 0.0f) {
+                        float early = fmaxf(P.swingQ.age - P.swingQ.releaseAge, 0.0f);
+                        c.qTiming *= P.swingQ.penalty;
+                        c.quality *= P.swingQ.penalty;
                         c.fwdErr += early * Vector3Length(ball.vel);
                         c.timeErrMs = early * 1000.0f;   // プラス＝早い
                     }
 
                     // スイングの見た目と、理想の打点との比較用
                     Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
-                    playerAnim.lastContact = c;
-                    playerAnim.contactLocal = (Vector3){ sb.x - player.x, sb.y, player.z - sb.z };
-                    playerAnim.swingT = 0.0f;
-                    if (c.overhead) lastIdealPos = (Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD };
-                    else lastIdealPos = (Vector3){ player.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE),
-                                                   SHOTS[type].idealHeight, player.z - IDEAL_FWD };
-                    lastContactPos = sb;
-                    if (c.miss == MISS_NONE && c.dive) { playerDownT = DIVE_DOWN_TIME; playerVel = (Vector3){ 0 }; }
+                    P.anim.lastContact = c;
+                    P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
+                    P.anim.swingT = 0.0f;
+                    if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
+                    else P.lastIdealPos = (Vector3){ P.pos.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE),
+                                                   SHOTS[type].idealHeight, P.pos.z - IDEAL_FWD };
+                    P.lastContactPos = sb;
+                    if (c.miss == MISS_NONE && c.dive) { P.downT = DIVE_DOWN_TIME; P.vel = (Vector3){ 0 }; }
 
-                    hasLast = true;
-                    lastContact = c;
-                    lastType = type;
+                    P.hasLast = true;
+                    P.lastContact = c;
+                    P.lastType = type;
 
                     // ---- プレイ記録 ----
                     if (c.miss != MISS_NO_BALL) {
                         Ball pre = (bestIdx >= 0) ? history[bestIdx] : ball;
                         float bestQ, offMs;
-                        LogTimingAnalysis(&plog, player, &pre, type, swingCharge, &bestQ, &offMs);
-                        if (swingQ.age >= 0.0f) offMs += (swingQ.releaseAge - pre.age) * 1000.0f;   // 実際に離した瞬間で記録
+                        LogTimingAnalysis(&plog, P.pos, &pre, type, swingCharge, &bestQ, &offMs);
+                        if (P.swingQ.age >= 0.0f) offMs += (P.swingQ.releaseAge - pre.age) * 1000.0f;   // 実際に離した瞬間で記録
                         plog.swung = true;
                         plog.swings++;
                         if (c.miss != MISS_NONE) { plog.whiffs++; plog.miss[c.miss]++; }
@@ -705,7 +650,7 @@ int main(void)
                                  StrokeName(&c), c.volley, c.dive, MissName(c.miss),
                                  c.quality, c.qTiming, c.qDist, c.qHeight, c.angleDeg, c.side, c.height,
                                  bestQ > 0.0f ? TextFormat("%.0f", offMs) : "", bestQ, c.inKmh, "%OUT%", c.stepIn,
-                                 player.x, player.z, Vector3Length(playerVel), pre.pos.x, pre.pos.y, pre.pos.z, pre.age,
+                                 P.pos.x, P.pos.z, Vector3Length(P.vel), pre.pos.x, pre.pos.y, pre.pos.z, pre.age,
                                  plog.firstMove, plog.chargeStart);
                         if (c.miss != MISS_NONE) {
                             // 空振り：結果は WHIFF。打球速度は空
@@ -717,7 +662,7 @@ int main(void)
                     }
 
                     if (c.miss == MISS_NONE) {
-                        ball = PlayerShot(&c, ball.pos, target, type, swingCharge, &lastKmh, &lastRpm, &lastAngle);
+                        ball = PlayerShot(&c, ball.pos, target, type, swingCharge, &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
                         {
@@ -726,10 +671,10 @@ int main(void)
                             if (o) {
                                 char tail[1024];
                                 snprintf(tail, sizeof(tail), "%s", o + 5);
-                                snprintf(o, sizeof(plog.row) - (size_t)(o - plog.row), "%.0f%s", lastKmh, tail);
+                                snprintf(o, sizeof(plog.row) - (size_t)(o - plog.row), "%.0f%s", P.lastKmh, tail);
                             }
                             plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = false;
-                            plog.pendingLaunch = lastAngle * RAD2DEG; plog.pendingApex = ball.pos.y;
+                            plog.pendingLaunch = P.lastAngle * RAD2DEG; plog.pendingApex = ball.pos.y;
                         }
                         trailColor = SHOTS[type].color;
                         trailCount = 0;
@@ -764,7 +709,7 @@ int main(void)
 
             // AI のスイング（物理と同じ細かさで）
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
-                if (AiSwing(&ai, &ball, player)) {
+                if (AiSwing(&ai, &ball, P.pos)) {
                     trailColor = Fade(SHOTS[ai.lastType].color, 0.7f);
                     trailCount = 0;
                 }
@@ -802,7 +747,7 @@ int main(void)
 
         // ---- プレイ記録：来た球の追跡と、打球の結果 ----
         if (!botControls) {
-            LogTrackIncoming(&plog, &ball, player, playerVel, chargingShot >= 0, MODE_NAMES[mode], AI_LEVELS[ai.level].name);
+            LogTrackIncoming(&plog, &ball, P.pos, P.vel, P.chargingShot >= 0, MODE_NAMES[mode], AI_LEVELS[ai.level].name);
             if (plog.pending) {
                 if (ball.shotId == plog.pendingId && ball.bounces == 0 && ball.pos.y > plog.pendingApex) plog.pendingApex = ball.pos.y;
                 if (ball.shotId != plog.pendingId) LogFlush(&plog, "?");
@@ -863,7 +808,7 @@ int main(void)
 
         // 自分の打球の結果を集計
         if (mode != MODE_SERVE && ball.lastHitter == HITTER_PLAYER && !scoredLast && ball.result != RESULT_NONE) {
-            if (ball.result == RESULT_IN) stats[lastType][1]++;
+            if (ball.result == RESULT_IN) stats[P.lastType][1]++;
             scoredLast = true;
         }
 
@@ -877,8 +822,8 @@ int main(void)
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
                         ball = MachineServe();
-                        player = ReturnPos(true);   // リターンの構え位置へ
-                        playerVel = (Vector3){ 0 };
+                        P.pos = ReturnPos(true);   // リターンの構え位置へ
+                        P.vel = (Vector3){ 0 };
                     } else {
                         ball = MachineFeed(proFeed);
                     }
@@ -892,8 +837,8 @@ int main(void)
         // ---- カメラ ----
         if (camMode == 0) {        // プレイヤーの後ろ
             // 少し高く後ろから：上から見る角度があると、奥行き（ボールまでの距離）が読みやすい
-            cam.position = (Vector3){ player.x * 0.6f, 4.6f, player.z + 7.5f };
-            cam.target   = (Vector3){ player.x * 0.3f, 0.3f, player.z - 7.0f };
+            cam.position = (Vector3){ P.pos.x * 0.6f, 4.6f, P.pos.z + 7.5f };
+            cam.target   = (Vector3){ P.pos.x * 0.3f, 0.3f, P.pos.z - 7.0f };
         } else if (camMode == 1) { // 真横（弾道が一番わかる）
             cam.position = (Vector3){ 22.0f, 2.5f, 0.0f };
             cam.target   = (Vector3){ 0.0f, 1.0f, 0.0f };
@@ -909,64 +854,64 @@ int main(void)
             DrawCourt();
 
             // プレイヤー（-z 向き）と AI（+z 向き）
-            DrawFigure(player, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &playerAnim,
-                       Vector3Length(playerVel));
+            DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
+                       Vector3Length(P.vel));
             if (mode == MODE_MATCH)
                 DrawFigure(ai.pos, false, (Color){ 70, 90, 200, 255 }, &ai.anim, Vector3Length(ai.vel));
 
             if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
                 float x0, x1;
-                ServiceBox(player.x, -1, &x0, &x1);
+                ServiceBox(P.pos.x, -1, &x0, &x1);
                 DrawCube((Vector3){ 0.5f * (x0 + x1), 0.003f, -SERVICE_Z * 0.5f }, x1 - x0, 0.002f, SERVICE_Z,
                          Fade(YELLOW, 0.15f));
                 // 理想の打点
                 DrawSphereWires(tossIdeal, 0.12f, 6, 8, Fade(RAYWHITE, 0.8f));
                 // 構えているときはボールを手に持つ
-                if (sv == SV_READY)
-                    DrawSphere((Vector3){ player.x + 0.25f, 1.0f, player.z - 0.3f }, BALL_R, (Color){ 210, 240, 40, 255 });
+                if (P.sv == SV_READY)
+                    DrawSphere((Vector3){ P.pos.x + 0.25f, 1.0f, P.pos.z - 0.3f }, BALL_R, (Color){ 210, 240, 40, 255 });
             } else if (mode != MODE_SERVE && !botControls) {
                 // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
-                DrawCircle3D((Vector3){ player.x, 0.01f, player.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
-                DrawCircle3D((Vector3){ player.x, 0.01f, player.z }, REACH_SIDE, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
+                DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
+                DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, REACH_SIDE, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
                 // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す。頭上で構えていれば頭上
-                ShotType t = (chargingShot >= 0) ? (ShotType)chargingShot : SHOT_TOP;
+                ShotType t = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 Color zc = Fade(SHOTS[t].color, 0.8f);
-                if (chargingShot >= 0 && playerAnim.windStroke == 2) {
-                    DrawSphereWires((Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD }, 0.15f, 6, 8, zc);
+                if (P.chargingShot >= 0 && P.anim.windStroke == 2) {
+                    DrawSphereWires((Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }, 0.15f, 6, 8, zc);
                 } else {
                     float h = SHOTS[t].idealHeight;
-                    DrawSphereWires((Vector3){ player.x + IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
-                    DrawSphereWires((Vector3){ player.x - IDEAL_SIDE, h, player.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
+                    DrawSphereWires((Vector3){ P.pos.x + IDEAL_SIDE, h, P.pos.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
+                    DrawSphereWires((Vector3){ P.pos.x - IDEAL_SIDE, h, P.pos.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
                 }
                 // 最後に振ったとき：理想の打点（白い網）と、実際のボール（色つき）を線で結ぶ。ずれが一目で分かる
-                if (hasLast && playerAnim.swingT >= 0.0f && playerAnim.swingT < 2.5f && lastContact.miss != MISS_NO_BALL) {
-                    Color qc = lastContact.miss == MISS_NONE ? QualityColor(lastContact.quality) : RED;
-                    DrawSphereWires(lastIdealPos, 0.15f, 6, 8, RAYWHITE);
-                    DrawSphere(lastContactPos, 0.06f, qc);
-                    DrawLine3D(lastIdealPos, lastContactPos, qc);
-                    DrawLine3D((Vector3){ lastContactPos.x, 0.01f, lastContactPos.z }, lastContactPos, Fade(qc, 0.5f));
+                if (P.hasLast && P.anim.swingT >= 0.0f && P.anim.swingT < 2.5f && P.lastContact.miss != MISS_NO_BALL) {
+                    Color qc = P.lastContact.miss == MISS_NONE ? QualityColor(P.lastContact.quality) : RED;
+                    DrawSphereWires(P.lastIdealPos, 0.15f, 6, 8, RAYWHITE);
+                    DrawSphere(P.lastContactPos, 0.06f, qc);
+                    DrawLine3D(P.lastIdealPos, P.lastContactPos, qc);
+                    DrawLine3D((Vector3){ P.lastContactPos.x, 0.01f, P.lastContactPos.z }, P.lastContactPos, Fade(qc, 0.5f));
                 }
             }
 
             // 手がかり：立つ場所（緑の輪）と、タイミングの輪（一番いい瞬間に向かって縮む）
-            if (assistLevel > 0 && !botControls && !playerServing && mode != MODE_SERVE && playerDownT <= 0.0f) {
-                ShotType at = (chargingShot >= 0) ? (ShotType)chargingShot : SHOT_TOP;
+            if (assistLevel > 0 && !botControls && !playerServing && mode != MODE_SERVE && P.downT <= 0.0f) {
+                ShotType at = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 gCasual = (style == STYLE_CASUAL);
-                Assist as = ComputeAssist(player, playerVel, &ball, at, chargingShot >= 0 ? charge : 0.5f);
+                Assist as = ComputeAssist(P.pos, P.vel, &ball, at, P.chargingShot >= 0 ? P.charge : 0.5f);
                 gCasual = false;
                 if (assistLevel >= 2 && as.standValid) {
                     Vector3 st = { as.stand.x, 0.012f, as.stand.z };
                     DrawCircle3D(st, 0.30f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
                     DrawCircle3D(st, 0.26f, (Vector3){ 1, 0, 0 }, 90.0f, GREEN);
-                    DrawLine3D((Vector3){ player.x, 0.012f, player.z }, st, Fade(GREEN, 0.5f));
+                    DrawLine3D((Vector3){ P.pos.x, 0.012f, P.pos.z }, st, Fade(GREEN, 0.5f));
                     DrawSphere(as.ballAt, 0.045f, Fade(YELLOW, 0.5f));
                     DrawLine3D((Vector3){ as.ballAt.x, 0.012f, as.ballAt.z }, as.ballAt, Fade(YELLOW, 0.4f));
                 }
                 if (as.timingValid && as.tBest < 1.2f) {
-                    Vector3 ip = as.overhead ? (Vector3){ player.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, player.z - OVERHEAD_FWD }
-                                             : (Vector3){ player.x + (as.fore ? IDEAL_SIDE : -IDEAL_SIDE), SHOTS[at].idealHeight,
-                                                          player.z - IDEAL_FWD };
+                    Vector3 ip = as.overhead ? (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }
+                                             : (Vector3){ P.pos.x + (as.fore ? IDEAL_SIDE : -IDEAL_SIDE), SHOTS[at].idealHeight,
+                                                          P.pos.z - IDEAL_FWD };
                     float rr = 0.16f + 1.4f * as.tBest;
                     Color rc = QualityColor(as.qBest);
                     DrawCircle3D(ip, rr, (Vector3){ 1, 0, 0 }, 90.0f, rc);
@@ -975,17 +920,17 @@ int main(void)
             }
 
             // 狙い：相手コートに印（溜めている間は球種の色、それ以外は白）
-            if (!botControls && (playerServing || (mode != MODE_SERVE && (chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
-                Vector3 et = (chargingShot >= 0) ? EffectiveAim((ShotType)chargingShot, player.z, aimX, aimDepth, style)
-                                                 : (Vector3){ aimX, 0.0f, aimDepth };
+            if (!botControls && (playerServing || (mode != MODE_SERVE && (P.chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
+                Vector3 et = (P.chargingShot >= 0) ? EffectiveAim((ShotType)P.chargingShot, P.pos.z, P.aimX, P.aimDepth, style)
+                                                 : (Vector3){ P.aimX, 0.0f, P.aimDepth };
                 if (playerServing) {
                     float bx0, bx1;
-                    ServiceBox(player.x, -1, &bx0, &bx1);
-                    et = (Vector3){ Clamp(aimX, bx0 + 0.2f, bx1 - 0.2f), 0.0f, Clamp(aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
+                    ServiceBox(P.pos.x, -1, &bx0, &bx1);
+                    et = (Vector3){ Clamp(P.aimX, bx0 + 0.2f, bx1 - 0.2f), 0.0f, Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f) };
                 }
                 Vector3 am = { et.x, 0.015f, et.z };
-                Color ac = (chargingShot >= 0) ? SHOTS[chargingShot].color
-                         : (chargingServe >= 0 ? SERVES[chargingServe].color : Fade(RAYWHITE, 0.7f));
+                Color ac = (P.chargingShot >= 0) ? SHOTS[P.chargingShot].color
+                         : (P.chargingServe >= 0 ? SERVES[P.chargingServe].color : Fade(RAYWHITE, 0.7f));
                 DrawCircle3D(am, 0.45f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
                 DrawCircle3D(am, 0.25f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
                 DrawLine3D((Vector3){ am.x - 0.5f, 0.015f, am.z }, (Vector3){ am.x + 0.5f, 0.015f, am.z }, ac);
@@ -1040,13 +985,13 @@ int main(void)
         if (showServeInfo) {
             DrawText(TextFormat("%s serve  -  %s court", serveNo == 1 ? "1st" : "2nd", deuceSide ? "deuce" : "ad"),
                      20, y, 22, RAYWHITE); y += 30;
-            if (lastServeKmh > 0.0f || serveMsg[0]) {
-                if (lastServeKmh > 0.0f) {
-                    DrawText(TextFormat("%s  %.0f km/h", SERVES[lastServeType].name, lastServeKmh), 20, y, 18, SERVES[lastServeType].color); y += 22;
-                    DrawText(TextFormat("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", lastServeH, SERVE_IDEAL_H, lastServeQ * 100.0f),
-                             20, y, 18, QualityColor(lastServeQ)); y += 22;
+            if (P.lastServeKmh > 0.0f || serveMsg[0]) {
+                if (P.lastServeKmh > 0.0f) {
+                    DrawText(TextFormat("%s  %.0f km/h", SERVES[P.lastServeType].name, P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
+                    DrawText(TextFormat("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", P.lastServeH, SERVE_IDEAL_H, P.lastServeQ * 100.0f),
+                             20, y, 18, QualityColor(P.lastServeQ)); y += 22;
                 } else {
-                    DrawText(SERVES[lastServeType].name, 20, y, 18, SERVES[lastServeType].color); y += 44;
+                    DrawText(SERVES[P.lastServeType].name, 20, y, 18, SERVES[P.lastServeType].color); y += 44;
                 }
                 if (ball.netClearance > -50.0f)
                     DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
@@ -1058,8 +1003,8 @@ int main(void)
                 DrawText("Hold L-click kick / R-click slice / Space+click flat", 20, y, 18, RAYWHITE); y += 22;
                 DrawText("to toss, release to hit. Hold to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
             }
-        } else if (hasLast) {
-            const Contact *c = &lastContact;
+        } else if (P.hasLast) {
+            const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
                 DrawText(MissText(c->miss), 20, y, 22, RED); y += 30;
                 if (c->miss != MISS_NO_BALL) {
@@ -1071,7 +1016,7 @@ int main(void)
                 const char *stroke = c->overhead ? "Overhead" : (c->forehand ? "Forehand" : "Backhand");
                 const char *tag = c->dive ? " DIVE!" : (c->volley ? " volley" : "");
                 DrawText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
-                                    c->overhead && lastType != SHOT_SLICE && lastType < SHOT_NORMAL_COUNT ? "SMASH" : SHOTS[lastType].name,
+                                    c->overhead && P.lastType != SHOT_SLICE && P.lastType < SHOT_NORMAL_COUNT ? "SMASH" : SHOTS[P.lastType].name,
                                     c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
                 y += 30;
                 if (c->overhead) {
@@ -1083,13 +1028,13 @@ int main(void)
                     float idealAng = c->volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
                     const char *tStr = c->angleDeg > idealAng + 8.0f ? "early" : (c->angleDeg < idealAng - 8.0f ? "late" : "good");
                     const char *dStr = c->side < IDEAL_R - 0.15f ? "jammed" : (c->side > IDEAL_R + 0.15f ? "stretched" : "good");
-                    const char *hStr = c->height < SHOTS[lastType].idealHeight - 0.2f ? "low"
-                                     : (c->height > SHOTS[lastType].idealHeight + 0.2f ? "high" : "good");
+                    const char *hStr = c->height < SHOTS[P.lastType].idealHeight - 0.2f ? "low"
+                                     : (c->height > SHOTS[P.lastType].idealHeight + 0.2f ? "high" : "good");
                     DrawText(TextFormat("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
                     DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
                     DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
                 }
-                DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, P.lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
                 if (ball.lastHitter == HITTER_PLAYER) {
                     if (ball.netClearance > -50.0f)
                         DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
@@ -1181,20 +1126,20 @@ int main(void)
 
         // 溜めゲージ
         int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 140;   // 下の操作説明と重ならない高さ
-        if (chargingShot >= 0) {
-            const ShotSpec *sp = &SHOTS[chargingShot];
+        if (P.chargingShot >= 0) {
+            const ShotSpec *sp = &SHOTS[P.chargingShot];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
-            DrawRectangle(gx, gy, (int)(gw * charge), 20, sp->color);
+            DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
             if (sp->touchAngle > 0.0f)
-                DrawText(TextFormat("%s  %.0f rpm", sp->name, Lerp(sp->minRpm, sp->maxRpm, charge)), gx, gy - 24, 20, RAYWHITE);
+                DrawText(TextFormat("%s  %.0f rpm", sp->name, Lerp(sp->minRpm, sp->maxRpm, P.charge)), gx, gy - 24, 20, RAYWHITE);
             else
-                DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), gx, gy - 24, 20, RAYWHITE);
+                DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge)), gx, gy - 24, 20, RAYWHITE);
         }
-        if (chargingServe >= 0) {
-            const ServeSpec *sp = &SERVES[chargingServe];
+        if (P.chargingServe >= 0) {
+            const ServeSpec *sp = &SERVES[P.chargingServe];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
-            DrawRectangle(gx, gy, (int)(gw * charge), 20, sp->color);
-            DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, charge)), gx, gy - 24, 20, RAYWHITE);
+            DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
+            DrawText(TextFormat("%s  %.0f km/h", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge)), gx, gy - 24, 20, RAYWHITE);
         }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
         {

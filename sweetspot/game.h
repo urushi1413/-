@@ -414,4 +414,51 @@ void LogRecordBall(PlayLog *L, const Ball *ball);
 Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style);
 void DisableIme(void *hwnd);   // platform_ime.c（Windows で日本語入力を切る）
 
+// ---- プレイヤー（自分。将来は 2 人目も） ----
+// 入力の種類（溜めを始めた入力を覚えて、その入力が離されたら振る）
+typedef enum { SRC_NONE, SRC_KEY_L, SRC_KEY_J, SRC_KEY_K, SRC_MOUSE_L, SRC_MOUSE_R, SRC_COUNT } InputSource;
+
+// 簡単モードや「ラケットが合わせにいく」ときの、待っているスイング
+typedef struct {
+    bool active; ShotType type; Vector3 target; float charge; float age; float releaseAge; float penalty;
+} QueuedSwing;
+
+typedef struct {
+    Vector3 pos, vel;          // 足元の位置と速度
+    SwingAnim anim;            // 見た目（体とラケット）
+    float downT;               // 飛びついて倒れている残り時間
+    bool  sliding;             // 滑り込んでいる
+    float aimX, aimDepth;      // 狙い（マウスで動かす。ずっと残る）
+    int   chargingShot;        // 溜めている球種（-1：溜めていない）
+    int   chargingServe;       // 溜めているサーブ（-1：溜めていない）
+    float charge;              // 溜め（0〜1）
+    InputSource chargeSrc;     // 何で溜め始めたか
+    QueuedSwing swingQ;
+    // 最後のショット（画面表示用）
+    bool  hasLast;
+    Contact lastContact;
+    ShotType lastType;
+    float lastKmh, lastRpm, lastAngle;
+    Vector3 lastContactPos, lastIdealPos;
+    // サーブ
+    ServeState sv;
+    Vector2 tossOffset;
+    ServeType lastServeType;
+    float lastServeKmh, lastServeH, lastServeQ;
+} Player;
+
+Player NewPlayer(Vector3 pos);
+
+// 1 フレーム分のプレイヤーの操作。キーボード＋マウスでも、ゲームパッドでも、この形にそろえる
+typedef struct {
+    Vector2 move;               // 移動。x=右、y=前（相手コートの方）。長さ 0〜1
+    Vector2 aim;                // 狙いの移動（m）。x=右、y=深く
+    int  shot;                  // 押された球種（-1：なし）。Shift や Ctrl などの組み合わせは決定済み
+    int  serve;                 // 押されたサーブ（-1：なし）
+    InputSource source;         // 押した入力（離されたら振る）
+    bool released[SRC_COUNT];   // 離された入力
+} PlayerInput;
+
+void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);
+
 #endif
