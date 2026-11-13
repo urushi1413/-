@@ -565,7 +565,7 @@ typedef struct {
 
 void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);
 
-// audio.c：効果音（プログラムで合成）
+// audio.c：効果音（sounds フォルダの録音ファイル）
 void  SfxInit(void);
 void  SfxClose(void);
 void  SfxSetVolume(float v);
@@ -578,5 +578,6 @@ void  SfxNet(float speed, float dist);
 void  SfxSlide(float dist);
 void  SfxCrowd(bool on, float level);
 void  SfxPointEnd(int rallyHits, bool winner);
+int   SfxLoadedCount(void);
 
 #endif
