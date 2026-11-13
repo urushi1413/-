@@ -65,12 +65,15 @@ typedef struct {
 #define HOLD_DEEP_MARGIN 0.5f              // 一番深いところは、球種の一番深い狙いより 0.5m 浅く（ベースラインの約 2m 手前）
 #define HOLD_POWER_BASE  0.60f             // 押す長さ 0 でも、強さはこの割合から（強い球に溜めは要らない）
 #define SLICE_SIDE_RATIO 0.80f  // スライスの横回転：逆回転の何割（フォアは右、バックは左に曲がる）
+#define REBOUND_VY_KEEP  0.60f   // 跳ね返りの分が持ち続ける、来た球の上下の速さの割合
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
 #define SIT_POS_BONUS    0.80f   //   前後（タイミング）と左右（距離）の許容幅を最大でこの割合だけ広げる
-#define AIM_SIDE_REAL    2.90f   // 左右の狙いの限界（サイドラインの約 1.2m 内側。それより外には狙えない）
-#define AIM_SIDE_CASUAL  2.40f
+#define AIM_SIDE_SAFE    2.90f   // これより外（サイドラインの約 1.2m 内側から先）はライン際：印の動きが重くなり、印の色が変わる
+#define AIM_SIDE_HEAVY   0.35f   //   ライン際で外へ動かすときの重さ（マウスの動きのこの割合しか動かない）
+#define AIM_SIDE_REAL    3.85f   // 左右の狙いの限界（サイドラインの約 0.25m 内側）
+#define AIM_SIDE_CASUAL  3.40f
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----

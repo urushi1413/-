@@ -137,6 +137,11 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * DEG2RAD;
+        // 跳ね返りの分は、来た球の上下の動きを持ったまま出ていく：
+        //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
+        //   うまく当てるほど面で抑えられるが、半分は残る
+        float vin = fmaxf(c->inKmh / 3.6f, 1.0f);
+        angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q);
         ang += angErr;
     }
 
@@ -193,7 +198,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
 //   タッチショットは自由。簡単モードは左右を少し内側に
 Vector3 EffectiveAim(ShotType t, float playerZ, float aimX, float aimDepth, PlayStyle style)
 {
-    float lim = style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL;   // 深さと同じく、ラインぎりぎりは狙えない
+    float lim = style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL;   // ライン際まで狙える（うっかり行かないよう、印の動きは重くしてある）
     float x = Clamp(aimX, -lim, lim);
     float z = aimDepth;
     if (t < SHOT_NORMAL_COUNT) {
