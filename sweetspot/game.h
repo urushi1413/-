@@ -265,6 +265,7 @@ typedef struct {
 #define MIN_ANGLE  (-15.0f * DEG2RAD)
 #define MAX_ANGLE  ( 75.0f * DEG2RAD)
 #define SWING_TIME 0.30f   // フォロースルーまでの時間（見た目）
+#define SWING_LEAD 0.08f   // 振り出してから当たる点までの見た目の時間（ラケットダウンから当たるまで）
 #define LOG_RING 256
 #define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
                    "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
