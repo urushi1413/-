@@ -7,6 +7,8 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 // ---- コート寸法（ITF 規格） ----
 #define COURT_LEN        23.77f
@@ -99,8 +101,8 @@
 // ---- サーブ ----
 #define SERVE_REACH      2.80f   // 腕とラケットを伸ばした打点の高さ
 #define SERVE_TOL_H      0.30f   // 打点の高さがこれだけずれると質 0
-#define SERVE_OVERREACH  0.20f   // 理想の打点よりこれだけ高い球までは、背伸びして届く（それ以上は空振り）
-#define TOSS_SPEED       5.0f    // トスの初速（上向き、m/s）。手から 1.9m で離すと最高点 3.2m
+#define SERVE_OVERREACH  0.25f   // 理想の打点よりこれだけ高い球まで、背伸びして届く。トスの最高点（2.95m）は必ず届く
+#define TOSS_SPEED       4.55f   // トスの初速（上向き、m/s）。手から 1.9m で離すと最高点 2.95m（届く高さの中）
 #define TOSS_SPREAD      0.06f   // トスのぶれ（標準偏差、m）。悪いトスは見送れる（押しっぱなしで落とす）
 #define TOSS_TOL         0.50f   // トスがこれだけずれると質 0
 
@@ -150,6 +152,7 @@ typedef struct {
     bool    active;
     bool    hitNet;
     int     side;          // 狙った側：-1=相手コート(z<0)、+1=自分のコート(z>0)
+    int     shotId;        // 自分の打球の通し番号（プレイ記録で結果と結び付ける）
     int     bounces;
     float   netClearance;  // ネット上を通過したときの余裕（m）。マイナスならネットに当たった
     float   peakAfterFirstBounce;
@@ -1324,6 +1327,161 @@ static const char *ScoreText(const Score *s)
     return TextFormat("%s - %s", PointName(a), PointName(b));
 }
 
+
+// ================= プレイ記録（playlog.csv） =================
+// 自分のプレイを 1 行ずつ CSV に書き出す。どこで失敗しているかを数字で調べるため。
+//   event = swing    : 振った（当たった・空振り）
+//           no_swing : 来た球に振らなかった（届いたのか、届かなかったのか）
+//           serve    : サーブ
+// timing_offset_ms と best_quality_here が一番大事：
+//   「その立ち位置のまま、一番いいタイミングで振っていたら質は何%だったか」と「そこから何 ms ずれていたか」
+//   best_quality_here が低い → 立ち位置（足）の問題。高いのに quality が低い → タイミング（手）の問題
+#define LOG_RING 256
+typedef struct {
+    FILE  *f;
+    int    shotSerial;
+    bool   pending;          // 結果待ちの行（打球がバウンドしたら書き出す）
+    int    pendingId;
+    bool   pendingServe;
+    char   row[1024];
+    // 来た球の追跡
+    bool   track, swung;
+    float  prevAge;
+    Hitter prevHitter;
+    float  minR, angAtMin, hAtMin, ageAtMin, kmhAtMin;
+    float  firstMove, chargeStart;
+    ShotResult bounceResult;
+    Ball   ring[LOG_RING];   // 来た球の最近の状態（タイミング分析用）
+    int    ringN, ringHead;
+    // このセッションの集計（Tab で表示）
+    int    swings, hits, whiffs, miss[8], shotIn, shotOut, shotNet;
+    int    early, late, onTime, posProblem, timingProblem;
+    float  sumAbsOffset; int nOffset;
+    float  sumQ, sumBestQ;
+    int    noSwingIn, noSwingReachable, noSwingOut;
+    float  sumFirstMove; int nFirstMove;
+    int    serves, servesIn, serveWhiffs;
+} PlayLog;
+
+static void LogOpen(PlayLog *L)
+{
+    L->f = fopen("playlog.csv", "a");
+    if (!L->f) return;
+    fseek(L->f, 0, SEEK_END);
+    if (ftell(L->f) == 0)
+        fprintf(L->f, "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height,"
+                      "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in,"
+                      "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result\n");
+    fflush(L->f);
+}
+
+static void LogFlush(PlayLog *L, const char *result)
+{
+    if (!L->pending) return;
+    L->pending = false;
+    if (L->pendingServe) { if (strcmp(result, "IN") == 0) L->servesIn++; }
+    else {
+        if (strcmp(result, "IN") == 0) L->shotIn++;
+        else if (strcmp(result, "OUT") == 0) L->shotOut++;
+        else if (strcmp(result, "NET") == 0) L->shotNet++;
+    }
+    if (L->f) { fprintf(L->f, "%s,%s\n", L->row, result); fflush(L->f); }
+}
+
+// 「この立ち位置のまま、いつ振るのが一番よかったか」を、来た球の過去の軌道と、この先の軌道から探す
+static void LogTimingAnalysis(const PlayLog *L, Vector3 player, const Ball *pre, ShotType type, float charge,
+                              float *bestQ, float *offsetMs)
+{
+    *bestQ = 0.0f; *offsetMs = 0.0f;
+    float bestAge = -1.0f;
+    for (int i = 0; i < L->ringN + 240; i++) {
+        Ball b;
+        static Ball fwd;
+        if (i < L->ringN) b = L->ring[(L->ringHead - L->ringN + i + LOG_RING) % LOG_RING];
+        else {
+            if (i == L->ringN) fwd = *pre;
+            StepBall(&fwd, PHYS_DT);
+            b = fwd;
+        }
+        bool hittable = b.active && b.bounces <= 1 && b.pos.z > 0.0f && !b.hitNet && (!b.isServe || b.bounces == 1);
+        if (!hittable) continue;
+        Contact c = EvaluateContact(player, &b, type, charge, 0.0f);
+        if (c.miss == MISS_NONE && c.quality > *bestQ) { *bestQ = c.quality; bestAge = b.age; }
+    }
+    if (bestAge >= 0.0f) *offsetMs = (pre->age - bestAge) * 1000.0f;   // プラス＝遅い、マイナス＝早い
+}
+
+static const char *StrokeName(const Contact *c) { return c->overhead ? "overhead" : (c->forehand ? "forehand" : "backhand"); }
+
+static const char *MissName(MissReason m)
+{
+    static const char *n[] = { "", "early", "late", "far", "high", "low", "no_ball" };
+    return n[m];
+}
+
+// 来た球を毎フレーム追う：振らなかった球の記録、反応の速さ
+static void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vector3 playerVel, bool charging,
+                             const char *mode, const char *level)
+{
+    bool opp = ball->active && ball->lastHitter == HITTER_OPP;
+    bool newBall = opp && (L->prevHitter != HITTER_OPP || ball->age < L->prevAge);
+    bool ended = L->track && (newBall || !opp || ball->bounces >= 2);
+    if (ended) {
+        if (!L->swung && L->minR < 1e8f) {
+            bool reachable = L->minR <= REACH_SIDE && L->hAtMin <= OVERHEAD_MAX_H;
+            const char *res = ResultText(L->bounceResult);
+            if (L->bounceResult == RESULT_IN || L->bounceResult == RESULT_NONE) {
+                L->noSwingIn++;
+                if (reachable) L->noSwingReachable++;
+            } else {
+                L->noSwingOut++;
+            }
+            if (L->f) {
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s\n",
+                        GetTime(), mode, level, reachable ? "reachable" : "unreachable",
+                        L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
+                        L->ageAtMin, L->firstMove, L->chargeStart, res);
+                fflush(L->f);
+            }
+        }
+        L->track = false;
+    }
+    if (newBall) {
+        L->track = true; L->swung = false;
+        L->minR = 1e9f; L->firstMove = -1.0f; L->chargeStart = -1.0f;
+        L->bounceResult = RESULT_NONE;
+        L->ringN = 0;
+    }
+    if (L->track && opp) {
+        if (L->firstMove < 0.0f && Vector3Length(playerVel) > 0.5f) {
+            L->firstMove = ball->age;
+            L->sumFirstMove += ball->age; L->nFirstMove++;
+        }
+        if (L->chargeStart < 0.0f && charging) L->chargeStart = ball->age;
+        if (ball->bounces >= 1 && L->bounceResult == RESULT_NONE) L->bounceResult = ball->result;
+        bool hittable = ball->bounces <= 1 && ball->pos.z > 0.0f && !ball->hitNet && (!ball->isServe || ball->bounces == 1);
+        if (hittable) {
+            float dx = ball->pos.x - player.x, dz = player.z - ball->pos.z;
+            float r = sqrtf(dx * dx + dz * dz);
+            if (r < L->minR) {
+                L->minR = r; L->angAtMin = atan2f(dz, fabsf(dx)) * RAD2DEG; L->hAtMin = ball->pos.y;
+                L->ageAtMin = ball->age; L->kmhAtMin = Vector3Length(ball->vel) * 3.6f;
+            }
+        }
+    }
+    L->prevHitter = ball->active ? ball->lastHitter : HITTER_NONE;
+    L->prevAge = ball->age;
+}
+
+// 来た球の状態を物理ステップごとに覚えておく
+static void LogRecordBall(PlayLog *L, const Ball *ball)
+{
+    if (!L->track || ball->lastHitter != HITTER_OPP) return;
+    L->ring[L->ringHead] = *ball;
+    L->ringHead = (L->ringHead + 1) % LOG_RING;
+    if (L->ringN < LOG_RING) L->ringN++;
+}
+
 typedef enum { MODE_MATCH, MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
@@ -1336,6 +1494,10 @@ int main(void)
     InitWindow(1280, 720, "SWEET SPOT");
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
+
+    static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
+    LogOpen(&plog);
+    bool showStats = false;        // Tab：このセッションの統計
 
     Camera3D cam = { 0 };
     cam.up = (Vector3){ 0, 1, 0 };
@@ -1423,6 +1585,7 @@ int main(void)
         for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
         if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
+        if (IsKeyPressed(KEY_TAB)) showStats = !showStats;
         bot.level = ai.level;
         if (restart) {
             feedTimer = 0.5f;
@@ -1582,6 +1745,13 @@ int main(void)
                     if (best < 0) {
                         serveMsg = "WHIFF (ball above reach)";   // 空振りはフォルト
                         lastServeKmh = 0.0f;
+                        plog.serves++; plog.serveWhiffs++;
+                        if (plog.f) {
+                            fprintf(plog.f, "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,high,,,,,,,%.2f,,,,,,%.2f,%.2f,,,,,,,,WHIFF\n",
+                                    GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
+                                    ball.pos.y, player.x, player.z);
+                            fflush(plog.f);
+                        }
                         // フォルトとして判定させる
                         ball = (Ball){ 0 };
                         ball.isServe = true; ball.bounces = 1; ball.result = RESULT_OUT;
@@ -1610,6 +1780,14 @@ int main(void)
                         playerAnim.swingT = 0.0f;
                         ball = HitServe(hb.pos, target, type, charge, q, x0, x1, &lastServeKmh);
                         ball.lastHitter = HITTER_PLAYER;
+                        ball.shotId = ++plog.shotSerial;
+                        plog.serves++;
+                        LogFlush(&plog, "?");
+                        snprintf(plog.row, sizeof(plog.row),
+                                 "%.2f,%s,%s,serve,%s,%.2f,serve,0,0,,%.3f,%.3f,%.3f,,,,%.2f,,,,%.0f,,%.2f,%.2f,,%.2f,%.2f,%.2f,,,",
+                                 GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SERVES[type].name, charge,
+                                 q, qH, qT, hb.pos.y, lastServeKmh, player.x, player.z, hb.pos.x, hb.pos.y, hb.pos.z);
+                        plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = true;
                         trailColor = SERVES[type].color;
                         trailCount = 0;
                         serveAce = false;
@@ -1728,9 +1906,57 @@ int main(void)
                     hasLast = true;
                     lastContact = c;
                     lastType = type;
+
+                    // ---- プレイ記録 ----
+                    if (c.miss != MISS_NO_BALL) {
+                        Ball pre = (bestIdx >= 0) ? history[bestIdx] : ball;
+                        float bestQ, offMs;
+                        LogTimingAnalysis(&plog, player, &pre, type, charge, &bestQ, &offMs);
+                        plog.swung = true;
+                        plog.swings++;
+                        if (c.miss != MISS_NONE) { plog.whiffs++; plog.miss[c.miss]++; }
+                        else { plog.hits++; plog.sumQ += c.quality; }
+                        if (bestQ > 0.0f) {
+                            plog.sumBestQ += bestQ;
+                            plog.sumAbsOffset += fabsf(offMs); plog.nOffset++;
+                            if (offMs < -25.0f) plog.early++; else if (offMs > 25.0f) plog.late++; else plog.onTime++;
+                            // 原因の切り分け：その位置で一番よくても 40% 未満なら足（位置）、そうでなく質が半分以下ならタイミング
+                            if (bestQ < 0.40f) plog.posProblem++;
+                            else if (c.miss != MISS_NONE || c.quality < bestQ * 0.5f) plog.timingProblem++;
+                        } else {
+                            plog.posProblem++;
+                        }
+                        snprintf(plog.row, sizeof(plog.row),
+                                 "%.2f,%s,%s,swing,%s,%.2f,%s,%d,%d,%s,%.3f,%.3f,%.3f,%.3f,%.1f,%.2f,%.2f,%s,%.3f,%.0f,%s,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f,%.3f,%.2f,%.2f",
+                                 GetTime(), MODE_NAMES[mode], AI_LEVELS[ai.level].name, SHOTS[type].name, charge,
+                                 StrokeName(&c), c.volley, c.dive, MissName(c.miss),
+                                 c.quality, c.qTiming, c.qDist, c.qHeight, c.angleDeg, c.side, c.height,
+                                 bestQ > 0.0f ? TextFormat("%.0f", offMs) : "", bestQ, c.inKmh, "%OUT%", c.stepIn,
+                                 player.x, player.z, Vector3Length(playerVel), pre.pos.x, pre.pos.y, pre.pos.z, pre.age,
+                                 plog.firstMove, plog.chargeStart);
+                        if (c.miss != MISS_NONE) {
+                            // 空振り：結果は WHIFF。打球速度は空
+                            char *o = strstr(plog.row, "%OUT%");
+                            if (o) memmove(o, o + 5, strlen(o + 5) + 1);
+                            plog.pending = true; plog.pendingServe = false;
+                            LogFlush(&plog, "WHIFF");
+                        }
+                    }
+
                     if (c.miss == MISS_NONE) {
                         ball = PlayerShot(&c, ball.pos, target, type, charge, &lastKmh, &lastRpm, &lastAngle);
                         ball.lastHitter = HITTER_PLAYER;
+                        ball.shotId = ++plog.shotSerial;
+                        {
+                            // 打球速度を埋めて、結果待ちにする
+                            char *o = strstr(plog.row, "%OUT%");
+                            if (o) {
+                                char tail[1024];
+                                snprintf(tail, sizeof(tail), "%s", o + 5);
+                                snprintf(o, sizeof(plog.row) - (size_t)(o - plog.row), "%.0f%s", lastKmh, tail);
+                            }
+                            plog.pending = true; plog.pendingId = ball.shotId; plog.pendingServe = false;
+                        }
                         trailColor = SHOTS[type].color;
                         trailCount = 0;
                         stats[type][0]++;
@@ -1760,6 +1986,7 @@ int main(void)
             StepBall(&ball, PHYS_DT);
             if (historyCount < 64) history[historyCount++] = ball;
             accumulator -= PHYS_DT;
+            if (!botControls) LogRecordBall(&plog, &ball);
 
             // AI のスイング（物理と同じ細かさで）
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
@@ -1791,6 +2018,15 @@ int main(void)
                 serveAce = true;
                 if (fabsf(ball.pos.x - retX) - REACH_SIDE > canMove) { aces++; serveMsg = "ACE!"; }
                 else serveMsg = "IN (returnable)";
+            }
+        }
+
+        // ---- プレイ記録：来た球の追跡と、打球の結果 ----
+        if (!botControls) {
+            LogTrackIncoming(&plog, &ball, player, playerVel, chargingShot >= 0, MODE_NAMES[mode], AI_LEVELS[ai.level].name);
+            if (plog.pending) {
+                if (ball.shotId != plog.pendingId) LogFlush(&plog, "?");
+                else if (ball.result != RESULT_NONE) LogFlush(&plog, ResultText(ball.result));
             }
         }
 
@@ -2045,6 +2281,37 @@ int main(void)
             }
         }
 
+        // 統計（Tab）
+        if (showStats) {
+            int bx = 260, by = 120, bw = 760, bh = 470;
+            DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.85f));
+            int ty = by + 16;
+            #define LINE(...) do { DrawText(TextFormat(__VA_ARGS__), bx + 20, ty, 20, RAYWHITE); ty += 26; } while (0)
+            DrawText("SESSION STATS  (Tab to close)   saved to playlog.csv", bx + 20, ty, 22, YELLOW); ty += 36;
+            int sw = plog.swings > 0 ? plog.swings : 1;
+            LINE("Swings %d:  hit %d (%d%%)   whiff %d (%d%%)", plog.swings, plog.hits, plog.hits * 100 / sw, plog.whiffs, plog.whiffs * 100 / sw);
+            LINE("  whiffs: early %d  late %d  far %d  high %d  low %d",
+                 plog.miss[MISS_EARLY], plog.miss[MISS_LATE], plog.miss[MISS_FAR], plog.miss[MISS_HIGH], plog.miss[MISS_LOW]);
+            int res = plog.shotIn + plog.shotOut + plog.shotNet; if (res < 1) res = 1;
+            LINE("Your shots that landed: IN %d%%   OUT %d%%   NET %d%%  (of %d)",
+                 plog.shotIn * 100 / res, plog.shotOut * 100 / res, plog.shotNet * 100 / res, plog.shotIn + plog.shotOut + plog.shotNet);
+            ty += 8;
+            int no = plog.nOffset > 0 ? plog.nOffset : 1;
+            LINE("Timing vs best moment: avg %.0f ms off   early %d / on time %d / late %d",
+                 plog.sumAbsOffset / no, plog.early, plog.onTime, plog.late);
+            LINE("Contact quality: avg %.0f%%   best possible from where you stood: %.0f%%",
+                 plog.hits ? plog.sumQ / plog.hits * 100.0f : 0.0f, plog.sumBestQ / no * 100.0f);
+            LINE("Main cause:  POSITION (feet) %d   TIMING (hands) %d", plog.posProblem, plog.timingProblem);
+            ty += 8;
+            LINE("Balls you didn't swing at: %d landing IN (%d were reachable), %d going OUT",
+                 plog.noSwingIn, plog.noSwingReachable, plog.noSwingOut);
+            LINE("Reaction (first move after opponent hit): avg %.2f s",
+                 plog.nFirstMove ? plog.sumFirstMove / plog.nFirstMove : 0.0f);
+            ty += 8;
+            LINE("Serves %d:  in %d   whiff %d", plog.serves, plog.servesIn, plog.serveWhiffs);
+            #undef LINE
+        }
+
         // 溜めゲージ
         int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 60;
         if (chargingShot >= 0) {
@@ -2068,9 +2335,12 @@ int main(void)
             DrawText(TextFormat("Camera: %s (C)", camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
         }
         if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
+        DrawText("Tab: stats", GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
         EndDrawing();
     }
 
+    LogFlush(&plog, "?");
+    if (plog.f) fclose(plog.f);
     CloseWindow();
     return 0;
 }
