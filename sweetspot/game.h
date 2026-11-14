@@ -550,6 +550,20 @@ typedef struct {
     int  round;              // 今のラウンド（0 準々決勝、1 準決勝、2 決勝、3 終わり）
     int  outRound;           // 負けたラウンド
 } Tournament;
+// リプレイ：1 フレーム分の記録
+typedef struct { float dt; Vector3 ball; bool ballOn; Vector3 pPos, aPos; SwingAnim pA, aA; Color aShirt; } RFrame;
+void RecReset(void);
+void RecPush(const RFrame *f);
+long RecTotal(void);
+int  RecPrepareLast(long start);
+const RFrame *RecClip(int *n);
+void RecSaveHighlight(long start, const char *caption, float score);
+int  HighlightCount(void);
+const RFrame *Highlight(int k, int *n, const char **caption);
+Camera3D ReplayCamera(Vector3 ball, Camera3D prev, bool first);
+void DrawReplayFrame(const RFrame *f, Camera3D cam);
+void DrawCourt(void);
+
 void TourStart(Tournament *t, bool women, int surface, int setsToWin);
 int  TourOpponent(const Tournament *t);
 void TourRecordPlayerMatch(Tournament *t, bool playerWon, const Score *s);

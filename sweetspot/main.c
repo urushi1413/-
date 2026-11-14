@@ -175,6 +175,12 @@ int main(void)
     // メニュー
     AppState app = APP_TITLE;
     static Tournament tour = { 0 };      // 大会
+    // リプレイ・ハイライト
+    long pointStart = 0;                 // 今のポイントが始まったフレーム（記録の通し番号）
+    bool hlPending = false;              // 前のポイントをハイライトに取っておく
+    char hlCap[80] = { 0 };
+    float hlScore = 0.0f;
+    struct { bool on; int mode, clip, idx; float t, acc; Camera3D cam; bool first; } rp = { 0 };   // mode 0 = 今のポイント、1 = ハイライト
     int   menuSel = 0;
     float aimSens = 1.0f;          // マウス感度（倍率）
     bool  forceRestart = false;    // メニューでモードや AI を変えたら、戻ったときにやり直す
@@ -375,6 +381,43 @@ int main(void)
         if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
+        // ================= リプレイ（スロー、横からのカメラ） =================
+        if (rp.on) {
+            int n = 0; const char *cap = "REPLAY";
+            const RFrame *fr = rp.mode == 0 ? RecClip(&n) : Highlight(rp.clip, &n, &cap);
+            rp.t += frameDt * (rp.mode == 0 ? 0.5f : 0.7f);
+            while (rp.idx < n - 1 && rp.acc + fr[rp.idx].dt <= rp.t) { rp.acc += fr[rp.idx].dt; rp.idx++; }
+            bool skip = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_R) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            if (rp.idx >= n - 1 || skip) {
+                if (rp.mode == 1 && !IsKeyPressed(KEY_ESCAPE) && rp.clip + 1 < HighlightCount()) {   // 次のハイライトへ
+                    rp.clip++; rp.idx = 0; rp.t = 0.0f; rp.acc = 0.0f; rp.first = true;
+                } else rp.on = false;
+            }
+            if (n > 0) {
+                const RFrame *f = &fr[rp.idx < n ? rp.idx : n - 1];
+                rp.cam = ReplayCamera(f->ball, rp.cam, rp.first);
+                rp.first = false;
+                BeginDrawing();
+                ClearBackground((Color){ 150, 190, 230, 255 });
+                BeginMode3D(rp.cam);
+                DrawReplayFrame(f, rp.cam);
+                EndMode3D();
+                int W = GetScreenWidth(), H = GetScreenHeight();
+                if (fmodf((float)GetTime(), 1.0f) < 0.7f) { DrawRectangle(20, 20, 150, 40, (Color){ 200, 30, 30, 230 }); DrawText("REPLAY", 34, 28, 26, RAYWHITE); }
+                if (rp.mode == 1) {
+                    const char *hc = TextFormat("HIGHLIGHTS  %d / %d", rp.clip + 1, HighlightCount());
+                    DrawText(hc, 190, 30, 22, YELLOW);
+                }
+                int cw = MeasureText(cap, 30);
+                DrawRectangle(W / 2 - cw / 2 - 20, H - 120, cw + 40, 50, Fade(BLACK, 0.65f));
+                DrawText(cap, W / 2 - cw / 2, H - 110, 30, RAYWHITE);
+                const char *hint = rp.mode == 1 ? "Enter: next   Esc: stop" : "Enter / R: back";
+                DrawText(hint, W / 2 - MeasureText(hint, 18) / 2, H - 50, 18, LIGHTGRAY);
+                EndDrawing();
+            }
+            continue;
+        }
+
         bool restart = forceRestart;
         forceRestart = false;
         if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
@@ -407,6 +450,7 @@ int main(void)
             P.pos = (Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f };
             P.vel = (Vector3){ 0 };
             P.hasLast = false;
+            RecReset(); pointStart = 0; hlPending = false;
             int lvl = ai.level, per = ai.persona;
             ai = (Opponent){ 0 };
             ai.level = lvl; ai.persona = per;
@@ -429,6 +473,8 @@ int main(void)
         int server = CurrentServer(&score);
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
+            if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }   // 前のポイント（喜ぶところまで）
+            pointStart = RecTotal();
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             ai.anim.celebT = 0.0f;
             netFlag[0] = netFlag[1] = false;
@@ -1284,8 +1330,32 @@ int main(void)
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
                 }
+                // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
+                {
+                    const char *who = winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName;
+                    const char *big = gPointImportance >= 1.0f ? "BIG POINT  -  " : "";
+                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), "%s SMASHES THE RACKET", PERSONAS[ai.persona].shortName);
+                    else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), "%sACE  %s  %.0f km/h", big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
+                    else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? "%s%s WINNER  (%d-shot rally)" : "%s%s WINNER", big, who, rallyHits);
+                    else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), "%s%d-SHOT RALLY  -  point %s", big, rallyHits, who);
+                    else                        snprintf(hlCap, sizeof(hlCap), "%sPOINT %s", big, who);
+                    if (score.over) snprintf(hlCap, sizeof(hlCap), "MATCH POINT  -  %s WINS", who);
+                    hlScore = 0.5f * rallyHits + (endKind == 2 ? 3.0f : 0.0f) + (endKind == 1 ? 2.0f : 0.0f) + 4.0f * gPointImportance
+                            + (ai.anim.celebT > 0.0f ? 1.5f : 0.0f) + (ai.anim.smashT > 0.0f ? 6.0f : 0.0f) + (score.over ? 8.0f : 0.0f)
+                            + RandRange(0.0f, 0.5f);
+                    hlPending = true;
+                }
             }
         } else if (mode == MODE_MATCH && (phase == PH_BETWEEN || phase == PH_POINT_OVER)) {
+            // R：今のポイントをスローで見直す。試合が終わったら、ハイライトを続けて見る
+            if (IsKeyPressed(KEY_R)) {
+                if (score.over && phaseTimer <= 0.0f) {
+                    if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }
+                    if (HighlightCount() > 0) { rp.on = true; rp.mode = 1; rp.clip = 0; rp.idx = 0; rp.t = rp.acc = 0.0f; rp.first = true; }
+                } else if (RecPrepareLast(pointStart) > 20) {
+                    rp.on = true; rp.mode = 0; rp.idx = 0; rp.t = rp.acc = 0.0f; rp.first = true;
+                }
+            }
             phaseTimer -= simDt;
             if (ai.anim.smashT > 0.0f) {
                 // ラケットを叩きつけている間は動かない。地面に当たるたびに音、1 回目でラケットが曲がる
@@ -1598,6 +1668,9 @@ int main(void)
             }
         EndMode3D();
 
+        // ポイントの後：リプレイの案内
+        if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls)
+            DrawText("R: replay", GetScreenWidth() / 2 - MeasureText("R: replay", 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
         if (tour.active && mode == MODE_MATCH) {
             const char *tl = TextFormat("%s  -  %s", TourName(tour.surface), TourRoundName(tour.round));
@@ -1777,7 +1850,7 @@ int main(void)
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", PERSONAS[ai.persona].shortName),
-                                 tour.active ? "Enter: back to the draw" : "Enter: new match", &score, ms, mst, PERSONAS[ai.persona].shortName);
+                                 tour.active ? "Enter: back to the draw    R: highlights" : "Enter: new match    R: highlights", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (setBreak && phaseTimer <= 0.0f)
                 DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (showSummary)
@@ -1879,6 +1952,11 @@ int main(void)
             }
         }
         EndDrawing();
+        // リプレイ用に記録（試合中だけ。描いたままの姿勢で）
+        if (mode == MODE_MATCH && app == APP_PLAY) {
+            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PERSONAS[ai.persona].shirt };
+            RecPush(&f);
+        }
     }
 
     LogFlush(&plog, "?");
