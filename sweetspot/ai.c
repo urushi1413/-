@@ -31,7 +31,7 @@ const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
     { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
     { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.25f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.20f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
-    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { -0.10f, -0.14f, -0.14f }, { 40, 60, 140, 255 } },
+    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { -0.10f, -0.14f, -0.22f }, { 40, 60, 140, 255 } },
     { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.20f, { -0.22f, 0.40f, -0.15f }, { 240, 140, 40, 255 } },
     { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.20f, { -0.16f, -0.30f, -0.24f }, { 30, 150, 140, 255 } },
 };
@@ -241,6 +241,8 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     ai->leaving = false;
 }
 
+static bool sAttack;   // 直前に選んだショットが「決めにいく」球か
+
 // AI のショット選び（AI 座標）
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge,
                              Vector3 *target)
@@ -305,7 +307,8 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 
     // 甘い球（いい打点で、ベースラインより内側）は決めにいく：速く、厳しく
     bool attack = c->quality > 0.5f && meAi.z < HALF_LEN - 0.3f && (t == SHOT_TOP || t == SHOT_FLAT) &&
-                  RandRange(0, 1) < 0.3f + 0.6f * lv->aggression;
+                  RandRange(0, 1) < 0.22f + 0.55f * lv->aggression;
+    sAttack = attack;
     if (attack) {
         // 甘い球はフラットドライブで叩く（今のプロの打ち方）
         if (t == SHOT_TOP && c->height > 0.7f) t = SHOT_FLAT;
@@ -316,7 +319,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 
     // コース：プレイヤーのいない方へ。強気なほどサイドラインに近い
     const ShotSpec *sp = &SHOTS[t];
-    float wide = attack ? 3.5f : 2.2f + 1.2f * lv->aggression;   // サイドラインまで 4.1m。普段は 1〜1.6m の余裕、攻めるときは 0.6m
+    float wide = attack ? 3.2f : 2.2f + 1.0f * lv->aggression;   // サイドラインまで 4.1m。普段は 1.1〜1.9m の余裕、攻めるときは 0.9m
     float x;
     if (playerAi.x > 0.6f)       x = -wide;
     else if (playerAi.x < -0.6f) x =  wide;
@@ -356,9 +359,22 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);         // 得意なコートほどミスが減る
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
+    sAttack = false;
+    bool sLapse = false;
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
+    // 凡ミス：楽な体勢でも、たまに打ち損じる（力み・集中切れ）。決めにいく球ほど起きやすい。
+    //   これがないと AI はハイライトのようなプレーしかしない。現実のプロでも 100 ポイントに 10〜15 本は凡ミスする
+    if (!c.isReturn && !c.volley && !c.dive && !c.stretch) {
+        static const float LEVEL_LAPSE[3] = { AI_LAPSE_EASY, AI_LAPSE_NORMAL, AI_LAPSE_PRO };
+        float lapse = LEVEL_LAPSE[ai->level % 3] * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
+                    * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
+                    * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);
+        if (RandRange(0.0f, 1.0f) < lapse) { sLapse = true; gErrMul *= AI_LAPSE_ERR; }
+        else if (sAttack) gErrMul *= AI_ATTACK_ERR;   // 決めにいく球は、少しだけ力む
+    }
     ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
+    if (sLapse) c.quality *= AI_LAPSE_Q;   // 打ち損じ：芯を外す
     c.stepIn = -meVel.z;
     if (c.miss == MISS_NONE && c.volley && !c.overhead)   // ボレーのうまい選手は、当たりの悪さを取り戻す
         c.quality += (1.0f - c.quality) * 0.5f * pp->volleySkill;

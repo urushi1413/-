@@ -75,6 +75,13 @@ typedef struct {
 #define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）
 #define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
 #define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
+#define AI_LAPSE_EASY    0.120f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
+#define AI_LAPSE_NORMAL  0.090f
+#define AI_LAPSE_PRO     0.070f
+#define AI_LAPSE_ATTACK  2.0f    //   決めにいく球はこの倍
+#define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
+#define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
+#define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
