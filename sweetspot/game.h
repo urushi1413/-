@@ -95,6 +95,8 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
 #define RAGE_ERR         0.25f   //   打球のぶれが減る
 #define RAGE_LAPSE       0.50f   //   打ち損じが減る
 #define RAGE_DECAY_GAME  0.80f   // ゲームが終わるたびに怒りがこの割合に弱まる
+#define NET_MARGIN_BASE  0.12f   // ストロークがネットの上を通る余裕の目標（m）
+#define NET_MARGIN_SPIN  0.25f   //   トップスピンが強いほど上乗せ（2500rpm 以上で全部）
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大

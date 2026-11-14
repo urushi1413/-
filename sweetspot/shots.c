@@ -175,6 +175,18 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                 kmh *= 0.92f;
             }
         }
+        if (!c->volley && !c->overhead && rpm > 0.0f) {
+            // トップスピン：回転が強いほどネットの上を高く通して、回転で落とせる。ネットの余裕が足りなければ、
+            //   少し遅く振って高く上げる（サービスライン付近の低い球でもネットしにくい。フラットは余裕が小さい）
+            float want = NET_MARGIN_BASE + NET_MARGIN_SPIN * Clamp01((rpm - 1500.0f) / 2500.0f);
+            float k0 = kmh;
+            for (int it = 0; it < 10 && kmh > k0 * 0.55f; it++) {
+                float a0 = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
+                if (PredictNetClearance(ballPos, dirFlat, kmh / 3.6f, a0, rpm) >= want) break;
+                kmh *= 0.95f;
+                rpm = fminf(rpm * 1.05f, 4300.0f);   // 遅く振る分、下から擦り上げて回転を増やす
+            }
+        }
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         // ボレーは面を固めて当てるだけなので、上下のぶれは小さい
@@ -190,7 +202,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         //   リターンは遅く合わせる分もともと高い弾道になるので、上へのずれは半分（入るが浮く）
         angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
                 * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f)
-                * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f));   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
+                * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f))   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
+                * (c->vyBall < 0.0f && rpm > 0.0f ? 1.0f - 0.5f * Clamp01(rpm / 3500.0f) : 1.0f);   // 沈んでくる球もトップスピンなら下から擦り上げて持ち上げる
         ang += angErr;
     }
 
