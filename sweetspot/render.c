@@ -62,108 +62,231 @@ Vector3 LocalToWorld(Vector3 base, bool facingNegZ, Vector3 l)
 
 float EaseOut(float u) { u = Clamp01(u); return 1.0f - (1.0f - u) * (1.0f - u); }
 
-// ラケットの面の中心（ローカル座標）と、ラケットが動いている向き
-// 2 次ベジェ曲線（p0 から c の方へ引っ張られて p1 へ）と、その向き
-static Vector3 Bezier2(Vector3 p0, Vector3 c, Vector3 p1, float s)
+// ---- ラケットの動き ----
+// 手（グリップ）の位置と、ラケットの向き（手から先端へ）を別々に動かす。
+// 腕とラケットが一本の棒にならず、手首が返る・ラケットが遅れて出てくる・頭の後ろに巻きつく、が出る。
+// 体から見た座標：x=右, y=高さ, z=前（ネットの方）。右利きで計算する
+typedef struct { float t; Vector3 h, d, f; } RKey;   // 時刻、手、ラケットの向き、面の向き（だいたい）
+
+static Vector3 V3(float x, float y, float z) { return (Vector3){ x, y, z }; }
+static Vector3 CatRom(Vector3 p0, Vector3 p1, Vector3 p2, Vector3 p3, float s)
 {
-    float a = (1 - s) * (1 - s), b = 2 * (1 - s) * s, d = s * s;
-    return (Vector3){ a * p0.x + b * c.x + d * p1.x, a * p0.y + b * c.y + d * p1.y, a * p0.z + b * c.z + d * p1.z };
+    float s2 = s * s, s3 = s2 * s;
+    Vector3 r;
+    r.x = 0.5f * (2 * p1.x + (-p0.x + p2.x) * s + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * s2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * s3);
+    r.y = 0.5f * (2 * p1.y + (-p0.y + p2.y) * s + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * s2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * s3);
+    r.z = 0.5f * (2 * p1.z + (-p0.z + p2.z) * s + (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * s2 + (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * s3);
+    return r;
 }
-static Vector3 Bezier2D(Vector3 p0, Vector3 c, Vector3 p1, float s)
+// キーの間をなめらかにつなぐ（キャットマル–ロム曲線）。向きは正規化する
+static void SampleKeys(const RKey *k, int n, float t, Vector3 *h, Vector3 *d, Vector3 *f)
 {
-    return Vector3Add(Vector3Scale(Vector3Subtract(c, p0), 2 * (1 - s)), Vector3Scale(Vector3Subtract(p1, c), 2 * s));
+    if (t <= k[0].t) { *h = k[0].h; *d = Vector3Normalize(k[0].d); *f = k[0].f; return; }
+    if (t >= k[n - 1].t) { *h = k[n - 1].h; *d = Vector3Normalize(k[n - 1].d); *f = k[n - 1].f; return; }
+    int i = 0;
+    while (i < n - 2 && t > k[i + 1].t) i++;
+    float s = (t - k[i].t) / fmaxf(k[i + 1].t - k[i].t, 1e-4f);
+    int i0 = i > 0 ? i - 1 : i, i3 = i + 2 < n ? i + 2 : i + 1;
+    *h = CatRom(k[i0].h, k[i].h, k[i + 1].h, k[i3].h, s);
+    *d = Vector3Normalize(CatRom(Vector3Normalize(k[i0].d), Vector3Normalize(k[i].d), Vector3Normalize(k[i + 1].d), Vector3Normalize(k[i3].d), s));
+    *f = CatRom(k[i0].f, k[i].f, k[i + 1].f, k[i3].f, s);
+}
+static Vector3 MirrorX(Vector3 v) { return (Vector3){ -v.x, v.y, v.z }; }
+
+#define RACKET_REACH 0.50f   // 手から面の中心まで（m）
+#define ARM_REACH    0.60f   // 肩から手まで届く長さ
+
+// 構え（何もしていないとき）：ラケットを体の前で立てて、左手を首に添える
+static const RKey READY = { 0, { 0.20f, 1.02f, 0.36f }, { 0.05f, 0.50f, 0.86f }, { 1.0f, 0.0f, 0.0f } };
+
+// 当たる瞬間：球の位置に面の中心が来るように、手の位置とラケットの角度を決める（肩から届く範囲で）
+static RKey ContactKey(Vector3 cl, float sgn, bool oneArm, bool slice)
+{
+    float rc = sqrtf(cl.x * cl.x + cl.z * cl.z), k = rc > 1.6f ? 1.6f / rc : (rc < 0.5f ? 0.5f / fmaxf(rc, 0.01f) : 1.0f);
+    Vector3 p = { cl.x * k, Clamp(cl.y, 0.15f, 1.9f), cl.z * k };
+    float down = Clamp((p.y - 1.05f) * 0.55f, -0.55f, 0.20f);   // 低い球はラケットの頭を下げて拾う
+    Vector3 d = Vector3Normalize(V3(sgn * 0.93f, down, slice ? 0.30f : 0.18f));
+    Vector3 h = Vector3Subtract(p, Vector3Scale(d, RACKET_REACH));
+    // 肩から届かないなら、手を肩の方へ寄せて、ラケットを伸ばして当てる
+    Vector3 sh = oneArm && sgn < 0.0f ? V3(0.05f, 1.42f, 0.18f) : V3(sgn * 0.18f, 1.42f, 0.05f);
+    Vector3 sv = Vector3Subtract(h, sh);
+    float sl = Vector3Length(sv);
+    if (sl > ARM_REACH) { h = Vector3Add(sh, Vector3Scale(sv, ARM_REACH / sl)); d = Vector3Normalize(Vector3Subtract(p, h)); }
+    Vector3 f = slice ? V3(0.0f, 0.45f, 1.0f) : V3(0.0f, -0.12f, 1.0f);   // スライスは面が上、トップは少し伏せる
+    return (RKey){ SWING_LEAD, h, d, f };
 }
 
-Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
+// ストロークのキー（時刻は振り出しからの秒。SWING_LEAD で当たる）
+//   grace：優雅さ（フェデラー）。フォロースルーが高く大きく、最後まで振り切る
+static int StrokeKeys(const SwingAnim *a, RKey *k, int *strokeOut)
 {
-    const float BACK_FH = -75.0f, BACK_OH = 160.0f;
+    const Contact *c = &a->lastContact;
+    bool fore = c->forehand;
+    float sgn = fore ? 1.0f : -1.0f;
+    float g = a->grace;
+    *strokeOut = fore ? 0 : 1;
+    RKey ck = ContactKey(a->contactLocal, sgn, a->oneHanded, a->slice);
+    int n = 0;
+    if (a->slice) {
+        // スライス：ラケットを肩より高く引き、面を開いて、上から斜め下へ運ぶ。フォロースルーは前へ長く
+        k[n++] = (RKey){ 0.00f, { 0.42f, 1.48f, -0.12f }, { 0.30f, 0.72f, -0.62f }, { 0.4f, 0.6f, 0.6f } };
+        k[n++] = (RKey){ 0.04f, { 0.52f, 1.28f, 0.08f }, { 0.65f, 0.35f, -0.45f }, { 0.2f, 0.6f, 0.8f } };
+        k[n++] = ck;
+        k[n++] = (RKey){ 0.15f, { 0.10f, 1.02f, 0.72f }, { -0.15f, 0.25f, 0.95f }, { 0.0f, 0.8f, 0.4f } };
+        k[n++] = (RKey){ 0.30f, { -0.12f + 0.05f * g, 1.08f + 0.08f * g, 0.70f }, { -0.30f, 0.45f, 0.85f }, { -0.2f, 0.9f, 0.2f } };
+        if (!fore) for (int i = 0; i < n; i++) if (i != 2) { k[i].h = MirrorX(k[i].h); k[i].d = MirrorX(k[i].d); k[i].f = MirrorX(k[i].f); }
+        return n;
+    }
+    if (fore) {
+        // フォア：肩を入れてラケットを立てて引き（ユニットターン）→ ラケットの頭が背中側に落ちる →
+        //   下から前へ振り抜いて → 左肩の上に巻きつける（ワイパー）
+        k[n++] = (RKey){ 0.000f, { 0.50f, 1.28f, -0.25f }, { 0.10f, 0.80f, -0.60f }, { 1.0f, -0.3f, 0.3f } };
+        k[n++] = (RKey){ 0.045f, { 0.55f, 0.82f, -0.28f }, { 0.25f, -0.65f, -0.70f }, { 0.4f, -0.3f, 1.0f } };
+        k[n++] = ck;
+        k[n++] = (RKey){ 0.13f, { 0.15f, 1.20f + 0.05f * g, 0.72f }, { 0.30f, 0.70f, 0.65f }, { -0.3f, -0.6f, 0.7f } };
+        k[n++] = (RKey){ 0.20f, { -0.18f, 1.40f + 0.10f * g, 0.40f }, { -0.30f, 0.55f + 0.15f * g, -0.75f }, { -0.8f, -0.3f, 0.4f } };
+        k[n++] = (RKey){ 0.30f, { -0.30f, 1.38f + 0.14f * g, 0.18f + 0.06f * g }, { -0.35f, 0.15f + 0.30f * g, -0.92f }, { -0.6f, -0.7f, 0.2f } };
+        return n;
+    }
+    if (a->oneHanded) {
+        // 片手バック：左手でラケットの首を持って大きく肩を入れ → 振り出しで左手を離す →
+        //   腕を伸ばしたまま高く振り抜き、左手は後ろへ（両腕を広げて終わる）
+        k[n++] = (RKey){ 0.000f, { -0.40f, 1.24f, -0.15f }, { -0.25f, 0.80f, -0.55f }, { -1.0f, -0.3f, 0.3f } };
+        k[n++] = (RKey){ 0.045f, { -0.36f, 0.92f, -0.04f }, { -0.35f, -0.50f, -0.78f }, { -0.3f, -0.2f, 1.0f } };
+        k[n++] = ck;
+        k[n++] = (RKey){ 0.13f, { -0.02f, 1.32f, 0.78f }, { 0.10f, 0.80f, 0.55f }, { 0.3f, -0.5f, 0.8f } };
+        k[n++] = (RKey){ 0.20f, { 0.32f, 1.66f + 0.06f * g, 0.48f }, { 0.30f, 0.90f, -0.25f }, { 0.9f, 0.0f, 0.3f } };
+        k[n++] = (RKey){ 0.30f, { 0.40f, 1.70f + 0.08f * g, 0.36f }, { 0.45f, 0.82f, -0.35f }, { 0.9f, 0.0f, 0.3f } };
+        return n;
+    }
+    // 両手バック：左手が主役のフォアのような形。右肩の上で終わる
+    k[n++] = (RKey){ 0.000f, { -0.42f, 1.18f, -0.25f }, { -0.20f, 0.80f, -0.55f }, { -1.0f, -0.3f, 0.3f } };
+    k[n++] = (RKey){ 0.045f, { -0.50f, 0.84f, -0.25f }, { -0.30f, -0.60f, -0.70f }, { -0.4f, -0.3f, 1.0f } };
+    k[n++] = ck;
+    k[n++] = (RKey){ 0.13f, { -0.05f, 1.15f, 0.70f }, { -0.10f, 0.70f, 0.70f }, { 0.3f, -0.6f, 0.7f } };
+    k[n++] = (RKey){ 0.20f, { 0.22f, 1.38f, 0.36f }, { 0.30f, 0.50f, -0.80f }, { 0.8f, -0.3f, 0.4f } };
+    k[n++] = (RKey){ 0.30f, { 0.30f, 1.38f, 0.14f }, { 0.35f, 0.20f, -0.90f }, { 0.6f, -0.7f, 0.2f } };
+    return n;
+}
+
+// 構え（溜め）の終わりの形
+static RKey WindupKey(int stroke, bool slice, bool oneHanded)
+{
+    RKey k[8]; int s;
+    SwingAnim t = { 0 };
+    t.lastContact.forehand = (stroke == 0); t.slice = slice; t.oneHanded = oneHanded;
+    t.contactLocal = V3(stroke == 0 ? 0.85f : -0.85f, 1.0f, 0.4f);
+    StrokeKeys(&t, k, &s);
+    return k[0];
+}
+
+// ラケットの姿勢。戻り値：面の中心。hand / dir は手の位置とラケットの向き（hasHand=false ならサーブ・スマッシュで、肩から伸ばして描く）
+Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 *hand, Vector3 *dir, bool *hasHand)
+{
+    const float BACK_OH = 160.0f;
+    *hasHand = true;
+    Vector3 h, d, f;
     if (a->swingT >= 0.0f && a->swingT < SWING_TIME) {
         const Contact *c = &a->lastContact;
         Vector3 cl = a->contactLocal;
         float u = EaseOut(a->swingT / SWING_TIME);
         if (c->overhead) {
-            *strokeOut = 2;
+            *strokeOut = 2; *hasHand = false;
             float ry = cl.y - 1.75f, rz = cl.z;
             float psiC = atan2f(ry, rz) * RAD2DEG;
             float rc = Clamp(sqrtf(ry * ry + rz * rz), 0.5f, 1.2f);
             float psi = (psiC + (-70.0f - psiC) * u) * DEG2RAD;
             float rr = Lerp(rc, 0.7f, u);
-            *tangent = (Vector3){ 0.0f, -cosf(psi), sinf(psi) };
+            *normal = (Vector3){ 0.0f, -cosf(psi), sinf(psi) };
             return (Vector3){ 0.3f - 0.6f * u, 1.75f + rr * sinf(psi), rr * cosf(psi) };
         }
         float sgn = c->forehand ? 1.0f : -1.0f;
         *strokeOut = c->forehand ? 0 : 1;
         if (c->volley) {
-            // ボレー：振らない。面を前に向けたまま、球へ 30cm ほど押し出して止める（パンチ）
+            // ボレー：振らない。ラケットの頭を立てて面を前に向けたまま、球へ 30cm ほど押し出して止める（パンチ）
             float rcl = sqrtf(cl.x * cl.x + cl.z * cl.z), k = rcl > 1.2f ? 1.2f / rcl : 1.0f;
             Vector3 P1 = { cl.x * k, Clamp(cl.y, 0.2f, 2.0f), cl.z * k };
             Vector3 P0 = { P1.x * 0.85f, P1.y + 0.05f, P1.z - 0.30f };
             Vector3 P2 = { P1.x * 0.95f, P1.y - 0.08f, P1.z + 0.28f };
-            *tangent = Vector3Normalize((Vector3){ 0.0f, 0.25f, 1.0f });   // 面はネットの方、少し上向き
-            if (a->swingT < SWING_LEAD) return Vector3Lerp(P0, P1, a->swingT / SWING_LEAD);
-            return Vector3Lerp(P1, P2, Clamp01((a->swingT - SWING_LEAD) / 0.10f));
+            Vector3 p = a->swingT < SWING_LEAD ? Vector3Lerp(P0, P1, a->swingT / SWING_LEAD)
+                                               : Vector3Lerp(P1, P2, Clamp01((a->swingT - SWING_LEAD) / 0.10f));
+            d = Vector3Normalize(V3(sgn * 0.70f, Clamp((P1.y - 0.95f) * 0.9f + 0.25f, -0.60f, 0.65f), 0.35f));
+            *hand = Vector3Subtract(p, Vector3Scale(d, RACKET_REACH)); *dir = d;
+            *normal = Vector3Normalize(V3(0.0f, 0.25f, 1.0f));
+            return p;
         }
-        float phiC = atan2f(cl.z, sgn * cl.x) * RAD2DEG;
-        float rc = Clamp(sqrtf(cl.x * cl.x + cl.z * cl.z), 0.5f, 1.6f);
-        float hc = Clamp(cl.y, 0.15f, 1.9f);
-        if (a->slice) {
-            // スライス：上から下へ切る。フォロースルーは短く前に押し出し、面は上を向いたまま
-            float phi = (phiC + (140.0f - phiC) * u) * DEG2RAD;
-            float rr = Lerp(rc, 0.8f, u);
-            *tangent = Vector3Normalize((Vector3){ -sgn * sinf(phi), 0.45f, cosf(phi) });
-            return (Vector3){ sgn * cosf(phi) * rr, Lerp(hc, fmaxf(hc - 0.25f, 0.8f), u), sinf(phi) * rr };
-        }
-        // トップスピン・フラットドライブ：構えから一度ラケットを球の下へ落とし（ラケットダウン）、
-        //   下から上へ振り抜いて、反対の肩の上で終わる（ワイパー）。面は振り抜くほど伏せる
-        (void)phiC;
-        float k = rc / fmaxf(sqrtf(cl.x * cl.x + cl.z * cl.z), 0.01f);
-        Vector3 P0 = { sgn * cosf(BACK_FH * DEG2RAD) * 0.85f, 1.25f, sinf(BACK_FH * DEG2RAD) * 0.85f };   // 構えの終わり
-        Vector3 C0 = { sgn * 0.80f, fmaxf(hc - 0.40f, 0.15f), -0.40f };                                     // ラケットダウン
-        Vector3 P1 = { cl.x * k, hc, cl.z * k };                                                            // 当たる点
-        Vector3 C1 = { sgn * 0.20f, hc + 0.55f, 0.95f };                                                    // 前に振り抜く
-        Vector3 P2 = { -sgn * 0.35f, 1.62f, -0.10f };                                                       // 反対の肩の上
-        Vector3 p, d;
-        if (a->swingT < SWING_LEAD) {
-            float s = a->swingT / SWING_LEAD;
-            p = Bezier2(P0, C0, P1, s); d = Bezier2D(P0, C0, P1, s);
-        } else {
-            float s = EaseOut((a->swingT - SWING_LEAD) / (SWING_TIME - SWING_LEAD));
-            p = Bezier2(P1, C1, P2, s); d = Bezier2D(P1, C1, P2, s);
-            u = s;
-        }
-        Vector3 dh = { d.x, 0.0f, d.z };
-        if (Vector3Length(dh) < 1e-3f) dh = (Vector3){ 0, 0, 1 };
-        dh = Vector3Normalize(dh);
-        *tangent = Vector3Normalize((Vector3){ dh.x, -0.15f - 0.6f * (a->swingT < SWING_LEAD ? 0.0f : u), dh.z });
-        return p;
-    }
-    if (a->windup > 0.0f) {
+        RKey k[8];
+        int n = StrokeKeys(a, k, strokeOut);
+        SampleKeys(k, n, a->swingT, &h, &d, &f);
+    } else if (a->windup > 0.0f) {
         float w = EaseOut(a->windup * 1.6f);
         *strokeOut = a->windStroke;
         if (a->windStroke == 2) {
+            *hasHand = false;
             float psi = Lerp(60.0f, BACK_OH, w) * DEG2RAD;
-            *tangent = (Vector3){ 0.0f, cosf(psi), -sinf(psi) };
+            *normal = (Vector3){ 0.0f, cosf(psi), -sinf(psi) };
             return (Vector3){ 0.3f, 1.75f + 0.8f * sinf(psi), 0.8f * cosf(psi) };
         }
         float sgn = a->windStroke == 0 ? 1.0f : -1.0f;
         if (a->atNet) {
-            // ボレーの構え：ラケットを体の前に出して、横に少し引くだけ
-            *tangent = Vector3Normalize((Vector3){ 0.0f, 0.2f, 1.0f });
-            return (Vector3){ sgn * (0.40f + 0.20f * w), 1.25f, 0.45f - 0.20f * w };
+            // ボレーの構え：ラケットを体の前で立てて、横に少し引くだけ
+            h = V3(sgn * (0.22f + 0.12f * w), 1.10f, 0.42f - 0.12f * w);
+            d = Vector3Normalize(V3(sgn * 0.45f, 0.70f, 0.40f));
+            f = V3(0.0f, 0.2f, 1.0f);
+        } else {
+            RKey e = WindupKey(a->windStroke, a->slice, a->oneHanded);
+            h = Vector3Lerp(READY.h, e.h, w);
+            d = Vector3Normalize(Vector3Lerp(READY.d, e.d, w));
+            f = Vector3Lerp(READY.f, e.f, w);
         }
-        if (a->slice) {
-            // スライスの構え：ラケットを肩より高く引き、面を上に開く
-            float phi = Lerp(60.0f, -85.0f, w) * DEG2RAD;
-            *tangent = Vector3Normalize((Vector3){ -sgn * sinf(phi), 0.45f, cosf(phi) });
-            return (Vector3){ sgn * cosf(phi) * Lerp(0.6f, 0.75f, w), Lerp(1.0f, 1.65f, w), sinf(phi) * Lerp(0.6f, 0.75f, w) };
-        }
-        float phi = Lerp(60.0f, BACK_FH, w) * DEG2RAD;
-        *tangent = (Vector3){ -sgn * sinf(phi), 0.0f, cosf(phi) };
-        return (Vector3){ sgn * cosf(phi) * Lerp(0.6f, 0.85f, w), Lerp(1.0f, 1.25f, w), sinf(phi) * Lerp(0.6f, 0.85f, w) };
+    } else {
+        *strokeOut = 0;
+        h = READY.h; d = Vector3Normalize(READY.d); f = READY.f;
     }
-    *strokeOut = 0;
-    *tangent = (Vector3){ 0.0f, 0.0f, 1.0f };
-    return (Vector3){ 0.25f, 1.0f, 0.55f };   // 構え：ラケットを前に
+    // 面の向き：ラケットの向きに直交させる
+    Vector3 nf = Vector3Subtract(f, Vector3Scale(d, Vector3DotProduct(f, d)));
+    if (Vector3Length(nf) < 1e-3f) nf = Vector3CrossProduct(d, V3(0, 1, 0));
+    if (Vector3Length(nf) < 1e-3f) nf = V3(1, 0, 0);
+    *normal = Vector3Normalize(nf);
+    *hand = h; *dir = d;
+    return Vector3Add(h, Vector3Scale(d, RACKET_REACH));
+}
+
+Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
+{
+    Vector3 h, d; bool hh;
+    return RacketPose(a, strokeOut, tangent, &h, &d, &hh);
+}
+
+// ラケット：グリップ、のど（V 字）、楕円の枠、ガット。hand から dir の向き、normal が面の向き
+void DrawRacket(Vector3 hand, Vector3 dir, Vector3 normal, Color frame)
+{
+    dir = Vector3Normalize(dir);
+    Vector3 side = Vector3Normalize(Vector3CrossProduct(normal, dir));
+    Vector3 butt = Vector3Subtract(hand, Vector3Scale(dir, 0.07f));
+    Vector3 throat = Vector3Add(hand, Vector3Scale(dir, 0.20f));
+    Vector3 center = Vector3Add(hand, Vector3Scale(dir, RACKET_REACH));
+    const float A = 0.165f, B = 0.125f;   // 楕円の半径（長さ方向、幅方向）
+    DrawCylinderEx(butt, hand, 0.017f, 0.016f, 6, frame);                   // グリップ
+    DrawCylinderEx(hand, throat, 0.014f, 0.011f, 6, frame);                 // シャフト
+    Vector3 bottom = Vector3Subtract(center, Vector3Scale(dir, A));
+    for (int s = -1; s <= 1; s += 2)                                       // のど（V 字）
+        DrawCylinderEx(throat, Vector3Add(Vector3Add(bottom, Vector3Scale(side, s * 0.045f)), Vector3Scale(dir, 0.02f)), 0.008f, 0.008f, 4, frame);
+    Vector3 prev = { 0 };
+    Vector3 pts[24];
+    for (int i = 0; i <= 24; i++) {
+        float t = (float)i / 24.0f * 2.0f * PI;
+        Vector3 p = Vector3Add(center, Vector3Add(Vector3Scale(dir, A * cosf(t)), Vector3Scale(side, B * sinf(t))));
+        if (i < 24) pts[i] = p;
+        if (i > 0) DrawCylinderEx(prev, p, 0.009f, 0.009f, 4, frame);
+        prev = p;
+    }
+    Color str = Fade(RAYWHITE, 0.30f);
+    for (int i = 0; i < 24; i++) {
+        Vector3 p0 = pts[i], p1 = pts[(i + 1) % 24];
+        DrawTriangle3D(center, p0, p1, str);
+        DrawTriangle3D(center, p1, p0, str);
+    }
 }
 
 // ラケットの面（円）を描く。normal: 面の向き
@@ -197,9 +320,20 @@ Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint)
     return Vector3Add(Vector3Add(root, Vector3Scale(u, a)), Vector3Scale(perp, h));
 }
 
+// 太さの変わる棒（体の部品）
+static void Limb(Vector3 a, Vector3 b, float ra, float rb, Color c)
+{
+    DrawCylinderEx(a, b, ra, rb, 8, c);
+    DrawSphere(a, ra, c);
+    DrawSphere(b, rb, c);
+}
+
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
-    Color skin = { 240, 200, 160, 255 }, pants = { 40, 40, 60, 255 }, frame = { 30, 30, 30, 255 };
+    Color skin = { 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
+    Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
+    Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
+    Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
     if (a->lefty) {
@@ -210,16 +344,18 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     }
     float MX = a->lefty ? -1.0f : 1.0f;
     #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x), (y), (z) })
+    #define WV(v) W((v).x, (v).y, (v).z)
 
     if (a->downT > 0.0f) {
         // 飛びついて倒れている
         float s = a->lastContact.forehand ? 1.0f : -1.0f;
-        DrawCapsule(W(s * 0.15f, 0.18f, 0.0f), W(s * 0.95f, 0.22f, 0.15f), 0.17f, 8, 4, shirt);
-        DrawSphere(W(s * 1.2f, 0.22f, 0.2f), 0.12f, skin);
-        DrawCapsule(W(s * 0.1f, 0.12f, 0.0f), W(-s * 0.7f, 0.08f, -0.15f), 0.08f, 6, 3, pants);
-        DrawCapsule(W(s * 0.1f, 0.12f, 0.05f), W(-s * 0.65f, 0.08f, 0.2f), 0.08f, 6, 3, pants);
-        DrawCapsule(W(s * 0.9f, 0.25f, 0.2f), W(s * 1.45f, 0.08f, 0.35f), 0.05f, 6, 3, skin);
-        DrawRacketHead(W(s * 1.95f, 0.06f, 0.45f), (Vector3){ 0, 1, 0 }, frame);
+        Limb(W(s * 0.15f, 0.18f, 0.0f), W(s * 0.80f, 0.22f, 0.15f), 0.15f, 0.16f, shirt);
+        DrawSphere(W(s * 1.12f, 0.22f, 0.2f), 0.11f, skin);
+        Limb(W(s * 0.1f, 0.14f, 0.0f), W(-s * 0.25f, 0.12f, -0.08f), 0.10f, 0.09f, shorts);
+        Limb(W(-s * 0.25f, 0.12f, -0.08f), W(-s * 0.7f, 0.08f, -0.15f), 0.06f, 0.05f, skin);
+        Limb(W(-s * 0.25f, 0.12f, 0.12f), W(-s * 0.65f, 0.08f, 0.2f), 0.06f, 0.05f, skin);
+        Limb(W(s * 0.9f, 0.25f, 0.2f), W(s * 1.40f, 0.08f, 0.35f), 0.045f, 0.04f, skin);
+        DrawRacket(W(s * 1.45f, 0.06f, 0.36f), Vector3Subtract(W(s * 1.0f, 0.0f, 0.3f), W(0, 0, 0)), (Vector3){ 0, 1, 0 }, frame);
         return;
     }
 
@@ -232,29 +368,30 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     float ph = a->runPhase;
 
     // ---- 体のひねり：構えで横を向き、振りながら前へ戻る ----
-    int strokeK; Vector3 tanK;
-    RacketLocal(a, &strokeK, &tanK);
-    float sgnK = (strokeK == 1) ? -1.0f : 1.0f;
+    int stroke; Vector3 nrm, hand, rdir; bool hasHand;
+    Vector3 rl = RacketPose(a, &stroke, &nrm, &hand, &rdir, &hasHand);
+    float sgnK = (stroke == 1) ? -1.0f : 1.0f;
     float yaw = 0.0f;
     bool swinging = a->swingT >= 0.0f && a->swingT < SWING_TIME;
-    // 構えでは横を向く（ストロークは 75°、サーブ・スマッシュはほぼ真横の 90°）。腰は肩の 6 割回る
+    // 構えでは横を向く（ストロークは 75°、片手バックは 95°、サーブ・スマッシュはほぼ真横の 90°）。腰は肩の 6 割回る
     bool volleyPose = swinging ? (a->lastContact.volley && !a->lastContact.overhead) : a->atNet;
-    float turn = (strokeK == 2) ? 90.0f : (volleyPose ? 25.0f : 75.0f);   // ボレーは肩をあまり回さない
-    if (swinging)            yaw = sgnK * Lerp(turn, volleyPose ? 10.0f : -35.0f, EaseOut(a->swingT / SWING_TIME));
+    bool oneHandBack = stroke == 1 && (a->oneHanded || a->slice);
+    float turn = (stroke == 2) ? 90.0f : (volleyPose ? 25.0f : (oneHandBack ? 95.0f : 75.0f));   // ボレーは肩をあまり回さない
+    float endTurn = volleyPose ? 10.0f : (oneHandBack ? 20.0f : -35.0f);   // 片手バックは肩を開ききらない（横向きのまま振り抜く）
+    if (swinging)            yaw = sgnK * Lerp(turn, endTurn, EaseOut(a->swingT / SWING_TIME));
     else if (a->windup > 0)  yaw = sgnK * turn * Clamp01(a->windup * 1.4f);
     yaw *= DEG2RAD;
     float hipYaw = yaw * 0.6f;
     float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
 
     // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
-    float hipY = 0.86f - 0.04f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
-    Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.06f + mdz * 0.10f * move };   // 前傾（走る向きへ）
-    // しゃがむ（Q）：腰を落として前に屈む
-    hipY -= 0.30f * a->crouch;
+    float hipY = 0.88f - 0.05f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
+    Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.05f + mdz * 0.10f * move };   // 前傾（走る向きへ）
+    hipY -= 0.30f * a->crouch;                 // しゃがむ（Q）：腰を落として前に屈む
     leanV.z += 0.10f * a->crouch;
 
     // ---- サーブ・スマッシュ：トスで膝を深く曲げて反り、振るときに伸び上がって跳ぶ ----
-    bool overheadPose = (strokeK == 2) && (swinging || a->windup > 0.0f) && move < 0.5f;
+    bool overheadPose = (stroke == 2) && (swinging || a->windup > 0.0f) && move < 0.5f;
     float jump = 0.0f, ohU = 0.0f;
     if (overheadPose) {
         if (swinging) {
@@ -264,7 +401,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             leanV = (Vector3){ 0.0f, 0.0f, -0.04f + 0.22f * ohU };     // 打ちながら前へ倒れ込む
         } else {
             float w = Clamp01(a->windup);
-            hipY = 0.86f - 0.17f * w;                                    // トロフィー：膝を深く曲げる
+            hipY = 0.88f - 0.17f * w;                                    // トロフィー：膝を深く曲げる
             leanV = (Vector3){ 0.06f * w, 0.0f, -0.10f * w };            // 後ろに反る
         }
         pos.y += jump;
@@ -274,33 +411,26 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     bool lunging = a->lungeT > 0.0f && !overheadPose;
     if (lunging) {
         float pr = 1.0f - a->lungeT / LUNGE_TIME;
-        float jl = 0.22f * sinf(PI * Clamp01(pr * 1.3f));
-        pos.y += jl;
-        float sd = a->lungeSide;
-        leanV = (Vector3){ sd * 0.28f, 0.0f, 0.10f };
+        pos.y += 0.22f * sinf(PI * Clamp01(pr * 1.3f));
+        leanV = (Vector3){ a->lungeSide * 0.28f, 0.0f, 0.10f };
         hipY = 0.76f;
         hipYaw = 0.0f;
     }
 
+    // ---- 脚：ショーツ（太ももの半分まで）、脚、白いソックス、シューズ ----
+    Vector3 hips[2], feet[2], knees[2]; float toes[2];
     if (a->sliding || lunging) {
         // スライド・飛びつき：腰を落として足を大きく開く。スライドは足元に滑った跡
         float sd = lunging ? a->lungeSide : (a->slideSide >= 0.0f ? 1.0f : -1.0f);
         if (!lunging) hipY = 0.70f;
         float lift = lunging ? 0.10f : 0.0f;
-        Vector3 h1 = { sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }, f1 = { sd * 0.85f, 0.06f, 0.10f };
-        Vector3 h2 = { -sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }, f2 = { -sd * 0.40f, 0.06f + lift, -0.20f };
-        Vector3 k1 = TwoBone(h1, f1, 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
-        Vector3 k2 = TwoBone(h2, f2, 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
-        DrawCapsule(W(h1.x, h1.y, h1.z), W(k1.x, k1.y, k1.z), 0.075f, 6, 3, pants);
-        DrawCapsule(W(k1.x, k1.y, k1.z), W(f1.x, f1.y, f1.z), 0.065f, 6, 3, pants);
-        DrawCapsule(W(h2.x, h2.y, h2.z), W(k2.x, k2.y, k2.z), 0.075f, 6, 3, pants);
-        DrawCapsule(W(k2.x, k2.y, k2.z), W(f2.x, f2.y, f2.z), 0.065f, 6, 3, pants);
-        DrawCapsule(W(f1.x, f1.y - 0.02f, f1.z), W(f1.x + sd * 0.10f, f1.y - 0.03f, f1.z + 0.08f), 0.045f, 6, 3, RAYWHITE);
-        DrawCapsule(W(f2.x, f2.y - 0.02f, f2.z), W(f2.x + sd * 0.12f, f2.y - 0.03f, f2.z + 0.04f), 0.045f, 6, 3, RAYWHITE);
+        hips[0] = (Vector3){ sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f };  feet[0] = (Vector3){ sd * 0.85f, 0.07f, 0.10f };
+        hips[1] = (Vector3){ -sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }; feet[1] = (Vector3){ -sd * 0.40f, 0.07f + lift, -0.20f };
+        knees[0] = TwoBone(hips[0], feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
+        knees[1] = TwoBone(hips[1], feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
+        toes[0] = sd * 1.0f; toes[1] = sd * 0.6f;
         if (!lunging) DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
     } else {
-        // 足：股関節・膝・足首。構えでは足を広げて膝を曲げ、走ると交互に踏み出して足を上げる
-        Vector3 hips[2];
         for (int i = 0; i < 2; i++) {
             float sd = i == 0 ? 1.0f : -1.0f;
             float p = ph + (i == 0 ? 0.0f : PI);
@@ -310,76 +440,109 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             float hc = cosf(hipYaw), hs = sinf(hipYaw);
             float bx = sd * width, bz = (sd == -sgnK ? 0.20f : -0.10f) * stanceK;
             Vector3 hip  = { sd * 0.10f * hc + leanV.x * 0.3f, hipY, -sd * 0.10f * hs + leanV.z * 0.3f };
-            Vector3 foot = { bx * hc + bz * hs + mdx * sinf(p) * stride, 0.06f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
+            Vector3 foot = { bx * hc + bz * hs + mdx * sinf(p) * stride, 0.07f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
                              -bx * hs + bz * hc + mdz * sinf(p) * stride };
             float toe = hipYaw + sd * 0.30f;                             // つま先の向き（少し外向き）
             if (overheadPose) {
                 // 横向きに構える：左足を前（つま先は右前のポストの方）、右足は後ろでベースラインと平行。
                 //   跳んだら右足を後ろに蹴り上げる
-                foot = (sd < 0) ? (Vector3){ -0.10f, 0.06f - jump, 0.26f }
-                                : (Vector3){ 0.26f, 0.06f - jump + 0.25f * ohU, -0.24f - 0.20f * ohU };
+                foot = (sd < 0) ? (Vector3){ -0.10f, 0.07f - jump, 0.26f }
+                                : (Vector3){ 0.26f, 0.07f - jump + 0.25f * ohU, -0.24f - 0.20f * ohU };
                 if (jump > 0.0f) foot.y += jump * 0.6f;   // 跳んでいる間は足も浮く
                 toe = (sd < 0) ? 0.75f : 1.50f;
                 hip.x = sd * 0.10f * cosf(0.9f); hip.z = -sd * 0.10f * sinf(0.9f) + leanV.z * 0.3f;
             }
             Vector3 hint = { sd * 0.25f * cosf(hipYaw) + sinf(hipYaw), 0.0f, -sd * 0.25f * sinf(hipYaw) + cosf(hipYaw) };
-            Vector3 knee = TwoBone(hip, foot, 0.44f, 0.44f, hint);
-            DrawCapsule(W(hip.x, hip.y, hip.z), W(knee.x, knee.y, knee.z), 0.075f, 6, 3, pants);
-            DrawCapsule(W(knee.x, knee.y, knee.z), W(foot.x, foot.y, foot.z), 0.062f, 6, 3, pants);
-            float tx = sinf(toe), tz = cosf(toe);
-            DrawCapsule(W(foot.x - tx * 0.04f, foot.y - 0.02f, foot.z - tz * 0.04f),
-                        W(foot.x + tx * 0.13f, foot.y - 0.03f, foot.z + tz * 0.13f), 0.045f, 6, 3, RAYWHITE);
-            hips[i] = hip;
+            hips[i] = hip; feet[i] = foot; toes[i] = toe;
+            knees[i] = TwoBone(hip, foot, 0.44f, 0.44f, hint);
         }
-        // 腰の線（腰が回っているのが見えるように）
-        DrawCapsule(W(hips[0].x, hips[0].y + 0.03f, hips[0].z), W(hips[1].x, hips[1].y + 0.03f, hips[1].z), 0.085f, 6, 3, pants);
+    }
+    for (int i = 0; i < 2; i++) {
+        Vector3 hp = hips[i], kn = knees[i], ft = feet[i];
+        Vector3 mid = Vector3Lerp(hp, kn, 0.55f);                                // ショーツの裾
+        Vector3 sockTop = Vector3Lerp(kn, ft, 0.78f);
+        Limb(WV(kn), WV(ft), 0.050f, 0.040f, skin);                                // すね
+        Limb(WV(hp), WV(kn), 0.068f, 0.052f, skin);                                // 太もも
+        DrawCylinderEx(WV(hp), WV(mid), 0.092f, 0.088f, 10, shorts);               // ショーツ（脚の部分は少しゆったり）
+        DrawCylinderEx(WV(sockTop), WV(ft), 0.046f, 0.044f, 8, sock);              // ソックス
+        float tx = sinf(toes[i]), tz = cosf(toes[i]);
+        Vector3 heel = { ft.x - tx * 0.06f, ft.y - 0.035f, ft.z - tz * 0.06f };
+        Vector3 toeP = { ft.x + tx * 0.16f, ft.y - 0.045f, ft.z + tz * 0.16f };
+        Limb(WV(heel), WV(toeP), 0.047f, 0.040f, shoe);                            // シューズ
+        DrawCylinderEx(W(heel.x, heel.y - 0.035f, heel.z), W(toeP.x, toeP.y - 0.03f, toeP.z), 0.035f, 0.030f, 6, sole);
     }
 
-    // ---- 胴：骨盤から胸まで。肩の線はひねりに合わせて回る ----
-    Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.06f, leanV.z * 0.3f };
-    Vector3 chest  = { leanV.x, hipY + 0.50f, leanV.z };
-    float cy = cosf(yaw), sy = sinf(yaw);
-    Vector3 rShoulder = { chest.x + 0.21f * cy, hipY + 0.56f, chest.z - 0.21f * sy };
-    Vector3 lShoulder = { chest.x - 0.21f * cy, hipY + 0.56f, chest.z + 0.21f * sy };
-    DrawCapsule(W(pelvis.x, pelvis.y, pelvis.z), W(chest.x, chest.y, chest.z), 0.16f, 8, 4, shirt);
-    DrawCapsule(W(lShoulder.x, lShoulder.y, lShoulder.z), W(rShoulder.x, rShoulder.y, rShoulder.z), 0.075f, 6, 3, shirt);
-    DrawSphere(W(chest.x * 1.1f, hipY + 0.80f, chest.z * 1.1f), 0.12f, skin);
+    // ---- 胴：腰（ショーツ）→ ウエスト → 胸。胸は横に広く、肩の線はひねりに合わせて回る ----
+    float cy = cosf(yaw), sy = sinf(yaw), hcy = cosf(hipYaw), hsy = sinf(hipYaw);
+    Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.02f, leanV.z * 0.3f };
+    Vector3 waist  = { leanV.x * 0.55f, hipY + 0.20f, leanV.z * 0.55f };
+    Vector3 chest  = { leanV.x, hipY + 0.42f, leanV.z };
+    Vector3 rShoulder = { chest.x + 0.20f * cy, hipY + 0.55f, chest.z - 0.20f * sy };
+    Vector3 lShoulder = { chest.x - 0.20f * cy, hipY + 0.55f, chest.z + 0.20f * sy };
+    // ショーツの腰：左右の股関節を包む（丸くしない）
+    {
+        Vector3 hl = { pelvis.x - 0.085f * hcy, pelvis.y, pelvis.z + 0.085f * hsy };
+        Vector3 hr = { pelvis.x + 0.085f * hcy, pelvis.y, pelvis.z - 0.085f * hsy };
+        DrawCylinderEx(W(hl.x, hl.y - 0.05f, hl.z), W(hl.x, hl.y + 0.13f, hl.z), 0.10f, 0.105f, 10, shorts);
+        DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.13f, hr.z), 0.10f, 0.105f, 10, shorts);
+    }
+    // シャツ：ウエストから胸へ広がる。胸の左右に 2 本重ねて、横に広く前後に薄くする
+    for (int sd = -1; sd <= 1; sd += 2) {
+        Vector3 w0 = { waist.x + sd * 0.06f * hcy, waist.y - 0.10f, waist.z - sd * 0.06f * hsy };
+        Vector3 c1 = { chest.x + sd * 0.09f * cy, chest.y + 0.08f, chest.z - sd * 0.09f * sy };
+        DrawCylinderEx(WV(w0), WV(c1), 0.105f, 0.125f, 10, shirt);
+        DrawSphere(WV(c1), 0.125f, shirt);
+    }
+    Limb(WV(lShoulder), WV(rShoulder), 0.070f, 0.070f, shirt);
+    // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
+    Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
+    Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
+    DrawCylinderEx(WV(neckB), WV(head), 0.050f, 0.045f, 8, skin);
+    DrawSphere(WV(head), 0.105f, skin);
+    DrawSphere(W(head.x, head.y + 0.025f, head.z - 0.022f), 0.103f, hair);
+    if (a->headband.a) DrawCylinderEx(W(head.x, head.y + 0.025f, head.z), W(head.x, head.y + 0.060f, head.z), 0.110f, 0.108f, 14, a->headband);
 
     // ---- ラケットと腕 ----
-    int stroke; Vector3 tan;
-    Vector3 rl = RacketLocal(a, &stroke, &tan);
-    // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）。スライスのバックは片手
-    bool twoHands = (stroke == 1) && !a->slice && !a->oneHanded;   // 片手バックの選手もいる
-    Vector3 pivot = twoHands ? lShoulder : rShoulder;
-    Vector3 dir = Vector3Normalize(Vector3Subtract(rl, pivot));
-    Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));       // グリップ
-    // 手首：振り出しでは手が先に出てラケットの頭が遅れ（ラグ）、当たる瞬間にそろい、振り抜くと頭が追い越す
-    if (swinging && stroke != 2 && !(a->lastContact.volley && !a->lastContact.overhead)) {   // ボレーは手首を固める
-        SwingAnim pa = *a; pa.swingT = fmaxf(a->swingT - 0.01f, 0.0f);
-        int sk2; Vector3 tg2;
-        Vector3 rp = RacketLocal(&pa, &sk2, &tg2);
-        Vector3 v = Vector3Subtract(rl, rp);
-        if (Vector3Length(v) > 1e-4f) {
-            v = Vector3Normalize(v);
-            float lag = a->swingT < SWING_LEAD ? 0.18f * (1.0f - a->swingT / SWING_LEAD)
-                                               : -0.08f * Clamp01((a->swingT - SWING_LEAD) / 0.08f);
-            hand = Vector3Add(hand, Vector3Scale(v, lag));
+    // 右利き：ラケットはいつも右手。両手バックは左手を添える。片手バック・スライスは左手を離す
+    bool twoHands = (stroke == 1) && !a->slice && !a->oneHanded;
+    if (!hasHand) {
+        // サーブ・スマッシュ：肩から伸ばした腕の先にラケット
+        Vector3 dd = Vector3Normalize(Vector3Subtract(rl, rShoulder));
+        hand = Vector3Subtract(rl, Vector3Scale(dd, 0.55f));
+        if (swinging) {
+            SwingAnim pa = *a; pa.swingT = fmaxf(a->swingT - 0.01f, 0.0f);
+            int sk2; Vector3 tg2;
+            Vector3 rp = RacketLocal(&pa, &sk2, &tg2);
+            Vector3 v = Vector3Subtract(rl, rp);
+            if (Vector3Length(v) > 1e-4f) {
+                float lag = a->swingT < SWING_LEAD ? 0.18f * (1.0f - a->swingT / SWING_LEAD) : -0.08f * Clamp01((a->swingT - SWING_LEAD) / 0.08f);
+                hand = Vector3Add(hand, Vector3Scale(Vector3Normalize(v), lag));
+            }
         }
-    } else if (!swinging && a->windup > 0.0f && stroke != 2 && !a->atNet) {
-        // 構え：ラケットの頭を立てて手首を返す
-        hand = Vector3Add(hand, (Vector3){ 0.0f, -0.12f * a->windup, 0.10f * a->windup });
+        rdir = Vector3Normalize(Vector3Subtract(rl, hand));
     }
-    dir = Vector3Normalize(Vector3Subtract(rl, hand));
-    Vector3 neck = Vector3Subtract(rl, Vector3Scale(dir, 0.14f));       // ラケットの首
+    Vector3 neck = Vector3Add(hand, Vector3Scale(rdir, 0.28f));       // ラケットの首（のど）
     Vector3 shoulder = rShoulder, other = lShoulder;
     Vector3 otherHand;
     bool idle = !swinging && a->windup <= 0.0f;
-    if (twoHands)          otherHand = Vector3Add(hand, Vector3Scale(dir, 0.09f));         // グリップの少し上
-    else if (idle && move < 0.3f) otherHand = neck;                                        // 構え：左手をラケットの首に
-    else if (stroke == 2 && !swinging) otherHand = (Vector3){ -0.05f, hipY + 1.15f, 0.35f }; // サーブ・スマッシュの構え：左手を上に
-    else if (!swinging && a->windup > 0.0f) otherHand = (Vector3){ 0.25f * sgnK, hipY + 0.42f, 0.45f }; // 構え：左手で球を指す
-    else if (swinging)     otherHand = (Vector3){ -0.28f, hipY + 0.25f, 0.10f };          // 振っている間は体に引きつける
-    else                   otherHand = (Vector3){ lShoulder.x - 0.05f, hipY + 0.12f, lShoulder.z - sinf(ph) * 0.28f * move };   // 走り：足と逆に振る
+    float su = swinging ? a->swingT : 0.0f;
+    if (twoHands)                    otherHand = Vector3Add(hand, Vector3Scale(rdir, 0.10f));          // グリップの少し上
+    else if (stroke == 1 && !swinging && a->windup > 0.0f && !a->atNet) otherHand = neck;          // 片手バックの構え：左手で首を支える
+    else if (stroke == 1 && swinging && !volleyPose) {
+        // 片手バック・スライス：振り出しで左手を離し、後ろへ伸ばしてバランスを取る（両腕を広げる）
+        float r = Clamp01((su - 0.03f) / 0.12f);
+        Vector3 back = { -0.55f, hipY + 0.38f + 0.06f * a->grace, -0.42f };
+        otherHand = Vector3Lerp(su < 0.03f ? neck : Vector3Add(hand, Vector3Scale(rdir, 0.28f)), back, EaseOut(r));
+    }
+    else if (idle && move < 0.3f)    otherHand = neck;                                                  // 構え：左手をラケットの首に
+    else if (stroke == 2 && !swinging) otherHand = (Vector3){ -0.05f, hipY + 1.15f, 0.35f };            // サーブ・スマッシュの構え：左手を上に
+    else if (!swinging && a->windup > 0.0f) otherHand = (Vector3){ 0.32f * sgnK, hipY + 0.45f, 0.50f }; // 構え：左手を伸ばして球を指す
+    else if (swinging) {
+        // フォア：伸ばしていた左手を、振るのに合わせて胸に引きつける（体の回転を止める）
+        float r = EaseOut(Clamp01(su / 0.14f));
+        otherHand = Vector3Lerp((Vector3){ 0.30f, hipY + 0.45f, 0.48f }, (Vector3){ -0.22f, hipY + 0.40f, 0.18f }, r);
+    }
+    else otherHand = (Vector3){ lShoulder.x + 0.04f, hipY + 0.30f + 0.06f * cosf(ph), lShoulder.z + 0.12f - sinf(ph) * 0.26f * move };   // 走り：肘を曲げて足と逆に振る
 
     // スイングの軌跡（振った直後だけ）
     if (a->swingT >= 0.0f && a->swingT < SWING_TIME * 0.8f) {
@@ -389,31 +552,37 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             float t = -0.12f + (a->swingT + 0.12f) * (float)i / 14.0f;   // 少し前から今まで
             Vector3 p, tg; int sk;
             if (t < 0.0f) {
-                // 振り始め：テイクバックから当たる点まで
                 tmp.swingT = -1.0f; tmp.windup = 1.0f + t / 0.12f;
                 tmp.windStroke = a->lastContact.overhead ? 2 : (a->lastContact.forehand ? 0 : 1);
             } else {
                 tmp.swingT = t; tmp.windup = 0.0f;
             }
             p = RacketLocal(&tmp, &sk, &tg);
-            if (i > 0) DrawLine3D(W(prev.x, prev.y, prev.z), W(p.x, p.y, p.z), Fade(RAYWHITE, 0.25f + 0.05f * i));
+            if (i > 0) DrawLine3D(WV(prev), WV(p), Fade(RAYWHITE, 0.25f + 0.05f * i));
             prev = p;
         }
     }
 
-    // 腕：肩・肘・手首。肘は下外側に曲がる
-    {
-        Vector3 e1 = TwoBone(shoulder, hand, 0.31f, 0.30f, (Vector3){ 0.6f, -1.0f, -0.2f });
-        Vector3 e2 = TwoBone(other, otherHand, 0.31f, 0.30f, (Vector3){ -0.6f, -1.0f, -0.2f });
-        DrawCapsule(W(shoulder.x, shoulder.y, shoulder.z), W(e1.x, e1.y, e1.z), 0.052f, 6, 3, skin);
-        DrawCapsule(W(e1.x, e1.y, e1.z), W(hand.x, hand.y, hand.z), 0.045f, 6, 3, skin);
-        DrawCapsule(W(other.x, other.y, other.z), W(e2.x, e2.y, e2.z), 0.052f, 6, 3, skin);
-        DrawCapsule(W(e2.x, e2.y, e2.z), W(otherHand.x, otherHand.y, otherHand.z), 0.045f, 6, 3, skin);
+    // 腕：肩・肘・手首。半袖。肘は下外側に曲がる
+    for (int arm = 0; arm < 2; arm++) {
+        Vector3 s0 = arm == 0 ? shoulder : other, hd = arm == 0 ? hand : otherHand;
+        Vector3 hint = arm == 0 ? (Vector3){ 0.6f, -1.0f, -0.2f } : (Vector3){ -0.6f, -1.0f, -0.2f };
+        if (idle) { hint.x *= 0.35f; hint.z = 0.15f; }
+        if (idle && move >= 0.3f && arm == 1) hint = (Vector3){ -0.15f, -0.5f, -1.0f };   // 走り：肘は後ろへ   // 構え：肘は体の前に軽く曲げる（横に張ると腰に手を当てたように見える）
+        Vector3 el = TwoBone(s0, hd, 0.31f, 0.30f, hint);
+        Vector3 sleeve = Vector3Lerp(s0, el, 0.45f);
+        Limb(WV(s0), WV(el), 0.050f, 0.043f, skin);
+        Limb(WV(el), WV(hd), 0.042f, 0.034f, skin);
+        DrawCylinderEx(WV(s0), WV(sleeve), 0.072f, 0.066f, 8, shirt);   // 袖
+        DrawSphere(WV(hd), 0.042f, skin);
+        if (a->headband.a && arm == 0)   // ヘッドバンドの選手はリストバンドも
+            DrawCylinderEx(WV(Vector3Lerp(el, hd, 0.78f)), WV(Vector3Lerp(el, hd, 0.92f)), 0.046f, 0.044f, 8, a->headband);
     }
-    DrawCylinderEx(W(hand.x, hand.y, hand.z), W(neck.x, neck.y, neck.z), 0.015f, 0.015f, 6, frame);
-    Vector3 nW = Vector3Subtract(W(tan.x, tan.y, tan.z), W(0, 0, 0));
-    DrawRacketHead(W(rl.x, rl.y, rl.z), nW, frame);
+    Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
+    Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));
+    DrawRacket(WV(hand), dW, nW, frame);
     #undef W
+    #undef WV
 }
 
 const char *ResultText(ShotResult r)

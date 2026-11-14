@@ -1220,12 +1220,14 @@ int main(void)
             DrawCourt();
 
             // プレイヤー（-z 向き）と AI（+z 向き）
+            ApplyLook(&P.anim, -1); ApplyLook(&bot.anim, -1);
             DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
             {
                 ai.anim.lefty = PERSONAS[ai.persona].lefty;          // 構えやポイントの間も、いつも選手の利き手で描く
                 ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
+                ApplyLook(&ai.anim, ai.persona);
                 DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
             }
             // サーブの構え：トスの前はボールを手に持っている

@@ -309,6 +309,9 @@ typedef struct {
     bool    oneHanded;     // 片手バックハンド
     float   velX, velZ;    // 走っている速さ（体から見て：x=右、z=前）
     bool    slice;         // スライス系（スライス・スライスロブ・ドロップ）：上から下に切る振り方。バックは片手
+    // 見た目（選手ごと）
+    float   grace;         // 優雅さ（0〜1）：フォロースルーが高く大きい
+    Color   hair, shorts, headband;   // headband.a == 0 ならなし
 } SwingAnim;
 
 // ---- 定数（ほかのファイルから移したもの） ----
@@ -554,6 +557,10 @@ Vector3 LocalToWorld(Vector3 base, bool facingNegZ, Vector3 l);
 float EaseOut(float u);
 Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent);
 void DrawRacketHead(Vector3 center, Vector3 normal, Color frame);
+void DrawRacket(Vector3 hand, Vector3 dir, Vector3 normal, Color frame);
+Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 *hand, Vector3 *dir, bool *hasHand);
+// 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
+void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);

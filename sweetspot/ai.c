@@ -484,6 +484,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
     ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
     ai->anim.lefty = pp->lefty; ai->anim.oneHanded = pp->oneHanded;
+    ApplyLook(&ai->anim, ai->persona);
     ai->anim.atNet = ai->pos.z > -VOICE_NET_Z;   // AI はネットが +z 側
     ai->anim.velX = -ai->vel.x; ai->anim.velZ = ai->vel.z;   // AI は +z 向き
     // 飛びついて倒れている間は動けない
