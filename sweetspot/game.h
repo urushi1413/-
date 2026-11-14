@@ -95,6 +95,12 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
 #define RAGE_ERR         0.25f   //   打球のぶれが減る
 #define RAGE_LAPSE       0.50f   //   打ち損じが減る
 #define RAGE_DECAY_GAME  0.80f   // ゲームが終わるたびに怒りがこの割合に弱まる
+#define FWD_ASSIST_Z0    11.0f   // 前で打つストロークの手助け：ネットからこの距離より前で効き始め
+#define FWD_ASSIST_Z1     6.5f   //   ここ（サービスラインのあたり）より前で最大
+#define FWD_SPIN_ADD      0.8f   //   トップスピンの上乗せ（最大で 1.8 倍）
+#define FWD_SPIN_ADD_FLAT 1.6f   //   フラットドライブは（最大で 2.6 倍）
+#define FWD_PITCH_CUT     0.45f  //   上下のぶれを減らす割合
+#define FWD_REBOUND_CUT   0.60f  //   沈んでくる球で下へずれる分を減らす割合
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大

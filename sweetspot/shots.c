@@ -123,6 +123,11 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
     if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
     if (gWomen) { kmh *= WOMEN_SHOT_K; rpm *= WOMEN_SPIN_K; }   // 女子は少し遅く、回転も少ない
+    // 前（ベースラインより内側）で打つストローク：速さはそのままで、ベースラインと同じくらい入るようにする。
+    //   前ほどトップスピンを強くかけて（コートに落とす）、上下のぶれも小さくする。前に出た球がチャンスになるように
+    float fwd = (!c->volley && !c->overhead && !c->isReturn && sp->touchAngle <= 0.0f)
+              ? Clamp01((FWD_ASSIST_Z0 - fabsf(ballPos.z)) / (FWD_ASSIST_Z0 - FWD_ASSIST_Z1)) : 0.0f;
+    if (rpm > 0.0f) rpm *= 1.0f + (type == SHOT_FLAT ? FWD_SPIN_ADD_FLAT : FWD_SPIN_ADD) * fwd;   // フラットはもともと回転が少ないので多めに
     if (type == SHOT_SLICE && gSliceEdge > 0.0f) {   // キレのあるスライス：速く、逆回転が強い（低く滑る）
         kmh *= 1.0f + 0.15f * gSliceEdge;
         rpm *= 1.0f + 0.30f * gSliceEdge;
@@ -181,7 +186,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         // 速い球ほど、角度が少しずれただけで遠くまで外れる。外れる距離がそろうように、速い球ほど角度のぶれを小さく
         float speedScale = Clamp(PITCH_ERR_REF_MS / fmaxf(kmh / 3.6f, 1.0f), 0.35f, 1.5f);
         angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * speedScale
-               * (c->volley && !c->overhead ? VOLLEY_PITCH_ERR : 1.0f) * DEG2RAD;
+               * (c->volley && !c->overhead ? VOLLEY_PITCH_ERR : 1.0f) * (1.0f - FWD_PITCH_CUT * fwd) * DEG2RAD;
         angErr = Clamp(angErr, -PITCH_ERR_MAX * speedScale * DEG2RAD, PITCH_ERR_MAX * speedScale * DEG2RAD);   // とんでもなく長い・短い球にはしない（速い球ほど上限も小さく）
         // 跳ね返りの分は、来た球の上下の動きを持ったまま出ていく：
         //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
@@ -190,7 +195,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         //   リターンは遅く合わせる分もともと高い弾道になるので、上へのずれは半分（入るが浮く）
         angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
                 * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f)
-                * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f));   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
+                * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f))   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
+                * (1.0f - FWD_REBOUND_CUT * fwd);   // 前の球は面で押さえやすい
         ang += angErr;
     }
 
