@@ -377,6 +377,7 @@ int main(void)
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
+            ai.anim.celebT = 0.0f;
             netFlag[0] = netFlag[1] = false;
             // このポイントの大事さ（勝負強い選手が強くなる）
             {
@@ -716,8 +717,10 @@ int main(void)
                 }
             } else {
                 aiTossT += simDt;
-                if (aiTossT - simDt < AI_TOSS_HIT_T - GRUNT_LEAD && aiTossT >= AI_TOSS_HIT_T - GRUNT_LEAD)
-                    aiGrunt = SfxGruntPre(Vector3Distance(cam.position, ai.pos));
+                float lead = SfxGruntLead(ai.persona);
+                if (aiTossT - simDt < AI_TOSS_HIT_T - lead && aiTossT >= AI_TOSS_HIT_T - lead &&
+                    RandRange(0.0f, 1.0f) < fminf(1.0f, SfxGruntChance(ai.persona) + 0.3f))   // サーブは声が出やすい
+                    aiGrunt = SfxGruntPreBy(ai.persona, Vector3Distance(cam.position, ai.pos));
                 ai.anim.windStroke = 2;
                 ai.anim.windup = 0.3f + 0.7f * Clamp01(aiTossT / SERVE_CHARGE_TIME);
             }
@@ -965,11 +968,12 @@ int main(void)
                 SfxFootwork(2 + GetRandomValue(0, 1), Vector3Distance(cam.position, ai.pos));
                 aiFoot = true;
             }
-            // AI の打つ前の声：6 割の確率で。ネット前は声なし
+            // AI の打つ前の声：選手ごとの確率で（フェデラーはほとんど出さない、ナダルはほぼ毎回）。ネット前は声なし
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && !aiGruntTried && ball.bounces >= 1 &&
-                ball.age >= ai.swingAge - GRUNT_LEAD) {
+                ball.age >= ai.swingAge - SfxGruntLead(ai.persona)) {
                 aiGruntTried = true;
-                if (ai.pos.z < -VOICE_NET_Z && GetRandomValue(0, 99) < 60) aiGrunt = SfxGruntPre(Vector3Distance(cam.position, ai.pos));
+                if (ai.pos.z < -VOICE_NET_Z && RandRange(0.0f, 1.0f) < SfxGruntChance(ai.persona))
+                    aiGrunt = SfxGruntPreBy(ai.persona, Vector3Distance(cam.position, ai.pos));
             }
             if (botControls && phase == PH_PLAY && bot.planned && !botGruntTried && ball.lastHitter == HITTER_OPP && ball.bounces >= 1 &&
                 ball.age >= bot.swingAge - GRUNT_LEAD) {
@@ -1180,6 +1184,26 @@ int main(void)
                             snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", nm, nm);
                         }
                         rageMsgT = SMASH_TIME + 2.5f;
+                        SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos));
+                    }
+                }
+                // ---- ポイント後のしぐさ：大事なポイント・長いラリーで喜ぶ。マレーは落とすと怒る ----
+                if (ai.anim.smashT <= 0.0f) {
+                    bool gameEnded2 = gamesAfter != gamesBefore || score.nSetsDone != setsBefore;
+                    bool big = gPointImportance >= 1.0f || (gPointImportance >= 0.5f && gameEnded2) || rallyHits >= 12;
+                    const CelebStyle *cs = &CELEB_STYLE[ai.persona % PERSONA_COUNT];
+                    int kind = CELEB_NONE;
+                    if (winner == 1 && cs->win != CELEB_NONE) {
+                        float ch = cs->winChance * (big ? 1.0f : ((endKind == 1 || endKind == 2) ? 0.22f : 0.0f));
+                        if (RandRange(0.0f, 1.0f) < ch) { kind = cs->win; SfxCelebrate(ai.persona, Vector3Distance(cam.position, ai.pos)); }
+                    } else if (winner == 0 && cs->lose != CELEB_NONE) {
+                        float ch = cs->loseChance * (big ? 1.0f : ((endKind == 3 && hitter == 1) ? 0.5f : 0.15f));
+                        if (RandRange(0.0f, 1.0f) < ch) { kind = cs->lose; SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
+                    }
+                    if (kind != CELEB_NONE) {
+                        ai.anim.celebKind = kind; ai.anim.celebT = CELEB_TIME;
+                        ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
+                        phaseTimer = fmaxf(phaseTimer, CELEB_TIME + 0.4f);
                     }
                 }
             }
@@ -1193,6 +1217,12 @@ int main(void)
                 ai.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
                 smashPrevE = e1;
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
+                ai.vel = (Vector3){ 0 };
+                ai.anim.velX = ai.anim.velZ = 0.0f;
+            }
+            else if (ai.anim.celebT > 0.0f) {
+                // 喜ぶ・怒る間はその場で
+                ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
             }
@@ -1268,6 +1298,10 @@ int main(void)
                 ai.anim.lefty = PERSONAS[ai.persona].lefty;          // 構えやポイントの間も、いつも選手の利き手で描く
                 ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 ApplyLook(&ai.anim, ai.persona);
+                {   // マレー：ポイントの間は背中を丸めてうつむいて歩く
+                    float want = (ai.persona == 4 && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && ai.anim.celebT <= 0.0f) ? 1.0f : 0.0f;
+                    ai.anim.slouch += (want - ai.anim.slouch) * Clamp01(frameDt * 3.0f);
+                }
                 DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
             }
             // サーブの構え：トスの前はボールを手に持っている

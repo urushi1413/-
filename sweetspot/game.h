@@ -82,6 +82,8 @@ typedef struct {
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
 #define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
+#define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
+enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT };
 #define SMASH_TIME       2.2f    // ラケットを叩きつける見た目の長さ（秒）
 #define RAGE_TIMING      0.35f   // 怒りが最大のとき：タイミングのばらつきがこれだけ減る
 #define RAGE_POS         0.30f   //   立ち位置のずれが減る
@@ -320,6 +322,9 @@ typedef struct {
     float   grace;         // 優雅さ（0〜1）：フォロースルーが高く大きい
     Color   hair, shorts, headband;   // headband.a == 0 ならなし
     int     fhStyle;       // フォアの振り方：0 = 普通（反対の肩に巻きつける）、1 = ナダル（頭の上へ振り上げる「投げ縄」）
+    float   celebT;        // ポイント後のしぐさの残り時間（0 ならしていない）
+    int     celebKind;     // しぐさの種類（CELEB_*）
+    float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
 } SwingAnim;
@@ -529,7 +534,10 @@ extern float gRiseSkill;
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
-extern const float RAGE_SMASH[PERSONA_COUNT];   // 追い込まれたときにラケットを叩きつける確率
+extern const float RAGE_SMASH[PERSONA_COUNT];
+// ポイント後のしぐさ：取ったとき（大事なポイント・長いラリー）と、落としたとき
+typedef struct { int win; float winChance; int lose; float loseChance; } CelebStyle;
+extern const CelebStyle CELEB_STYLE[PERSONA_COUNT];   // 追い込まれたときにラケットを叩きつける確率
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];
 extern const char *STYLE_NAMES[STYLE_COUNT];
@@ -688,6 +696,11 @@ bool  SfxGruntPre(float dist);
 void  SfxCallFault(void);
 void  SfxCallOut(void);
 void  SfxRacketSmash(float dist);
+bool  SfxGruntPreBy(int who, float dist);   // who：選手の番号（-1 は人間）
+float SfxGruntLead(int who);
+float SfxGruntChance(int who);
+void  SfxCelebrate(int who, float dist);
+void  SfxAngry(int who, float dist);
 void  SfxStopApplause(void);
 void  SfxFootwork(int n, float dist);
 void  SfxUpdate(void);

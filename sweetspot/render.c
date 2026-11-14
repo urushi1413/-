@@ -214,6 +214,18 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
         for (int i = 0; i < 8; i++) { k[i] = *K[i]; k[i].t = T[i]; }
         SampleKeys(k, 8, SMASH_TIME - a->smashT, &h, &d, &f);
         *strokeOut = 0;
+    } else if (a->celebT > 0.0f && a->celebKind != CELEB_NONE) {
+        // ポイント後のしぐさ：ラケットを持つ手（もう片方の手と脚は DrawFigure で）
+        float e = CELEB_TIME - a->celebT, k = Clamp01(e / 0.18f) * Clamp01(a->celebT / 0.30f);
+        Vector3 h0 = { 0.32f, 0.88f, 0.12f }, d0 = { 0.15f, -0.55f, 0.82f }, h1 = h0, d1 = d0;
+        switch (a->celebKind) {
+            case CELEB_ROAR:   h1 = V3(0.62f, 1.55f, 0.05f); d1 = V3(0.55f, 0.75f, -0.25f); break;                   // 両腕を広げて吠える
+            case CELEB_COMEON: h1 = V3(0.36f, 1.28f + 0.03f * sinf(e * 25.0f), 0.22f); d1 = V3(0.15f, 0.95f, 0.10f); break;   // 両方の拳を握って力こぶ
+            case CELEB_RANT:   h1 = V3(0.55f, 1.00f + 0.06f * sinf(e * 8.0f), 0.38f); d1 = V3(0.60f, -0.20f, 0.70f); break;   // 両手を広げてボックスに文句
+            default: break;
+        }
+        h = Vector3Lerp(h0, h1, k); d = Vector3Normalize(Vector3Lerp(d0, d1, k)); f = V3(1, 0, 0);
+        *strokeOut = 0;
     } else if (a->swingT >= 0.0f && a->swingT < SWING_TIME) {
         const Contact *c = &a->lastContact;
         Vector3 cl = a->contactLocal;
@@ -437,6 +449,15 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         } else hipY -= 0.06f * Clamp01(a->windup);
         stanceK *= 0.25f;   // 足は前後に開かない（オープンスタンス）
     }
+    // ポイント後のしぐさ
+    float ce = CELEB_TIME - a->celebT, ck = (a->celebT > 0.0f && a->smashT <= 0.0f) ? Clamp01(ce / 0.18f) * Clamp01(a->celebT / 0.30f) : 0.0f;
+    int ckind = ck > 0.0f ? a->celebKind : CELEB_NONE;
+    float vamosUp = 0.5f + 0.5f * sinf(ce * 2.0f * PI * 1.6f - PI * 0.5f);   // バモス：拳を突き上げるリズム
+    if (ckind == CELEB_VAMOS)  { hipY -= 0.08f * ck; leanV.z += 0.10f * ck; }
+    if (ckind == CELEB_ROAR)   { leanV.z -= 0.10f * ck; }
+    if (ckind == CELEB_COMEON) { hipY -= 0.12f * ck; leanV.z += 0.16f * ck; }
+    if (ckind == CELEB_RANT)   { leanV.z += 0.10f * ck; }
+    leanV.z += 0.12f * a->slouch;              // 背中を丸める
     if (a->smashT > 0.0f) {                    // 叩きつけるたびに前へかがむ
         float down = Clamp01((1.9f - hand.y) / 1.3f);
         leanV.z += 0.28f * down; hipY -= 0.10f * down;
@@ -504,6 +525,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 toe = (sd < 0) ? 0.75f : 1.50f;
                 hip.x = sd * 0.10f * cosf(0.9f); hip.z = -sd * 0.10f * sinf(0.9f) + leanV.z * 0.3f;
             }
+            if (ckind == CELEB_VAMOS && sd < 0) {   // バモス：拳を突き上げるのと一緒に左膝を上げる
+                foot.y += 0.32f * ck * vamosUp; foot.z += 0.18f * ck * vamosUp;
+            }
             Vector3 hint = { sd * 0.25f * cosf(hipYaw) + sinf(hipYaw), 0.0f, -sd * 0.25f * sinf(hipYaw) + cosf(hipYaw) };
             hips[i] = hip; feet[i] = foot; toes[i] = toe;
             knees[i] = TwoBone(hip, foot, 0.44f, 0.44f, hint);
@@ -549,6 +573,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
     Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
     Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
+    head.y -= 0.04f * a->slouch; head.z += 0.05f * a->slouch;                   // うつむく
+    if (ckind == CELEB_RANT)  head.x += 0.03f * sinf(ce * 12.0f) * ck;          // 首を振る
+    if (ckind == CELEB_ROAR)  { head.z -= 0.03f * ck; head.y += 0.02f * ck; }   // 天を仰ぐ
     DrawCylinderEx(WV(neckB), WV(head), 0.050f, 0.045f, 8, skin);
     DrawSphere(WV(head), 0.105f, skin);
     DrawSphere(W(head.x, head.y + 0.025f, head.z - 0.022f), 0.103f, hair);
@@ -579,6 +606,18 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     bool idle = !swinging && a->windup <= 0.0f;
     float su = swinging ? a->swingT : 0.0f;
     if (a->smashT > 0.0f)            otherHand = (Vector3){ -0.32f, hipY + 0.32f, 0.12f };            // 叩きつけ：片手で
+    else if (ckind != CELEB_NONE) {
+        Vector3 rest = { -0.28f, hipY + 0.30f, 0.15f }, to = rest;
+        switch (ckind) {
+            case CELEB_FIST:   to = (Vector3){ -0.12f, hipY + 0.50f + 0.04f * sinf(ce * 14.0f), 0.32f }; break;   // 小さく拳を握る
+            case CELEB_VAMOS:  to = (Vector3){ -0.24f, hipY + 0.18f + 0.60f * vamosUp, 0.22f + 0.10f * vamosUp }; break;   // 拳を下から突き上げる
+            case CELEB_ROAR:   to = (Vector3){ -0.62f, hipY + 0.68f, 0.05f }; break;
+            case CELEB_COMEON: to = (Vector3){ -0.36f, hipY + 0.42f + 0.03f * sinf(ce * 25.0f), 0.22f }; break;
+            case CELEB_RANT:   to = (Vector3){ -0.55f, hipY + 0.16f + 0.06f * sinf(ce * 8.0f), 0.38f }; break;
+            default: break;
+        }
+        otherHand = Vector3Lerp(rest, to, ck);
+    }
     else if (twoHands)               otherHand = Vector3Add(hand, Vector3Scale(rdir, 0.10f));          // グリップの少し上
     else if (stroke == 1 && !swinging && a->windup > 0.0f && !a->atNet) otherHand = neck;          // 片手バックの構え：左手で首を支える
     else if (stroke == 1 && swinging && !volleyPose) {

@@ -29,6 +29,15 @@ const AiLevel AI_LEVELS[3] = {
 // 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
 const float RAGE_SMASH[PERSONA_COUNT] = { 0.0f, 0.0f, 0.75f, 0.0f, 0.0f };   // ジョコビッチだけ
 
+// ポイント後のしぐさ（大事なポイントでの確率。普通のポイントでもウィナーなら少し、マレーは自分のミスでも怒る）
+const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
+    { CELEB_FIST,   0.30f, CELEB_NONE, 0.00f },   // AI
+    { CELEB_FIST,   0.55f, CELEB_NONE, 0.00f },   // フェデラー：小さく拳を握る「カモン」
+    { CELEB_ROAR,   0.75f, CELEB_NONE, 0.00f },   // ジョコビッチ：両腕を広げて吠える（怒るとラケットを叩きつける）
+    { CELEB_VAMOS,  0.90f, CELEB_NONE, 0.00f },   // ナダル：拳を下から突き上げ、膝を上げて「バモス！」
+    { CELEB_COMEON, 0.85f, CELEB_RANT, 0.55f },   // マレー：両拳で力こぶ「カモン！」。落とすとボックスに向かって両手を広げて文句
+};
+
 // 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
 const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
