@@ -140,6 +140,12 @@ void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float di
     else                Play(S_HIT_GOOD, S_HIT_OK, vol, Jitter());
 }
 
+// ラケットを地面に叩きつける音（フレームの音を低く、大きく）
+void SfxRacketSmash(float dist)
+{
+    Play(S_HIT_FRAME, S_HIT_BAD, 1.0f * DistVol(dist), 0.70f + GetRandomValue(-30, 30) / 1000.0f);
+}
+
 void SfxServe(float q, float kmh, bool voice, float dist)
 {
     SfxHit(q, kmh, false, voice, false, dist);

@@ -137,7 +137,9 @@ int main(void)
     MatchStats ms[2] = { 0 };          // 試合の統計（マッチサマリー）
     bool  netFlag[2] = { false };      // このポイントでネットに出たか
     int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
-    bool  setBreak = false;            // セット間：統計を見せて、Enter / クリックで次のセットへ
+    bool  setBreak = false;
+    char  rageMsg[160] = { 0 };          // ラケットを叩きつけたときの表示（審判のコール）
+    float rageMsgT = 0.0f, smashPrevE = 0.0f;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
     bool  showSummary = false;
     int   rallyHits = 0;
@@ -374,6 +376,7 @@ int main(void)
         int server = CurrentServer(&score);
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
+            ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             netFlag[0] = netFlag[1] = false;
             // このポイントの大事さ（勝負強い選手が強くなる）
             {
@@ -1153,10 +1156,47 @@ int main(void)
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
+                // ---- 追い込まれた選手がラケットを叩きつける（ジョコビッチ）。叩きつけた後はしばらく強くなる ----
+                {
+                    bool setEnded = score.nSetsDone != setsBefore;
+                    bool gameEnded = gamesAfter != gamesBefore || setEnded;
+                    if (gameEnded) ai.rage *= setEnded ? 0.7f : RAGE_DECAY_GAME;   // 時間がたつと落ち着く
+                    bool downBreak = gameEnded && !setEnded && score.games[0] - score.games[1] >= 2;
+                    if (winner == 0 && !score.over && (setEnded || downBreak) && ai.rageSet != score.nSetsDone + 1 &&
+                        RandRange(0.0f, 1.0f) < RAGE_SMASH[ai.persona % PERSONA_COUNT]) {
+                        ai.rageSet = score.nSetsDone + 1;   // 1 セットに 1 回まで
+                        ai.smashes++;
+                        ai.rage = 1.0f;
+                        ai.anim.smashT = SMASH_TIME;
+                        ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
+                        smashPrevE = 0.0f;
+                        phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.6f);
+                        const char *nm = PERSONAS[ai.persona].shortName;
+                        if (ai.smashes == 1) {
+                            snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", nm, nm);
+                        } else {
+                            // 2 回目からはポイントペナルティ（ゲームの始まりなので、これでゲームが終わることはない）
+                            AwardPoint(&score, 0);
+                            snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", nm, nm);
+                        }
+                        rageMsgT = SMASH_TIME + 2.5f;
+                    }
+                }
             }
         } else if (mode == MODE_MATCH && (phase == PH_BETWEEN || phase == PH_POINT_OVER)) {
             phaseTimer -= simDt;
-            if (phase == PH_POINT_OVER) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
+            if (ai.anim.smashT > 0.0f) {
+                // ラケットを叩きつけている間は動かない。地面に当たるたびに音、1 回目でラケットが曲がる
+                float e0 = smashPrevE, e1 = SMASH_TIME - fmaxf(ai.anim.smashT - simDt, 0.0f);
+                const float hits[3] = { 0.52f, 0.90f, 1.26f };
+                for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos));
+                ai.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
+                smashPrevE = e1;
+                ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
+                ai.vel = (Vector3){ 0 };
+                ai.anim.velX = ai.anim.velZ = 0.0f;
+            }
+            else if (phase == PH_POINT_OVER) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
             if (phaseTimer <= 0.0f && setBreak) {
                 // セット間：統計を出して待つ（オートパイロットなら 6 秒で進む）
                 summaryT += frameDt;
@@ -1576,6 +1616,14 @@ int main(void)
                 int w = MeasureText(call, 48);
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
                 DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
+            }
+            // ラケットを叩きつけた：審判のコール
+            if (rageMsgT > 0.0f && rageMsg[0]) {
+                rageMsgT -= frameDt;
+                int w = MeasureText(rageMsg, 26);
+                float al = Clamp01(rageMsgT / 0.5f);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 18, 290, w + 36, 76, Fade((Color){ 120, 20, 20, 255 }, 0.80f * al));
+                DrawText(rageMsg, GetScreenWidth() / 2 - w / 2, 300, 26, Fade(RAYWHITE, al));
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)

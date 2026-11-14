@@ -82,6 +82,13 @@ typedef struct {
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
 #define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
+#define SMASH_TIME       2.2f    // ラケットを叩きつける見た目の長さ（秒）
+#define RAGE_TIMING      0.35f   // 怒りが最大のとき：タイミングのばらつきがこれだけ減る
+#define RAGE_POS         0.30f   //   立ち位置のずれが減る
+#define RAGE_SPEED       0.25f   //   走る速さの上乗せ（m/s）
+#define RAGE_ERR         0.25f   //   打球のぶれが減る
+#define RAGE_LAPSE       0.50f   //   打ち損じが減る
+#define RAGE_DECAY_GAME  0.80f   // ゲームが終わるたびに怒りがこの割合に弱まる
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
@@ -312,6 +319,9 @@ typedef struct {
     // 見た目（選手ごと）
     float   grace;         // 優雅さ（0〜1）：フォロースルーが高く大きい
     Color   hair, shorts, headband;   // headband.a == 0 ならなし
+    int     fhStyle;       // フォアの振り方：0 = 普通（反対の肩に巻きつける）、1 = ナダル（頭の上へ振り上げる「投げ縄」）
+    float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
+    float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
 } SwingAnim;
 
 // ---- 定数（ほかのファイルから移したもの） ----
@@ -405,6 +415,10 @@ typedef struct {
     float   lastQ, lastKmh;
     bool    lastServe;     // 最後に打ったのがサーブか（表示用）
     int     persona;       // 選手（PERSONAS の番号。0 は癖なし）
+    // 追い込まれてラケットを叩きつけると、しばらく強くなる（ジョコビッチ）
+    float   rage;          // 0〜1。ゲームが終わるたびに弱まる
+    int     smashes;       // この試合で叩きつけた回数（2 回目からはポイントペナルティ）
+    int     rageSet;       // 最後に叩きつけたセット（+1。0 はまだ）
 } Opponent;
 
 typedef struct {
@@ -515,6 +529,7 @@ extern float gRiseSkill;
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
+extern const float RAGE_SMASH[PERSONA_COUNT];   // 追い込まれたときにラケットを叩きつける確率
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];
 extern const char *STYLE_NAMES[STYLE_COUNT];
@@ -672,6 +687,7 @@ void  SfxTest(void);
 bool  SfxGruntPre(float dist);
 void  SfxCallFault(void);
 void  SfxCallOut(void);
+void  SfxRacketSmash(float dist);
 void  SfxStopApplause(void);
 void  SfxFootwork(int n, float dist);
 void  SfxUpdate(void);

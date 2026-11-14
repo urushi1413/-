@@ -26,6 +26,9 @@ const AiLevel AI_LEVELS[3] = {
     { "PRO",    6.2f, 0.22f,  7.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
 };
 
+// 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
+const float RAGE_SMASH[PERSONA_COUNT] = { 0.0f, 0.0f, 0.75f, 0.0f, 0.0f };   // ジョコビッチだけ
+
 // 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
 const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
@@ -64,6 +67,14 @@ AiLevel EffLevel(const Opponent *ai)
     L.timingSigmaMs *= 1.0f - 0.50f * k;
     L.reaction      = fmaxf(0.10f, L.reaction - 0.05f * k);
     L.serveSkill    = Clamp(L.serveSkill + 0.06f * k, 0.3f, 0.97f);
+    // ラケットを叩きつけた後：吹っ切れて集中する
+    float r = Clamp01(ai->rage);
+    L.timingSigmaMs *= 1.0f - RAGE_TIMING * r;
+    L.posErr        *= 1.0f - RAGE_POS * r;
+    L.speed         += RAGE_SPEED * r;
+    L.reaction      = fmaxf(0.10f, L.reaction - 0.03f * r);
+    L.aggression    = Clamp01(L.aggression + 0.10f * r);
+    L.serveSkill    = Clamp(L.serveSkill + 0.04f * r, 0.3f, 0.97f);
     return L;
 }
 
@@ -357,7 +368,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     static const float LEVEL_ERR[3] = { 1.5f, 1.0f, 0.8f };   // 難易度でミスの量が変わる
     gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
-            * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);         // 得意なコートほどミスが減る
+            * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
+            * (1.0f - RAGE_ERR * Clamp01(ai->rage));                            // ラケットを叩きつけた後はミスが減る
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     sAttack = false;
     bool sLapse = false;
@@ -368,7 +380,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
         static const float LEVEL_LAPSE[3] = { AI_LAPSE_EASY, AI_LAPSE_NORMAL, AI_LAPSE_PRO };
         float lapse = LEVEL_LAPSE[ai->level % 3] * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
-                    * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);
+                    * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
+                    * (1.0f - RAGE_LAPSE * Clamp01(ai->rage));
         if (RandRange(0.0f, 1.0f) < lapse) { sLapse = true; gErrMul *= AI_LAPSE_ERR; }
         else if (sAttack) gErrMul *= AI_ATTACK_ERR;   // 決めにいく球は、少しだけ力む
     }

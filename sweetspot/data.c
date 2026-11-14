@@ -36,17 +36,17 @@ const ShotSpec SHOTS[SHOT_COUNT] = {
 // 選手の見た目：髪、ショーツ、ヘッドバンド（なしは a=0）、優雅さ
 void ApplyLook(SwingAnim *a, int persona)
 {
-    static const struct { Color hair, shorts, band; float grace; } LOOK[PERSONA_COUNT] = {
-        { {  70,  50,  35, 255 }, {  40,  50,  90, 255 }, { 0 },                    0.0f },   // AI（癖なし）
-        { {  60,  42,  30, 255 }, { 245, 245, 248, 255 }, { 250, 250, 250, 255 },   1.0f },   // フェデラー：白いヘッドバンド、大きく優雅なフォロースルー
-        { {  28,  24,  24, 255 }, {  30,  40,  80, 255 }, { 0 },                    0.3f },   // ジョコビッチ
-        { {  45,  32,  24, 255 }, {  45,  45,  55, 255 }, { 245, 245, 245, 255 },   0.0f },   // ナダル：バンダナ
-        { { 105,  72,  45, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.2f },   // マレー
+    static const struct { Color hair, shorts, band; float grace; int fhStyle; } LOOK[PERSONA_COUNT] = {
+        { {  70,  50,  35, 255 }, {  40,  50,  90, 255 }, { 0 },                    0.0f, 0 },   // AI（癖なし）
+        { {  60,  42,  30, 255 }, { 245, 245, 248, 255 }, { 250, 250, 250, 255 },   1.0f, 0 },   // フェデラー：白いヘッドバンド、大きく優雅なフォロースルー
+        { {  28,  24,  24, 255 }, {  30,  40,  80, 255 }, { 0 },                    0.3f, 0 },   // ジョコビッチ
+        { {  45,  32,  24, 255 }, {  45,  45,  55, 255 }, { 245, 245, 245, 255 },   0.0f, 1 },   // ナダル：バンダナ、頭の上へ振り上げるフォア
+        { { 105,  72,  45, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.2f, 0 },   // マレー
     };
     if (persona < 0) {   // 人間：紺のショーツ
-        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f;
+        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0;
         return;
     }
     persona %= PERSONA_COUNT;
-    a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace;
+    a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle;
 }
