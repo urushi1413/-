@@ -83,7 +83,8 @@ typedef struct {
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
 #define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
-enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT };
+enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT,
+       CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART, CELEB_COUNT };
 #define SMASH_TIME       2.2f    // ラケットを叩きつける見た目の長さ（秒）
 #define RAGE_TIMING      0.35f   // 怒りが最大のとき：タイミングのばらつきがこれだけ減る
 #define RAGE_POS         0.30f   //   立ち位置のずれが減る
@@ -324,6 +325,7 @@ typedef struct {
     int     fhStyle;       // フォアの振り方：0 = 普通（反対の肩に巻きつける）、1 = ナダル（頭の上へ振り上げる「投げ縄」）
     float   celebT;        // ポイント後のしぐさの残り時間（0 ならしていない）
     int     celebKind;     // しぐさの種類（CELEB_*）
+    float   celebDur;      // しぐさの長さ（秒）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
@@ -536,7 +538,9 @@ extern float gPointImportance; // 今のポイントの大事さ（0：普通、
 extern const Persona PERSONAS[PERSONA_COUNT];
 extern const float RAGE_SMASH[PERSONA_COUNT];
 // ポイント後のしぐさ：取ったとき（大事なポイント・長いラリー）と、落としたとき
-typedef struct { int win; float winChance; int lose; float loseChance; } CelebStyle;
+//   big：大事なポイント・長いラリー・ウィナー、set：セットを取った、match：試合に勝った、lose：落とした。0 はなし。毎回この中から選ぶ
+typedef struct { int big[3], set[2], match[2], lose[2]; float winChance, loseChance; } CelebStyle;
+float CelebDuration(int kind);
 extern const CelebStyle CELEB_STYLE[PERSONA_COUNT];   // 追い込まれたときにラケットを叩きつける確率
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];

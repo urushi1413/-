@@ -29,14 +29,27 @@ const AiLevel AI_LEVELS[3] = {
 // 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
 const float RAGE_SMASH[PERSONA_COUNT] = { 0.0f, 0.0f, 0.75f, 0.0f, 0.0f };   // ジョコビッチだけ
 
-// ポイント後のしぐさ（大事なポイントでの確率。普通のポイントでもウィナーなら少し、マレーは自分のミスでも怒る）
+// ポイント後のしぐさ。大事なポイント（と長いラリー、少しだけ普通のウィナー）は winChance、セットと試合は必ず。マレーは落とすと怒る
 const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
-    { CELEB_FIST,   0.30f, CELEB_NONE, 0.00f },   // AI
-    { CELEB_FIST,   0.55f, CELEB_NONE, 0.00f },   // フェデラー：小さく拳を握る「カモン」
-    { CELEB_ROAR,   0.75f, CELEB_NONE, 0.00f },   // ジョコビッチ：両腕を広げて吠える（怒るとラケットを叩きつける）
-    { CELEB_VAMOS,  0.90f, CELEB_NONE, 0.00f },   // ナダル：拳を下から突き上げ、膝を上げて「バモス！」
-    { CELEB_COMEON, 0.85f, CELEB_RANT, 0.55f },   // マレー：両拳で力こぶ「カモン！」。落とすとボックスに向かって両手を広げて文句
+    // big                                                      set                                   match                              lose                                  win    lose
+    { { CELEB_FIST, CELEB_RACKET_UP, 0 },                       { CELEB_ARMS_UP, CELEB_RACKET_UP },   { CELEB_ARMS_UP, CELEB_RACKET_UP }, { 0, 0 },                             0.30f, 0.00f },   // AI
+    { { CELEB_FIST, CELEB_FIST, CELEB_RACKET_POINT },           { CELEB_RACKET_UP, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.55f, 0.00f },   // フェデラー
+    { { CELEB_ROAR, CELEB_ROAR, CELEB_RACKET_UP },              { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_HEART, CELEB_ROAR },        { 0, 0 },                             0.75f, 0.00f },   // ジョコビッチ
+    { { CELEB_VAMOS, CELEB_VAMOS, CELEB_JUMP_FIST },            { CELEB_JUMP_FIST, CELEB_VAMOS },     { CELEB_KNEES, CELEB_JUMP_FIST },   { 0, 0 },                             0.90f, 0.00f },   // ナダル
+    { { CELEB_COMEON, CELEB_COMEON, CELEB_JUMP_FIST },          { CELEB_COMEON, CELEB_ARMS_UP },      { CELEB_ARMS_UP, CELEB_KNEES },     { CELEB_RANT, CELEB_HANDS_HEAD },     0.85f, 0.55f },   // マレー
 };
+
+// しぐさの長さ
+float CelebDuration(int kind)
+{
+    switch (kind) {
+        case CELEB_KNEES: return 3.2f;
+        case CELEB_HEART: return 2.6f;
+        case CELEB_RANT:  return 1.9f;
+        case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_RACKET_POINT: case CELEB_HANDS_HEAD: return 1.9f;
+        default: return CELEB_TIME;
+    }
+}
 
 // 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
 const Persona PERSONAS[PERSONA_COUNT] = {

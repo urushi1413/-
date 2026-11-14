@@ -1187,23 +1187,31 @@ int main(void)
                         SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos));
                     }
                 }
-                // ---- ポイント後のしぐさ：大事なポイント・長いラリーで喜ぶ。マレーは落とすと怒る ----
+                // ---- ポイント後のしぐさ：試合・セットを取ったら必ず、大事なポイント・長いラリーで喜ぶ。マレーは落とすと怒る ----
                 if (ai.anim.smashT <= 0.0f) {
-                    bool gameEnded2 = gamesAfter != gamesBefore || score.nSetsDone != setsBefore;
+                    bool setEnded2 = score.nSetsDone != setsBefore;
+                    bool gameEnded2 = gamesAfter != gamesBefore || setEnded2;
                     bool big = gPointImportance >= 1.0f || (gPointImportance >= 0.5f && gameEnded2) || rallyHits >= 12;
                     const CelebStyle *cs = &CELEB_STYLE[ai.persona % PERSONA_COUNT];
                     int kind = CELEB_NONE;
-                    if (winner == 1 && cs->win != CELEB_NONE) {
-                        float ch = cs->winChance * (big ? 1.0f : ((endKind == 1 || endKind == 2) ? 0.22f : 0.0f));
-                        if (RandRange(0.0f, 1.0f) < ch) { kind = cs->win; SfxCelebrate(ai.persona, Vector3Distance(cam.position, ai.pos)); }
-                    } else if (winner == 0 && cs->lose != CELEB_NONE) {
+                    #define PICK(arr) ((arr)[GetRandomValue(0, (int)(sizeof(arr) / sizeof((arr)[0])) - 1)])
+                    if (winner == 1) {
+                        if (score.over)                kind = PICK(cs->match);
+                        else if (setEnded2)            kind = PICK(cs->set);
+                        else {
+                            float ch = cs->winChance * (big ? 1.0f : ((endKind == 1 || endKind == 2) ? 0.22f : 0.0f));
+                            if (RandRange(0.0f, 1.0f) < ch) kind = PICK(cs->big);
+                        }
+                        if (kind != CELEB_NONE) SfxCelebrate(ai.persona, Vector3Distance(cam.position, ai.pos));
+                    } else if (cs->lose[0] != CELEB_NONE && !score.over) {
                         float ch = cs->loseChance * (big ? 1.0f : ((endKind == 3 && hitter == 1) ? 0.5f : 0.15f));
-                        if (RandRange(0.0f, 1.0f) < ch) { kind = cs->lose; SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
+                        if (RandRange(0.0f, 1.0f) < ch) { kind = PICK(cs->lose); SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
                     }
+                    #undef PICK
                     if (kind != CELEB_NONE) {
-                        ai.anim.celebKind = kind; ai.anim.celebT = CELEB_TIME;
+                        ai.anim.celebKind = kind; ai.anim.celebDur = CelebDuration(kind); ai.anim.celebT = ai.anim.celebDur;
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
-                        phaseTimer = fmaxf(phaseTimer, CELEB_TIME + 0.4f);
+                        phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
                 }
             }
