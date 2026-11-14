@@ -873,8 +873,10 @@ int main(void)
 
                     if (c.miss != MISS_NONE && c.miss != MISS_NO_BALL) SfxWhiff();
                     if (c.miss == MISS_NONE) {
+                        gHumanShot = true;
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
+                        gHumanShot = false;
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;

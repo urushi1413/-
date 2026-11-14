@@ -82,6 +82,9 @@ typedef struct {
 #define AIM_SIDE_SAFE    2.90f   // これより外（サイドラインの約 1.2m 内側から先）はライン際：印の動きが重くなり、印の色が変わる
 #define AIM_SIDE_HEAVY   0.35f   //   ライン際で外へ動かすときの重さ（マウスの動きのこの割合しか動かない）
 #define AIM_SIDE_REAL    3.85f   // 左右の狙いの限界（サイドラインの約 0.25m 内側）
+#define REAL_SIDE_MARGIN   0.05f  // リアルでも、当たりが良ければ落ちる所をサイドラインのこれだけ内側に収める
+#define SIDE_ASSIST_Q0     0.30f  //   この質から補正が効き始め
+#define SIDE_ASSIST_Q1     0.65f  //   この質で完全に補正
 #define CASUAL_SIDE_MARGIN 0.25f  // カジュアルでは、落ちる所をサイドラインのこれだけ内側に収める（横にはアウトしない）
 #define AIM_SIDE_CASUAL  3.60f   // カジュアルは横にアウトしないので、サイドラインの約 0.5m 内側まで狙える
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
@@ -486,7 +489,8 @@ extern bool gCrouch;
 extern bool  gLefty;     // AI の打球を評価している間だけ、左利きなら true
 extern float gSpinMul;
 extern float gSliceEdge;
-extern float gErrMul;          // AI の打球を作っている間だけ、ぶれの倍率
+extern float gErrMul;
+extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true

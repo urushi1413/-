@@ -137,15 +137,6 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     // タッチショットは遅いので角度のずれが効きにくい。代わりに距離感をずらす（ドロップが浮く・ロブが浅い）
     // 跳ね返りの成分は距離感をコントロールしにくい（ブロックリターンやボレーは深さがばらつく）
     dist *= 1.0f + RandNormal() * (paceKmh / fmaxf(kmh, 1.0f)) * (0.05f + (1.0f - q) * 0.25f);
-    // カジュアル：横のぶれではサイドラインの外に出さない（落ちる所がサイドラインの 25cm 内側に収まるように向きを直す）
-    if (gCasual) {
-        float lim = SINGLES_W * 0.5f - CASUAL_SIDE_MARGIN;
-        float lx = ballPos.x + dirFlat.x * dist, lz = ballPos.z + dirFlat.z * dist;
-        if (fabsf(lx) > lim) {
-            lx = (lx > 0.0f) ? lim : -lim;
-            dirFlat = Vector3Normalize((Vector3){ lx - ballPos.x, 0.0f, lz - ballPos.z });
-        }
-    }
     // 速い球ほど勢いを殺すのが難しい（100km/h の球だと、ずれが約 2 倍）
     if (type >= SHOT_NORMAL_COUNT) {
         float paceDifficulty = 1.0f + c->inKmh / 100.0f;
@@ -227,9 +218,11 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         b = MakeShot(ballPos, dirFlat, kmh / 3.6f, ang, rpm);
         b.spin.y += wy;
     }
-    // カジュアル：実際に落ちる所を計算して、横に出るなら向きを直す（長さのぶれで横に外れることもあるので）
-    if (gCasual) {
-        float lim = SINGLES_W * 0.5f - CASUAL_SIDE_MARGIN;
+    // 人間の打球の横アウトの補正：実際に落ちる所を計算して、横に出るなら向きを直す
+    //   カジュアルは必ず（25cm 内側）。リアルは当たりが良いほど（質 35% から効き始め、75% で完全に。5cm 内側）
+    float sideK = !gHumanShot ? 0.0f : gCasual ? 1.0f : Clamp01((q - SIDE_ASSIST_Q0) / (SIDE_ASSIST_Q1 - SIDE_ASSIST_Q0));
+    if (sideK > 0.0f) {
+        float lim = SINGLES_W * 0.5f - (gCasual ? CASUAL_SIDE_MARGIN : REAL_SIDE_MARGIN);
         for (int it = 0; it < 2; it++) {
             Ball t = b;
             for (int k = 0; k < 2400 && t.active && t.bounces < 1; k++) StepBall(&t, PHYS_DT);
@@ -239,7 +232,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
             Vector3 sp0 = b.spin;
             Vector3 v = b.vel;
             Vector3 vh = { v.x, 0.0f, v.z };
-            float rot = a0 - a1;   // 右に外れていたら左へ回す（y 軸まわり）
+            float rot = (a0 - a1) * sideK;   // 右に外れていたら左へ回す（y 軸まわり）。リアルは当たりの良さに応じて一部だけ
             vh = Vector3RotateByAxisAngle(vh, (Vector3){ 0, 1, 0 }, rot);
             b.vel = (Vector3){ vh.x, v.y, vh.z };
             b.spin = Vector3RotateByAxisAngle(sp0, (Vector3){ 0, 1, 0 }, rot);
