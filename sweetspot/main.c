@@ -138,7 +138,8 @@ int main(void)
     bool  setBreak = false;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
     bool  showSummary = false;
-    int   rallyHits = 0;           // このポイントで打った回数（拍手の大きさ）
+    int   rallyHits = 0;
+    static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
     bool  prevHitNet = false, prevAiSliding = false;
     float soundVolBeforeMute = 0.8f;
     char  toast[96] = { 0 };           // 画面の真ん中下に少しの間だけ出すお知らせ
@@ -401,6 +402,7 @@ int main(void)
                 ai.pos = Rot180(ReturnPos(deuce, serveNo == 2));
                 ai.standPos = ai.pos;
                 P.sv = SV_READY;
+                { float bx0, bx1; ServiceBox(P.pos.x, -1, &bx0, &bx1); P.aimX = 0.5f * (bx0 + bx1); }   // サーブの狙いはボックスの真ん中から
             } else {
                 P.pos = ReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
@@ -611,6 +613,7 @@ int main(void)
                         playerGrunt = false;
                         rallyHits = 1;
                         P.lastAimTarget = target;
+                        P.aimX = 0.0f;   // 打つたびに狙いを真ん中に戻す
                         gCasual = false; gCrouch = false;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -877,6 +880,7 @@ int main(void)
                         playerGrunt = false;
                         rallyHits++;
                         P.lastAimTarget = target;
+                        P.aimX = 0.0f;   // 打つたびに狙いを真ん中に戻す
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
                         {
@@ -985,7 +989,8 @@ int main(void)
         bounceT += simDt;
         if (ball.bounces > prevBounces && ball.bounces <= 2) {
             SfxBounce(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
-            bouncePos = ball.pos; bounceT = 0.0f;
+            bouncePos = (ball.bounces == 1) ? ball.firstBounce : ball.pos;   // 判定に使った、弾んだ瞬間の位置
+            bounceT = 0.0f;
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
         prevBounces = ball.bounces;
@@ -1043,6 +1048,7 @@ int main(void)
                 } else if (serveNo == 1) {
                     serveNo = 2;
                     pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
+                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), "Fault (OUT %.0fcm)", fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg; }
                     SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
                     phase = PH_BETWEEN;
@@ -1060,6 +1066,10 @@ int main(void)
                     if (ball.result == RESULT_OUT) SfxCallOut();
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
                                                            : (hitter == 0 ? "Your error (out)" : "AI error (out)");
+                    if (ball.result == RESULT_OUT) {   // どれだけ外れたか
+                        snprintf(outMsg, sizeof(outMsg), "%s error (OUT %.0fcm)", hitter == 0 ? "Your" : "AI", fmaxf(ball.outBy * 100.0f, 1.0f));
+                        pointMsg = outMsg;
+                    }
                 } else if (ball.bounces >= 2) {
                     winner = hitter;
                     endKind = ball.isServe ? 1 : 2;
@@ -1181,7 +1191,11 @@ int main(void)
             DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
+            {
+                ai.anim.lefty = PERSONAS[ai.persona].lefty;          // 構えやポイントの間も、いつも選手の利き手で描く
+                ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
+            }
             // サーブの構え：トスの前はボールを手に持っている
             if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over)
                 DrawSphere((Vector3){ ai.pos.x + (PERSONAS[ai.persona].lefty ? 0.25f : -0.25f), 1.0f, ai.pos.z + 0.35f }, BALL_R * 1.6f, (Color){ 220, 255, 60, 255 });

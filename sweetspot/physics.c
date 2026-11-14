@@ -32,6 +32,12 @@ void JudgeFirstBounce(Ball *b)
                              : (b->pos.z > 0.0f && b->pos.z <=  depth + BALL_R);
     if (b->isServe) inX = b->pos.x >= b->boxX0 - BALL_R && b->pos.x <= b->boxX1 + BALL_R;
     b->result = (inX && inZ) ? RESULT_IN : RESULT_OUT;
+    // 判定に使った点と、どれだけ外れたか（表示用）
+    b->firstBounce = b->pos;
+    float ox = b->isServe ? fmaxf(b->boxX0 - BALL_R - b->pos.x, b->pos.x - (b->boxX1 + BALL_R))
+                          : fabsf(b->pos.x) - (SINGLES_W * 0.5f + BALL_R);
+    float oz = fabsf(b->pos.z) - (depth + BALL_R);
+    b->outBy = fmaxf(fmaxf(ox, oz), 0.0f);
 }
 
 // 空中でボールにかかる加速度

@@ -242,6 +242,8 @@ typedef struct {
     float   age;           // 打たれてからの時間（秒）
     bool    isServe;       // サーブならサービスボックスで判定する
     float   boxX0, boxX1;  // サービスボックスの横の範囲
+    Vector3 firstBounce;   // 最初に弾んだ位置（イン・アウトの判定に使った点）
+    float   outBy;         // アウトなら、球の端がラインの外側からどれだけ外れたか（m）
 } Ball;
 
 // 打点の評価結果
@@ -354,7 +356,7 @@ typedef struct {
     float sliceEdge;         // スライスのキレ（0〜1）：速く、逆回転が強い（低く滑る）
     float errMul;            // 打球のぶれの大きさ（小さいほどミスしない）
     float clutch;            // 大事なポイントでの強くなり方（0〜1）
-    float surfSpeed[3];      // コートごとの得意・不得意（走る速さの上乗せ）HARD, CLAY, GRASS
+    float surfSpeed[3];      // コートごとの得意・不得意（走る速さの上乗せ。タイミングの安定とミスの少なさにも効く）HARD, CLAY, GRASS
     Color shirt;
 } Persona;
 #define PERSONA_COUNT 5      // 0 は癖なし（シミュレーション用）、1〜4 が選手

@@ -25,15 +25,16 @@ void DrawCourt(void)
         }
     }
 
-    float dx = DOUBLES_W * 0.5f, sx = SINGLES_W * 0.5f;
-    LineAlongX( HALF_LEN, -dx, dx);
-    LineAlongX(-HALF_LEN, -dx, dx);
-    LineAlongZ(-dx, -HALF_LEN, HALF_LEN);
-    LineAlongZ( dx, -HALF_LEN, HALF_LEN);
-    LineAlongZ(-sx, -HALF_LEN, HALF_LEN);
-    LineAlongZ( sx, -HALF_LEN, HALF_LEN);
-    LineAlongX( SERVICE_Z, -sx, sx);
-    LineAlongX(-SERVICE_Z, -sx, sx);
+    // ラインは規則どおりコートの内側に引く（コートの寸法はラインの外側まで。ラインに触れればイン）
+    float dx = DOUBLES_W * 0.5f, sx = SINGLES_W * 0.5f, h = LINE_W * 0.5f;
+    LineAlongX( HALF_LEN - h, -dx, dx);
+    LineAlongX(-HALF_LEN + h, -dx, dx);
+    LineAlongZ(-dx + h, -HALF_LEN, HALF_LEN);
+    LineAlongZ( dx - h, -HALF_LEN, HALF_LEN);
+    LineAlongZ(-sx + h, -HALF_LEN, HALF_LEN);
+    LineAlongZ( sx - h, -HALF_LEN, HALF_LEN);
+    LineAlongX( SERVICE_Z - h, -sx, sx);
+    LineAlongX(-SERVICE_Z + h, -sx, sx);
     LineAlongZ(0.0f, -SERVICE_Z, SERVICE_Z);
     LineAlongZ(0.0f,  HALF_LEN - 0.10f,  HALF_LEN);   // センターマーク
     LineAlongZ(0.0f, -HALF_LEN, -HALF_LEN + 0.10f);
