@@ -138,6 +138,7 @@ int main(void)
     bool  netFlag[2] = { false };      // このポイントでネットに出たか
     int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;
+    float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
     char  rageMsg[160] = { 0 };          // ラケットを叩きつけたときの表示（審判のコール）
     float rageMsgT = 0.0f, smashPrevE = 0.0f;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
@@ -193,6 +194,7 @@ int main(void)
     while (!WindowShouldClose() && !quitGame) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
+        crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
         // スプリットステップの見た目の時間
         if (P.anim.splitT > 0.0f)   P.anim.splitT   -= simDt;
         if (bot.anim.splitT > 0.0f) bot.anim.splitT -= simDt;
@@ -1132,6 +1134,7 @@ int main(void)
             if (winner >= 0) {
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
                 SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
+                crowdExcite = Clamp01(0.25f + (rallyHits - 2) / 12.0f + ((endKind == 1 || endKind == 2) ? 0.35f : 0.0f) + 0.4f * gPointImportance);   // 観客が沸く
                 ms[0].rallyTotal += rallyHits; ms[0].rallyPoints++;   // 1 ポイントの打数（サーブも 1 打）
                 // ---- 試合の統計 ----
                 {
@@ -1309,6 +1312,7 @@ int main(void)
         ClearBackground((Color){ 150, 190, 230, 255 });
         BeginMode3D(cam);
             DrawCourt();
+            if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime());
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, -1); ApplyLook(&bot.anim, -1);

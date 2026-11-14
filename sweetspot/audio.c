@@ -157,19 +157,25 @@ static void Play(int id, int fallback, float vol, float pitch)
     PlaySound(*snd);
 }
 
+// 声は打球音より大きく鳴らす（1 を超えると増幅）。打つ前の声は録音が小さいので、さらに上げる
+#define VOICE_GAIN      1.7f
+#define GRUNT_PRE_GAIN  4.0f
 static void PlaySlot(SfxSlot *s, float vol, float pitch)
 {
     if (!gAudioOk || s->nVar == 0 || vol <= 0.001f || gVolume <= 0.0f) return;
     int v = GetRandomValue(0, s->nVar - 1);
     Sound *snd = &s->s[v][s->next];
     s->next = (s->next + 1) % POOL;
-    SetSoundVolume(*snd, Clamp01(vol) * gVolume);
+    SetSoundVolume(*snd, Clamp(vol, 0.0f, 6.0f) * gVolume);
     SetSoundPitch(*snd, pitch);
     PlaySound(*snd);
 }
 // 選手の声を鳴らす：本人の録音があればそのまま、なければ共通の声を高さを変えて
+// 声は遠くまで届く（打球音ほど距離で小さくならない）
+static float VoiceDistVol(float dist) { return Clamp(1.4f / (1.0f + dist / 30.0f), 0.0f, 1.3f); }
 static bool PlayVoice(int who, int vi, float vol)
 {
+    vol *= VOICE_GAIN * (vi == V_GRUNT_PRE ? GRUNT_PRE_GAIN : 1.0f);
     SfxSlot *own = PSlot(who, vi);
     if (own->nVar) { PlaySlot(own, vol, 1.0f); return true; }
     int g = VOICE_GENERIC[vi];
@@ -198,10 +204,10 @@ static double gVoiceUntil = 0.0;
 void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
-    if (voice && PlayVoice(gVoiceWho, V_HIT_VOICE, vol)) return;   // 声から続く（同じ人の声で）
+    if (voice && PlayVoice(gVoiceWho, V_HIT_VOICE, (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * VoiceDistVol(dist))) return;   // 声から続く（同じ人の声で）
     if (defensive && !slice && gSlot[S_HIT_VOICE_SOFT].nVar && GetTime() >= gVoiceUntil) {
         gVoiceUntil = GetTime() + 0.45;   // 声は一度に 1 人
-        Play(S_HIT_VOICE_SOFT, -1, vol, 1.0f);
+        PlaySlot(&gSlot[S_HIT_VOICE_SOFT], vol * VOICE_GAIN, 1.0f);   // 声なので大きめに
         return;
     }
     if (q < 0.18f)      Play(S_HIT_FRAME, S_HIT_BAD, vol, Jitter());
@@ -241,14 +247,14 @@ bool SfxGruntPreBy(int who, float dist)
     if (now < gVoiceUntil) return false;
     gVoiceUntil = now + SfxGruntLead(who) + 0.45 / Prof(who)->pitch;
     gVoiceWho = who;
-    PlayVoice(who, V_GRUNT_PRE, 0.9f * DistVol(dist));
+    PlayVoice(who, V_GRUNT_PRE, 0.9f * VoiceDistVol(dist));
     return true;
 }
 bool SfxGruntPre(float dist) { return SfxGruntPreBy(-1, dist); }
 
 // 喜びの声（カモン！バモス！）と、怒りの声
-void SfxCelebrate(int who, float dist) { PlayVoice(who, V_CELEBRATE, 1.0f * DistVol(dist)); gVoiceUntil = GetTime() + 1.0; }
-void SfxAngry(int who, float dist)     { PlayVoice(who, V_ANGRY, 1.0f * DistVol(dist));     gVoiceUntil = GetTime() + 1.0; }
+void SfxCelebrate(int who, float dist) { PlayVoice(who, V_CELEBRATE, 1.0f * VoiceDistVol(dist)); gVoiceUntil = GetTime() + 1.0; }
+void SfxAngry(int who, float dist)     { PlayVoice(who, V_ANGRY, 1.0f * VoiceDistVol(dist));     gVoiceUntil = GetTime() + 1.0; }
 
 void SfxWhiff(void) { Play(S_WHIFF, -1, 0.7f, Jitter()); }
 
