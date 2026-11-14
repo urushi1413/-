@@ -421,6 +421,9 @@ typedef struct {
     int unforced;            // アンフォーストエラー（時間も体勢もあったのにミス）
     int winners;             // ウィナー（エース含む）
     int points;              // 取ったポイント
+    int shots;               // サーブ以外で打った数
+    float speedSum;          // その球速の合計（km/h）
+    int rallyTotal, rallyPoints;   // 1 ポイントの打数の合計とポイント数（ms[0] にだけ入れる）
 } MatchStats;
 
 typedef struct {

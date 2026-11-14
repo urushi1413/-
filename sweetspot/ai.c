@@ -287,9 +287,10 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     // 球速の目安（打ち出し）。プロのラリーはフラット 130〜150、トップ 110〜135、スライス 80〜100km/h くらい
     float wantKmh;
     switch (t) {
-        case SHOT_FLAT:  wantKmh = 115.0f + 35.0f * lv->aggression; break;
-        case SHOT_TOP:   wantKmh = 100.0f + 35.0f * lv->aggression; break;
-        case SHOT_SLICE: wantKmh =  75.0f + 20.0f * lv->aggression; break;
+        // 当たりの質で実際の速さは 1〜2 割落ちるので、そのぶん高めに狙う
+        case SHOT_FLAT:  wantKmh = 135.0f + 40.0f * lv->aggression; break;
+        case SHOT_TOP:   wantKmh = 118.0f + 40.0f * lv->aggression; break;
+        case SHOT_SLICE: wantKmh =  88.0f + 22.0f * lv->aggression; break;
         default:         wantKmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, 0.5f); break;
     }
     wantKmh += RandNormal() * 8.0f - (stretched ? 20.0f : 0.0f);
@@ -307,7 +308,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 
     // コース：プレイヤーのいない方へ。強気なほどサイドラインに近い
     const ShotSpec *sp = &SHOTS[t];
-    float wide = attack ? 3.2f : 1.5f + 1.3f * lv->aggression;   // サイドラインまで 4.1m。普段は 1.5m 以上余裕を残す
+    float wide = attack ? 3.5f : 2.2f + 1.2f * lv->aggression;   // サイドラインまで 4.1m。普段は 1〜1.6m の余裕、攻めるときは 0.6m
     float x;
     if (playerAi.x > 0.6f)       x = -wide;
     else if (playerAi.x < -0.6f) x =  wide;

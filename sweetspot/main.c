@@ -8,7 +8,7 @@ static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE
 static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp)
 {
     int W = GetScreenWidth(), H = GetScreenHeight();
-    int pw = 700, rowH = 34, nRows = 11;
+    int pw = 700, rowH = 32, nRows = 13;
     int ph = 132 + nRows * rowH + 44;
     int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
     Color head = { 70, 40, 110, 240 }, rowA = { 20, 80, 50, 235 }, rowB = { 25, 95, 60, 235 };
@@ -46,7 +46,9 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
                 case 7:  label = "Net Approach Points Won"; FRAC(m->netWon, m->netPts); break;
                 case 8:  label = "Total Unforced Errors";   NUM(m->unforced); break;
                 case 9:  label = "Total Winners";           NUM(m->winners); break;
-                default: label = "Total Points Won";        NUM(m->points); break;
+                case 10: label = "Total Points Won";        NUM(m->points); break;
+                case 11: label = "Average Shot Speed";      snprintf(v[k], sizeof(v[k]), "%.0f km/h", m->shots ? m->speedSum / m->shots : 0.0f); break;
+                default: label = "Average Rally (shots)";   snprintf(v[k], sizeof(v[k]), "%.1f", ms[0].rallyPoints ? (float)ms[0].rallyTotal / ms[0].rallyPoints : 0.0f); break;
             }
             #undef PCT
             #undef NUM
@@ -901,6 +903,7 @@ int main(void)
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
+                        ms[0].shots++; ms[0].speedSum += P.lastKmh;
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;
@@ -973,6 +976,7 @@ int main(void)
             if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
+                    ms[1].shots++; ms[1].speedSum += ai.lastKmh;
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
                            DefensiveVoice(&ai.anim.lastContact, ai.lastType, -ai.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     aiGrunt = false;
@@ -985,6 +989,7 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
+                    ms[0].shots++; ms[0].speedSum += bot.lastKmh;
                     SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt,
                            DefensiveVoice(&bot.anim.lastContact, bot.lastType, P.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     botGrunt = false;
@@ -1107,6 +1112,7 @@ int main(void)
             if (winner >= 0) {
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
                 SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
+                ms[0].rallyTotal += rallyHits; ms[0].rallyPoints++;   // 1 ポイントの打数（サーブも 1 打）
                 // ---- 試合の統計 ----
                 {
                     int sv = server, rv = 1 - server;
