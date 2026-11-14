@@ -228,6 +228,31 @@ static int ServeSwingKeys(Vector3 cl, RKey *k)
     return n;
 }
 
+// ---- ボレー ----
+static int VolleyKeys(Vector3 cl, float sgn, RKey *k)
+{
+    float rcl = sqrtf(cl.x * cl.x + cl.z * cl.z), kk = rcl > 1.2f ? 1.2f / rcl : 1.0f;
+    Vector3 p = { cl.x * kk, Clamp(cl.y, 0.2f, 2.0f), fmaxf(cl.z * kk, 0.35f) };   // 当てるのは体の前
+    float up = Clamp((p.y - 0.85f) * 0.9f, -0.25f, 0.65f);                         // 低い球ほどラケットを寝かせる（頭はなるべく落とさない）
+    Vector3 d = Vector3Normalize(V3(sgn * 0.62f, up + 0.15f, 0.55f));
+    Vector3 h = Vector3Subtract(p, Vector3Scale(d, RACKET_REACH));
+    Vector3 sh = { sgn * 0.18f, 1.42f - Clamp((0.95f - p.y) * 0.6f, 0.0f, 0.32f), 0.10f };   // 低い球は膝を曲げて肩も下がる
+    Vector3 sv = Vector3Subtract(h, sh);
+    float sl = Vector3Length(sv);
+    if (sl > ARM_REACH) { h = Vector3Add(sh, Vector3Scale(sv, ARM_REACH / sl)); d = Vector3Normalize(Vector3Subtract(p, h)); }
+    float open = Clamp((1.0f - p.y) * 0.6f, 0.0f, 0.5f);                           // 低い球は面を上に開く
+    Vector3 f = { 0.0f, 0.20f + open, 1.0f };
+    // 構え：手を少し後ろ・上へ、ラケットの頭を後ろへ倒す（手首を返す）
+    Vector3 hp = { h.x - sgn * 0.04f, h.y + 0.08f, h.z - 0.30f };
+    Vector3 dp = Vector3Normalize(Vector3Add(d, V3(0.0f, 0.20f, -0.55f)));
+    int n = 0;
+    k[n++] = (RKey){ 0.00f, hp, dp, f };
+    k[n++] = (RKey){ SWING_LEAD, h, d, f };
+    k[n++] = (RKey){ 0.16f, { h.x, h.y - 0.06f, h.z + 0.22f }, d, f };                // 短く押し出して止める
+    k[n++] = (RKey){ 0.30f, { h.x * 0.9f, h.y - 0.04f, h.z + 0.18f }, d, f };
+    return n;
+}
+
 // ---- ポイント後のしぐさ ----
 // 両手（ラケットを持つ手とその向き、もう片方の手）と体（沈み込み・前傾・跳ぶ・膝上げ・膝つき・顔の向き）を時間で決める。
 // 手の高さは立っているとき（腰 0.88m）の値。体が沈んだ分は描くときに下げる
@@ -355,17 +380,12 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
         float sgn = c->forehand ? 1.0f : -1.0f;
         *strokeOut = c->forehand ? 0 : 1;
         if (c->volley) {
-            // ボレー：振らない。ラケットの頭を立てて面を前に向けたまま、球へ 30cm ほど押し出して止める（パンチ）
-            float rcl = sqrtf(cl.x * cl.x + cl.z * cl.z), k = rcl > 1.2f ? 1.2f / rcl : 1.0f;
-            Vector3 P1 = { cl.x * k, Clamp(cl.y, 0.2f, 2.0f), cl.z * k };
-            Vector3 P0 = { P1.x * 0.85f, P1.y + 0.05f, P1.z - 0.30f };
-            Vector3 P2 = { P1.x * 0.95f, P1.y - 0.08f, P1.z + 0.28f };
-            Vector3 p = a->swingT < SWING_LEAD ? Vector3Lerp(P0, P1, a->swingT / SWING_LEAD)
-                                               : Vector3Lerp(P1, P2, Clamp01((a->swingT - SWING_LEAD) / 0.10f));
-            d = Vector3Normalize(V3(sgn * 0.70f, Clamp((P1.y - 0.95f) * 0.9f + 0.25f, -0.60f, 0.65f), 0.35f));
-            *hand = Vector3Subtract(p, Vector3Scale(d, RACKET_REACH)); *dir = d;
-            *normal = Vector3Normalize(V3(0.0f, 0.25f, 1.0f));
-            return p;
+            // ボレー：振らない。構えでラケットの頭を立てて肩の横に小さく引き（手首を後ろへ返す）→ 前へ短く押し出して当て →
+            //   面を相手に向けたまま止める（パンチ）。低い球は面を開いて、ラケットの頭をなるべく落とさない
+            RKey k[4];
+            int n = VolleyKeys(cl, sgn, k);
+            SampleKeys(k, n, a->swingT, &h, &d, &f);
+            goto finish;
         }
         RKey k[8];
         int n = StrokeKeys(a, k, strokeOut);
@@ -379,10 +399,12 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
         }
         float sgn = a->windStroke == 0 ? 1.0f : -1.0f;
         if (a->atNet) {
-            // ボレーの構え：ラケットを体の前で立てて、横に少し引くだけ
-            h = V3(sgn * (0.22f + 0.12f * w), 1.10f, 0.42f - 0.12f * w);
-            d = Vector3Normalize(V3(sgn * 0.45f, 0.70f, 0.40f));
-            f = V3(0.0f, 0.2f, 1.0f);
+            // ボレーの構え：構えから、ラケットの頭を立てたまま肩の横へ小さく引くだけ（大きく引かない）
+            RKey k[4];
+            VolleyKeys(V3(sgn * 0.65f, 1.15f, 0.50f), sgn, k);
+            h = Vector3Lerp(READY.h, k[0].h, w);
+            d = Vector3Normalize(Vector3Lerp(READY.d, k[0].d, w));
+            f = Vector3Lerp(READY.f, k[0].f, w);
         } else {
             RKey e = WindupKey(a->windStroke, a->slice, a->oneHanded, a->fhStyle);
             h = Vector3Lerp(READY.h, e.h, w);
@@ -540,7 +562,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // 構えでは横を向く（ストロークは 75°、片手バックは 95°、サーブ・スマッシュはほぼ真横の 90°）。腰は肩の 6 割回る
     bool volleyPose = swinging ? (a->lastContact.volley && !a->lastContact.overhead) : a->atNet;
     bool oneHandBack = stroke == 1 && (a->oneHanded || a->slice);
-    float turn = (stroke == 2) ? 90.0f : (volleyPose ? 25.0f : (oneHandBack ? 95.0f : 75.0f));   // ボレーは肩をあまり回さない
+    float turn = (stroke == 2) ? 90.0f : (volleyPose ? (stroke == 1 ? 45.0f : 30.0f) : (oneHandBack ? 95.0f : 75.0f));   // ボレーは肩をあまり回さない
     float endTurn = volleyPose ? 10.0f : (oneHandBack ? 20.0f : -35.0f);   // 片手バックは肩を開ききらない（横向きのまま振り抜く）
     if (swinging)            yaw = sgnK * Lerp(turn, endTurn, EaseOut(a->swingT / SWING_TIME));
     else if (a->windup > 0)  yaw = sgnK * turn * Clamp01(a->windup * 1.4f);
@@ -548,11 +570,16 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     yaw *= DEG2RAD;
     float hipYaw = yaw * 0.6f;
     float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
+    // ボレー：当てるのに合わせて、球と反対の足（フォアなら左）を球の方へ踏み込む。低い球は膝を曲げて沈む
+    bool volleySwing = swinging && a->lastContact.volley && !a->lastContact.overhead;
+    float volStep = volleySwing ? Smooth01(a->swingT / SWING_LEAD) : 0.0f;
+    float volLow = volleySwing ? Clamp((0.95f - a->contactLocal.y) * 0.6f, 0.0f, 0.32f) * Smooth01(a->swingT / 0.06f) : 0.0f;
 
     // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
     float hipY = 0.88f - 0.05f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
     Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.05f + mdz * 0.10f * move };   // 前傾（走る向きへ）
     hipY -= 0.30f * a->crouch;                 // しゃがむ（Q）：腰を落として前に屈む
+    hipY -= volLow; leanV.z += 0.5f * volLow + 0.06f * volStep;
     leanV.z += 0.10f * a->crouch;
     // ナダルのフォア：オープンスタンスで沈み込み、振り上げと一緒に体ごと跳び上がる
     bool lasso = a->fhStyle == 1 && stroke == 0 && !volleyPose && !a->slice && (swinging || a->windup > 0.0f);
@@ -631,6 +658,10 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             // 構え・振り：前足（フォアなら左）を踏み出し、後ろ足を引く。足と腰は横を向く
             float hc = cosf(hipYaw), hs = sinf(hipYaw);
             float bx = sd * width, bz = (sd == -sgnK ? 0.20f : -0.10f) * stanceK;
+            if (volleySwing) {   // 踏み込む足は前へ大きく、少し球の側へ
+                bz = (sd == -sgnK ? 0.36f : -0.06f) * volStep;
+                if (sd == -sgnK) bx += sgnK * 0.10f * volStep;
+            }
             Vector3 hip  = { sd * 0.10f * hc + leanV.x * 0.3f, hipY, -sd * 0.10f * hs + leanV.z * 0.3f };
             Vector3 foot = { bx * hc + bz * hs + mdx * sinf(p) * stride, 0.07f + fmaxf(cosf(p), 0.0f) * 0.16f * move,
                              -bx * hs + bz * hc + mdz * sinf(p) * stride };
@@ -730,6 +761,13 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     float su = swinging ? a->swingT : 0.0f;
     if (a->smashT > 0.0f)            otherHand = (Vector3){ -0.32f, hipY + 0.32f, 0.12f };            // 叩きつけ：片手で
     else if (celeb) { otherHand = co.lh; otherHand.y -= co.hipDrop + 0.42f * co.kneel; }
+    else if (swinging && volleyPose) {
+        // ボレー：構えでは左手でラケットを支え、当てるときに離してバランスを取る（フォアは前へ、バックは後ろへ）
+        float r = Smooth01((a->swingT - 0.02f) / 0.06f);
+        Vector3 bal = stroke == 1 ? (Vector3){ -0.45f, hipY + 0.42f, -0.22f } : (Vector3){ -0.38f, hipY + 0.46f, 0.32f };
+        otherHand = Vector3Lerp(neck, bal, r);
+    }
+    else if (!swinging && a->windup > 0.0f && a->atNet) otherHand = neck;                           // ボレーの構え：両手で
     else if (twoHands)               otherHand = Vector3Add(hand, Vector3Scale(rdir, 0.10f));          // グリップの少し上
     else if (stroke == 1 && !swinging && a->windup > 0.0f && !a->atNet) otherHand = neck;          // 片手バックの構え：左手で首を支える
     else if (stroke == 1 && swinging && !volleyPose) {
