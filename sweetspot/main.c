@@ -640,6 +640,7 @@ int main(void)
                         P.lastServeQ = q;
                         P.lastContactPos = hb.pos;
                         P.anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
+                        P.anim.smash = false;
                         P.anim.contactLocal = (Vector3){ hb.pos.x - P.pos.x, hb.pos.y, P.pos.z - hb.pos.z };
                         P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
@@ -774,6 +775,7 @@ int main(void)
                 if (ball.active && ball.lastHitter == HITTER_OPP)
                     P.anim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, P.pos) < 6.0f ? 2
                                           : (ball.pos.x >= P.pos.x ? 0 : 1);
+                P.anim.smash = P.anim.windStroke == 2;
                 bool released = in.released[P.chargeSrc];
                 if (released) {
                     ShotType rt = (ShotType)P.chargingShot;
@@ -862,6 +864,7 @@ int main(void)
                     P.anim.slice = IsSliceShot(type);
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
                     P.anim.swingT = 0.0f;
+                    P.anim.smash = c.overhead;
                     if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
                     else P.lastIdealPos = (Vector3){ P.pos.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE),
                                                    SHOTS[type].idealHeight, P.pos.z - IDEAL_FWD };

@@ -330,6 +330,7 @@ typedef struct {
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     bool    serveStance;   // サーブの構え（トスの前）：横向きで、左手にボール
+    bool    smash;         // 頭上の振りがスマッシュ（ラリー中）。false ならサーブ
     bool    holdBall;      // 左手にボールを持っている
     float   splitT;        // スプリットステップの残り時間
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
@@ -430,6 +431,7 @@ typedef struct {
     float   rage;          // 0〜1。ゲームが終わるたびに弱まる
     int     smashes;       // この試合で叩きつけた回数（2 回目からはポイントペナルティ）
     int     rageSet;       // 最後に叩きつけたセット（+1。0 はまだ）
+    float   planH;         // 打つ予定の打点の高さ（スマッシュの構えを見せるため）
 } Opponent;
 
 typedef struct {

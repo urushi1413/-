@@ -206,7 +206,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     bool atNet = me.z < SERVICE_Z + 1.5f;
     Ball q = b;
     float t = 0.0f;
-    float bestCost = 1e9f, bestT = -1.0f;
+    float bestCost = 1e9f, bestT = -1.0f, bestH = 1.0f;
     Vector3 bestStand = me;
     float bestBallX = 0.0f, lateBallX = 0.0f;
     float lateCost = 1e9f, lateT = -1.0f;
@@ -256,7 +256,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
             float v0 = (dStand > 0.01f) ? Vector3DotProduct(Rot180(ai->vel), Vector3Scale(toStand, 1.0f / dStand)) : 0.0f;
             float need = TravelTime(dStand, v0, lv->speed, PLAYER_ACCEL, NO_BRAKE);   // 滑り込めば止まらなくていい
             if (need <= t) {
-                if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; bestBallX = q.pos.x; }
+                if (cost + extra < bestCost) { bestCost = cost + extra; bestT = t; bestStand = st; bestBallX = q.pos.x; bestH = q.pos.y; }
             } else if (need - t < lateCost) {
                 lateCost = need - t; lateT = t; lateStand = st; lateBallX = q.pos.x;   // 間に合わない：一番惜しいところを目指す
             }
@@ -271,6 +271,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     ai->standPos = Rot180(bestStand);
     ai->swingAge = worldBall->age + bestT + RandNormal() * lv->timingSigmaMs / 1000.0f;
     ai->planned = true;
+    ai->planH = bestH;
     ai->leaving = false;
 }
 
@@ -417,6 +418,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
+    ai->anim.smash = c.overhead;
     if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
     else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
@@ -484,6 +486,7 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     b.lastHitter = HITTER_OPP;
     // 見た目：頭上で打つ
     ai->anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
+    ai->anim.smash = false;
     ai->anim.contactLocal = (Vector3){ contact.x - me.x, contact.y, me.z - contact.z };
     ai->anim.swingT = 0.0f;
     ai->lastKmh = kmh;
@@ -565,7 +568,9 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     // 打つ 0.6 秒前から構える（見た目）
     if (ai->planned) {
         ai->anim.windup = Clamp01(1.0f - (ai->swingAge - ball->age) / 0.6f);
-        ai->anim.windStroke = ai->planFore ? 0 : 1;
+        bool oh = ai->planH > OVERHEAD_MIN_H;   // スマッシュ：頭上で構える
+        ai->anim.windStroke = oh ? 2 : (ai->planFore ? 0 : 1);
+        ai->anim.smash = oh;
         ai->anim.slice = false;
     } else {
         ai->anim.windup = 0.0f;

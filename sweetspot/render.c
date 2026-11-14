@@ -228,6 +228,32 @@ static int ServeSwingKeys(Vector3 cl, RKey *k)
     return n;
 }
 
+// スマッシュ：振り子はなし。横を向いてラケットを真上へ担ぎ上げ（トロフィー）、左手で球を指す。
+//   振るとラケットの頭が背中に落ち、前で高く当てて、上から叩き下ろす
+static const RKey SMASH_WIND[] = {
+    { 0.00f, { 0.20f, 1.02f, 0.36f }, { 0.05f, 0.50f, 0.86f }, { 1.0f, 0.0f, 0.0f } },
+    { 0.50f, { 0.30f, 1.45f, 0.00f }, { 0.10f, 0.80f, -0.50f }, { 1.0f, 0.0f, 0.0f } },
+    { 1.00f, { 0.34f, 1.60f, -0.18f }, { 0.10f, 0.85f, -0.50f }, { 1.0f, -0.2f, 0.0f } },
+};
+static int SmashSwingKeys(Vector3 cl, RKey *k)
+{
+    int n = 0;
+    k[n] = SMASH_WIND[2]; k[n].t = 0.0f; n++;
+    k[n++] = (RKey){ 0.04f, { 0.30f, 1.62f, -0.06f }, { 0.05f, -0.85f, -0.50f }, { 1.0f, 0.0f, -0.2f } };
+    Vector3 p = { Clamp(cl.x, -0.4f, 0.8f), Clamp(cl.y, 1.9f, 3.0f), Clamp(cl.z, 0.30f, 1.0f) };   // 体の前で当てる
+    Vector3 d = Vector3Normalize(V3(0.05f, 0.92f, 0.38f));
+    Vector3 h = Vector3Subtract(p, Vector3Scale(d, RACKET_REACH));
+    Vector3 sh = { 0.20f, 1.62f, 0.05f };
+    Vector3 sv = Vector3Subtract(h, sh);
+    float sl = Vector3Length(sv);
+    if (sl > 0.66f) { h = Vector3Add(sh, Vector3Scale(sv, 0.66f / sl)); d = Vector3Normalize(Vector3Subtract(p, h)); }
+    k[n++] = (RKey){ SWING_LEAD, h, d, { 0.0f, -0.1f, 1.0f } };
+    k[n++] = (RKey){ 0.13f, { 0.20f, 1.70f, 0.65f }, { 0.30f, -0.10f, 0.95f }, { 0.4f, -0.8f, 0.4f } };   // 上から叩き下ろす
+    k[n++] = (RKey){ 0.20f, { -0.05f, 1.15f, 0.55f }, { -0.20f, -0.85f, 0.50f }, { 0.3f, -0.5f, -0.8f } };
+    k[n++] = (RKey){ 0.30f, { -0.32f, 0.95f, 0.20f }, { -0.35f, -0.90f, -0.10f }, { 0.0f, -0.2f, -1.0f } };
+    return n;
+}
+
 // ---- ボレー ----
 static int VolleyKeys(Vector3 cl, float sgn, RKey *k)
 {
@@ -373,7 +399,7 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
         if (c->overhead) {
             *strokeOut = 2;
             RKey k[8];
-            int n = ServeSwingKeys(cl, k);
+            int n = a->smash ? SmashSwingKeys(cl, k) : ServeSwingKeys(cl, k);
             SampleKeys(k, n, a->swingT, &h, &d, &f);
             goto finish;
         }
@@ -394,7 +420,8 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
         float w = EaseOut(a->windup * 1.6f);
         *strokeOut = a->windStroke;
         if (a->windStroke == 2) {
-            SampleKeys(SERVE_WIND, 5, Clamp01(a->windup), &h, &d, &f);
+            if (a->smash) SampleKeys(SMASH_WIND, 3, Clamp01(a->windup), &h, &d, &f);
+            else          SampleKeys(SERVE_WIND, 5, Clamp01(a->windup), &h, &d, &f);
             goto finish;
         }
         float sgn = a->windStroke == 0 ? 1.0f : -1.0f;
@@ -612,7 +639,22 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // ---- サーブ・スマッシュ：トスで膝を深く曲げて反り、振るときに伸び上がって跳ぶ ----
     bool overheadPose = (stroke == 2) && (swinging || a->windup > 0.0f || a->serveStance) && move < 0.5f;
     float jump = 0.0f, ohU = 0.0f;
-    if (overheadPose) {
+    float ohAir = 0.0f;
+    if (overheadPose && a->smash) {
+        // スマッシュ：後ろ足で踏み切って跳び、空中で脚を入れ替える（シザースキック）。高い球ほど高く跳ぶ
+        if (swinging) {
+            ohU = Clamp01(a->swingT / SWING_TIME);
+            ohAir = sinf(PI * Clamp01(ohU * 1.6f));
+            jump = (a->contactLocal.y > 2.55f ? 0.30f : 0.14f) * ohAir;
+            hipY = 0.90f;
+            leanV = (Vector3){ 0.0f, 0.0f, -0.08f + 0.25f * ohU };
+        } else {
+            float w = Clamp01(a->windup);
+            hipY = 0.88f - 0.07f * w;                                    // 膝は軽く曲げるだけ
+            leanV = (Vector3){ 0.03f * w, 0.0f, -0.06f * w };            // 後ろ足に体重を乗せる
+        }
+        pos.y += jump;
+    } else if (overheadPose) {
         if (swinging) {
             ohU = Clamp01(a->swingT / SWING_TIME);
             jump = 0.20f * sinf(PI * Clamp01(ohU * 1.5f));
@@ -669,9 +711,16 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             if (overheadPose) {
                 // 横向きに構える：左足を前（つま先は右前のポストの方）、右足は後ろでベースラインと平行。
                 //   跳んだら右足を後ろに蹴り上げる
-                foot = (sd < 0) ? (Vector3){ -0.10f, 0.07f - jump, 0.26f }
-                                : (Vector3){ 0.26f, 0.07f - jump + 0.25f * ohU, -0.24f - 0.20f * ohU };
-                if (jump > 0.0f) foot.y += jump * 0.6f;   // 跳んでいる間は足も浮く
+                if (a->smash && swinging) {
+                    // シザースキック：後ろ（右）足が前へ、前（左）足が後ろへ蹴り上がって入れ替わる
+                    float sc = Smooth01(ohU * 2.2f), base = 0.07f - jump + jump * 0.85f;
+                    foot = (sd < 0) ? Vector3Lerp((Vector3){ -0.10f, base, 0.26f }, (Vector3){ -0.18f, base + 0.25f * ohAir, -0.35f }, sc)
+                                    : Vector3Lerp((Vector3){ 0.26f, base, -0.24f }, (Vector3){ 0.12f, base + 0.08f * ohAir, 0.30f }, sc);
+                } else {
+                    foot = (sd < 0) ? (Vector3){ -0.10f, 0.07f - jump, 0.26f }
+                                    : (Vector3){ 0.26f, 0.07f - jump + 0.25f * ohU, -0.24f - 0.20f * ohU };
+                    if (jump > 0.0f) foot.y += jump * 0.6f;   // 跳んでいる間は足も浮く
+                }
                 toe = (sd < 0) ? 0.75f : 1.50f;
                 hip.x = sd * 0.10f * cosf(0.9f); hip.z = -sd * 0.10f * sinf(0.9f) + leanV.z * 0.3f;
             }
@@ -782,6 +831,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Vector3 hold = a->serveStance && a->windup <= 0.0f ? neck : (Vector3){ -0.02f, hipY + 0.20f, 0.45f };
         float up = Smooth01((a->windup - 0.30f) / 0.40f);
         otherHand = Vector3Lerp(hold, (Vector3){ -0.10f, hipY + 1.17f, 0.28f }, up);
+        if (a->smash) otherHand = Vector3Lerp(neck, (Vector3){ -0.12f, hipY + 1.12f, 0.42f }, Smooth01(a->windup / 0.4f));   // スマッシュ：左手で球を指す
     }
     else if (stroke == 2 && swinging) {
         // 打つときは左手を胸に引きつける
