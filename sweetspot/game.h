@@ -86,6 +86,11 @@ typedef struct {
 #define SIDE_ASSIST_Q0     0.30f  //   この質から補正が効き始め
 #define SIDE_ASSIST_Q1     0.65f  //   この質で完全に補正
 #define CASUAL_SIDE_MARGIN 0.25f  // カジュアルでは、落ちる所をサイドラインのこれだけ内側に収める（横にはアウトしない）
+#define AIM_CURVE_K      1.6f    // 曲線の狙い方：マウスをこれだけ振ると、ライン際までの約 76%（大きく振るほど近づくが外には出ない）
+#define AIM_LANE_STEP    1.0f    // マウスをこれだけ振る（狙いの単位で）と、隣の位置へ移る
+#define AIM_LANE_MID     1.9f    // 左右の位置：真ん中から 1.9m
+#define AIM_LANE_WIDE    3.5f    //   ライン際：真ん中から 3.5m（サイドラインの約 0.6m 内側）
+#define AIM_LANE_WIDE_CASUAL 3.3f
 #define AIM_SIDE_CASUAL  3.60f   // カジュアルは横にアウトしないので、サイドラインの約 0.5m 内側まで狙える
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
@@ -591,7 +596,8 @@ typedef struct {
     float downT;               // 飛びついて倒れている残り時間
     float recoverT;            // 踏み込みで体勢が崩れている残り時間（動きが遅い）
     bool  sliding;             // 滑り込んでいる
-    float aimX, aimDepth;      // 狙い（マウスで動かす。ずっと残る）
+    float aimX, aimDepth;      // 狙い
+    float aimSlide;            // マウスを左右に振った量（これで狙いの位置を選ぶ）
     int   chargingShot;        // 溜めている球種（-1：溜めていない）
     int   chargingServe;       // 溜めているサーブ（-1：溜めていない）
     float charge;              // 強さ（0〜1）

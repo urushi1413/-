@@ -142,6 +142,7 @@ int main(void)
     static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
     bool  prevHitNet = false, prevAiSliding = false;
     float soundVolBeforeMute = 0.8f;
+    bool  aimLanes = false;            // 狙い方：false＝曲線（どこでも狙える、外には出ない） true＝5 か所から選ぶ
     char  toast[96] = { 0 };           // 画面の真ん中下に少しの間だけ出すお知らせ
     float toastT = 0.0f;
     bool  playerGrunt = false, aiGrunt = false, botGrunt = false;   // この球で、打つ前の声を鳴らし始めたか
@@ -193,11 +194,11 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_MODE, MI_SETS, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            enum { MI_PLAY, MI_MODE, MI_SETS, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
             int items[16], n = 0;
             items[n++] = MI_PLAY;
             items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
             static const char *assistNames[3] = { "OFF", "TIMING", "TIMING + SPOT" };
@@ -241,6 +242,7 @@ int main(void)
                     case MI_FEED:   proFeed = !proFeed; break;
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
                     case MI_CAMERA: camMode = (camMode + 3 + change) % 3; break;
+                    case MI_AIM:    aimLanes = !aimLanes; break;
                     case MI_SOUND:  SfxSetVolume(roundf(Clamp(SfxGetVolume() + 0.1f * change, 0.0f, 1.0f) * 10.0f) / 10.0f); break;
                     default: break;
                 }
@@ -288,6 +290,7 @@ int main(void)
                                            : SfxLoadedCount() == 0 ? "Sound (no files in sounds/)"
                                            : TextFormat("Sound (%d files)", SfxLoadedCount());
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : "OFF"; break;
+                    case MI_AIM:     label = "Aim";             value = aimLanes ? "LANES (5 spots)" : "CURVE (free, never wide)"; break;
                     case MI_CAMERA:  label = "Camera";          value = camNames[camMode]; break;
                     case MI_RESTART: label = "RESTART"; break;
                     case MI_TITLE:   label = "BACK TO TITLE"; break;
@@ -402,7 +405,7 @@ int main(void)
                 ai.pos = Rot180(ReturnPos(deuce, serveNo == 2));
                 ai.standPos = ai.pos;
                 P.sv = SV_READY;
-                { float bx0, bx1; ServiceBox(P.pos.x, -1, &bx0, &bx1); P.aimX = 0.5f * (bx0 + bx1); }   // サーブの狙いはボックスの真ん中から
+                P.aimSlide = 0.0f;   // サーブの狙いはボックスの真ん中（ボディ）から
             } else {
                 P.pos = ReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
@@ -513,15 +516,36 @@ int main(void)
         P.anim.atNet = P.pos.z < VOICE_NET_Z;              // サービスラインの 1.5m 後ろより前ならボレーの構え
 
         // ---- 狙い（ずっと残る）。自分は -z を向いているので、深く＝ -z ----
-        // 左右：ライン際（AIM_SIDE_SAFE より外）へ動かすときは重くする。狙ってなら行けるが、うっかりは行かない
+        // 左右：決まった位置（ラリーは 5 か所、サーブは 3 か所）から選ぶ。マウスを振った量で隣へ移る。
+        //   振りすぎても一番外（ライン際の内側）で止まるので、外には出ない。打つたびに真ん中に戻る
         {
-            float dx = in.aim.x;
-            bool outward = (P.aimX > 0.0f && dx > 0.0f) || (P.aimX < 0.0f && dx < 0.0f);
-            if (outward && fabsf(P.aimX) >= AIM_SIDE_SAFE && style != STYLE_CASUAL) dx *= AIM_SIDE_HEAVY;   // カジュアルは重くしない
-            P.aimX += dx;
+            int half = playerServing ? 1 : 2;                         // 真ん中から片側にいくつあるか
+            float lim = aimLanes ? (half + 0.45f) * AIM_LANE_STEP : 4.0f * AIM_CURVE_K;
+            P.aimSlide = Clamp(P.aimSlide + in.aim.x, -lim, lim);
+            int lane = (int)roundf(Clamp(P.aimSlide / AIM_LANE_STEP, (float)-half, (float)half));
+            if (!aimLanes) {
+                // 曲線：少し振れば少し、大きく振るほどライン際に近づくが、ライン際（の内側）より外には出ない
+                float wide = style == STYLE_CASUAL ? AIM_LANE_WIDE_CASUAL : AIM_LANE_WIDE;
+                if (playerServing) {
+                    float x0, x1;
+                    ServiceBox(P.pos.x, -1, &x0, &x1);
+                    float mid = 0.5f * (x0 + x1), hw = 0.5f * (x1 - x0) - 0.30f;
+                    P.aimX = mid + hw * tanhf(P.aimSlide / (AIM_CURVE_K * 0.6f));
+                } else {
+                    P.aimX = wide * tanhf(P.aimSlide / AIM_CURVE_K);
+                }
+            } else if (playerServing) {
+                float x0, x1;
+                ServiceBox(P.pos.x, -1, &x0, &x1);
+                float xs[3] = { x0 + 0.30f, 0.5f * (x0 + x1), x1 - 0.30f };   // ボックスの左端・真ん中・右端（ワイド／ボディ／T）
+                P.aimX = xs[lane + 1];
+            } else {
+                float wide = style == STYLE_CASUAL ? AIM_LANE_WIDE_CASUAL : AIM_LANE_WIDE;
+                float xs[5] = { -wide, -AIM_LANE_MID, 0.0f, AIM_LANE_MID, wide };
+                P.aimX = xs[lane + 2];
+            }
         }
         P.aimDepth -= in.aim.y;
-        P.aimX = Clamp(P.aimX, -(style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL), style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL);
         P.aimDepth = Clamp(P.aimDepth, -(HALF_LEN - 0.3f), -1.2f);
 
         // ---- サーブ（自分）----
@@ -613,7 +637,7 @@ int main(void)
                         playerGrunt = false;
                         rallyHits = 1;
                         P.lastAimTarget = target;
-                        P.aimX = 0.0f;   // 打つたびに狙いを真ん中に戻す
+                        P.aimX = 0.0f; P.aimSlide = 0.0f;   // 打つたびに狙いを真ん中に戻す
                         gCasual = false; gCrouch = false;
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
@@ -882,7 +906,7 @@ int main(void)
                         playerGrunt = false;
                         rallyHits++;
                         P.lastAimTarget = target;
-                        P.aimX = 0.0f;   // 打つたびに狙いを真ん中に戻す
+                        P.aimX = 0.0f; P.aimSlide = 0.0f;   // 打つたびに狙いを真ん中に戻す
                         ball.lastHitter = HITTER_PLAYER;
                         ball.shotId = ++plog.shotSerial;
                         {
@@ -1332,6 +1356,19 @@ int main(void)
                     longOut = et.z < -SERVICE_Z;
                 }
                 DrawLine3D((Vector3){ r0.x, 0.013f, r0.z }, (Vector3){ r1.x, 0.013f, r1.z }, Fade(RAYWHITE, 0.5f));
+                // 選べる位置（ラリー 5 か所、サーブ 3 か所）を小さな点で（5 か所から選ぶ狙い方のときだけ）
+                if (aimLanes) {
+                    float lx[5]; int nl;
+                    if (playerServing) {
+                        float bx0, bx1; ServiceBox(P.pos.x, -1, &bx0, &bx1);
+                        lx[0] = bx0 + 0.30f; lx[1] = 0.5f * (bx0 + bx1); lx[2] = bx1 - 0.30f; nl = 3;
+                    } else {
+                        float wide = style == STYLE_CASUAL ? AIM_LANE_WIDE_CASUAL : AIM_LANE_WIDE;
+                        lx[0] = -wide; lx[1] = -AIM_LANE_MID; lx[2] = 0.0f; lx[3] = AIM_LANE_MID; lx[4] = wide; nl = 5;
+                    }
+                    for (int i = 0; i < nl; i++)
+                        DrawCircle3D((Vector3){ lx[i], 0.014f, et.z }, 0.12f, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.55f));
+                }
                 Vector3 am = { et.x, 0.015f, et.z };
                 bool lineZone = !playerServing && style != STYLE_CASUAL && fabsf(et.x) > AIM_SIDE_SAFE;   // ライン際：橙（カジュアルは出ない）
                 Color ac = longOut ? RED : lineZone ? ORANGE : (P.chargingShot >= 0) ? SHOTS[P.chargingShot].color
