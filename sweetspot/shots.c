@@ -142,15 +142,20 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     dist *= 1.0f + RandNormal() * (paceKmh / fmaxf(kmh, 1.0f)) * (0.05f + (1.0f - q) * 0.25f);
     // 速い球ほど勢いを殺すのが難しい（100km/h の球だと、ずれが約 2 倍）
     if (type >= SHOT_NORMAL_COUNT) {
-        float paceDifficulty = 1.0f + c->inKmh / 100.0f;
-        dist *= 1.0f + RandNormal() * (0.04f + (1.0f - q) * 0.20f) * paceDifficulty;
+        float paceDifficulty = 1.0f + c->inKmh / 150.0f;
+        if (type == SHOT_DROP) dist *= 1.0f + RandNormal() * (0.03f + (1.0f - q) * 0.12f) * paceDifficulty;
+        else                   dist += RandNormal() * (0.30f + (1.0f - q) * 1.6f) * paceDifficulty;   // ロブ：深さのぶれは 1〜2m
     }
     float ang, angErr = 0.0f;
     if (sp->touchAngle > 0.0f) {
-        // ドロップ：決まった角度で、届くぎりぎりの速さで運ぶ
+        // ロブ・ドロップ：決まった角度で、狙った深さに届く速さで運ぶ（タッチ。速さで距離を合わせる）
         ang = sp->touchAngle * DEG2RAD;
         kmh = SolveSpeed(ballPos, dirFlat, dist, ang, rpm) * 3.6f;
-        ang += RandNormal() * (1.0f + (1.0f - q) * 5.0f) * errMul * DEG2RAD;
+        ang += RandNormal() * (0.7f + (1.0f - q) * 3.0f) * errMul * DEG2RAD;
+        if (type == SHOT_DROP && q > 0.4f) {
+            // まあまあの当たりなら、ネットにかけずに少し浮いて深くなる（ネットより、甘くなるミスの方が多い）
+            for (int it = 0; it < 8 && PredictNetClearance(ballPos, dirFlat, kmh / 3.6f, ang, rpm) < 0.08f; it++) kmh *= 1.06f;
+        }
     } else {
         if (c->volley && !c->overhead) {
             // ボレー：速すぎて狙った所に落とせない（ネットを越えてから落ちきらない）なら、面で勢いを殺して遅くする
