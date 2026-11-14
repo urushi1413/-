@@ -190,6 +190,10 @@ int main(void)
     // バウンドの目印
     Vector3 bouncePos = { 0 };
     float bounceT = 10.0f;
+    Vector3 markPos = { 0 };             // 最初に弾んだ跡（実寸）
+    float markT = 10.0f;
+    Ball hawk = { 0 };                   // 際どい判定の拡大図に使う球
+    float hawkT = 10.0f;
     bool  bounceByPlayer = false;      // 自分の打球が落ちた（狙いとのずれを表示する）
     int prevBounces = 0;
 
@@ -1042,11 +1046,16 @@ int main(void)
         }
 
         // バウンドを見つけて目印を出す
-        bounceT += simDt;
+        bounceT += simDt; markT += frameDt; hawkT += frameDt;
         if (ball.bounces > prevBounces && ball.bounces <= 2) {
             SfxBounce(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
             bouncePos = (ball.bounces == 1) ? ball.firstBounce : ball.pos;   // 判定に使った、弾んだ瞬間の位置
             bounceT = 0.0f;
+            if (ball.bounces == 1) {
+                markPos = ball.firstBounce; markT = 0.0f;
+                // 際どい球（ラインから 8cm 以内）：ホークアイのような拡大図を出す
+                if (fabsf(ball.lineDist - BALL_R) < 0.08f && !ball.hitNet) { hawk = ball; hawkT = 0.0f; }
+            }
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
         prevBounces = ball.bounces;
@@ -1517,6 +1526,12 @@ int main(void)
                 DrawLine3D((Vector3){ at.x - 0.3f, at.y, at.z }, (Vector3){ at.x + 0.3f, at.y, at.z }, mc);
                 DrawLine3D((Vector3){ at.x, at.y, at.z - 0.3f }, (Vector3){ at.x, at.y, at.z + 0.3f }, mc);
             }
+            // 最初に弾んだ跡：実寸（判定に使った大きさ）で、しばらく残す
+            if (markT < 4.0f) {
+                float a = Clamp01((4.0f - markT) / 1.0f);
+                DrawCylinder((Vector3){ markPos.x, 0.006f, markPos.z }, BALL_R, BALL_R, 0.001f, 20, Fade((Color){ 60, 50, 40, 255 }, 0.75f * a));
+                DrawCircle3D((Vector3){ markPos.x, 0.008f, markPos.z }, BALL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(YELLOW, a));
+            }
             // バウンドした場所に輪を一瞬出す（深さが読みやすい）
             if (bounceT < 0.8f) {
                 float k = bounceT / 0.8f;
@@ -1529,16 +1544,43 @@ int main(void)
             if (ball.active || ball.bounces > 0) {
                 float camDist = Vector3Distance(cam.position, ball.pos);
                 float vr = fmaxf(BALL_R * 1.4f, camDist * 0.0050f);
+                // 地面の近くでは実寸にする（ラインとの重なりが判定と一致するように）
+                float nearG = Smooth01((ball.pos.y - BALL_R - 0.05f) / 0.6f);
+                vr = Lerp(BALL_R, vr, nearG);
                 Vector3 g = { ball.pos.x, 0.004f, ball.pos.z };
                 DrawCylinder(g, vr * 1.1f, vr * 1.1f, 0.002f, 14, (Color){ 0, 0, 0, 150 });   // 影
                 if (ball.pos.y > 0.15f) DrawLine3D(g, ball.pos, Fade(RAYWHITE, 0.45f));       // 高さの線
                 DrawSphere(ball.pos, vr, (Color){ 235, 255, 40, 255 });
                 // 光のふち（ボールの後に描く。先に描くと、ふちの奥行きでボールが隠れる）
                 rlDisableDepthMask();
-                DrawSphere(ball.pos, vr * 1.7f, Fade((Color){ 255, 255, 140, 255 }, 0.22f));
+                if (nearG > 0.01f) DrawSphere(ball.pos, vr * 1.7f, Fade((Color){ 255, 255, 140, 255 }, 0.22f * nearG));
                 rlEnableDepthMask();
             }
         EndMode3D();
+
+        // ---- 際どい判定の拡大図（上から見たライン際。1cm = 6 ピクセル）----
+        if (hawkT < 3.0f && mode != MODE_SERVE) {
+            const float S = 600.0f;            // 1m あたりのピクセル
+            int pw = 380, ph = 230, px = GetScreenWidth() - pw - 20, py = 200;
+            float al = Clamp01((3.0f - hawkT) / 0.4f);
+            DrawRectangle(px, py, pw, ph, Fade((Color){ 20, 60, 110, 255 }, 0.92f * al));
+            // 外側（下）とライン（上へ 5cm）とコートの内側
+            int edgeY = py + ph / 2 + 30;
+            DrawRectangle(px, py + 26, pw, edgeY - py - 26, Fade(SURFACES[gSurface].court, al));
+            DrawRectangle(px, edgeY, pw, py + ph - edgeY, Fade(SURFACES[gSurface].outside, al));
+            DrawRectangle(px, edgeY - (int)(LINE_W * S), pw, (int)(LINE_W * S), Fade(RAYWHITE, al));
+            // 球：中心はラインの外側の縁から lineDist だけ外。線に沿う向きの位置は真ん中に置く
+            float cx = px + pw * 0.5f, cy = edgeY + hawk.lineDist * S;
+            DrawCircle((int)cx, (int)cy, BALL_R * S, Fade((Color){ 90, 80, 50, 255 }, 0.55f * al));     // 弾んだ跡
+            DrawCircleLines((int)cx, (int)cy, BALL_R * S, Fade(YELLOW, al));
+            bool in = hawk.result == RESULT_IN;
+            float gap = (hawk.lineDist - BALL_R) * 100.0f;   // 球の端とラインの外側の縁の距離（cm）
+            const char *verdict = in ? (hawk.lineDist > 0.0f ? TextFormat("IN  (on the line %.1fcm)", fabsf(gap)) : "IN")
+                                     : TextFormat("OUT  %.1fcm", gap);
+            DrawRectangle(px, py, pw, 26, Fade(BLACK, 0.6f * al));
+            DrawText("BALL MARK  (close call)", px + 8, py + 5, 16, Fade(RAYWHITE, al));
+            DrawText(verdict, px + 10, py + ph - 30, 22, Fade(in ? (Color){ 120, 255, 120, 255 } : (Color){ 255, 110, 90, 255 }, al));
+        }
 
         // ---- HUD ----
         // 左上のパネルは小さく薄く（相手コートの奥を隠さないように）

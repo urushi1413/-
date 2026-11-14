@@ -613,7 +613,7 @@ static int VolleyKeys(Vector3 cl, float sgn, RKey *k)
 // 手の高さは立っているとき（腰 0.88m）の値。体が沈んだ分は描くときに下げる
 typedef struct { Vector3 rh, rd, lh; float hipDrop, lean, jump, liftL, liftR, kneel, headUp, headShake, k, e; } CelebOut;
 static float Pulse(float e, float c, float w) { float x = (e - c) / w; return (x > -1.0f && x < 1.0f) ? 0.5f + 0.5f * cosf(x * PI) : 0.0f; }
-static float Smooth01(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
+float Smooth01(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
 bool CelebPose(const SwingAnim *a, CelebOut *o)
 {
     if (a->celebT <= 0.0f || a->celebKind == CELEB_NONE || a->smashT > 0.0f) return false;

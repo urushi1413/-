@@ -276,6 +276,8 @@ typedef struct {
     float   boxX0, boxX1;  // サービスボックスの横の範囲
     Vector3 firstBounce;   // 最初に弾んだ位置（イン・アウトの判定に使った点）
     float   outBy;         // アウトなら、球の端がラインの外側からどれだけ外れたか（m）
+    float   lineDist;      // 一番際どいラインの外側の縁から、球の中心までの距離（外向きがプラス）。BALL_R 以下ならライン上でイン
+    int     lineAxis;      // そのラインの向き：0 = サイドライン（x）、1 = ベースライン・サービスライン（z）
 } Ball;
 
 // 打点の評価結果
@@ -594,6 +596,7 @@ Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent);
 void DrawRacketHead(Vector3 center, Vector3 normal, Color frame);
 void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT);
 void DrawRacket(Vector3 hand, Vector3 dir, Vector3 normal, Color frame);
+float Smooth01(float x);   // 0〜1 をなめらかに（3x²−2x³）
 Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 *hand, Vector3 *dir, bool *hasHand);
 // 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
 void ApplyLook(SwingAnim *a, int persona);

@@ -38,6 +38,8 @@ void JudgeFirstBounce(Ball *b)
                           : fabsf(b->pos.x) - (SINGLES_W * 0.5f + BALL_R);
     float oz = fabsf(b->pos.z) - (depth + BALL_R);
     b->outBy = fmaxf(fmaxf(ox, oz), 0.0f);
+    b->lineAxis = ox >= oz ? 0 : 1;
+    b->lineDist = fmaxf(ox, oz) + BALL_R;
 }
 
 // 空中でボールにかかる加速度
