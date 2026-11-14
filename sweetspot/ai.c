@@ -41,18 +41,23 @@ AiLevel EffLevel(const Opponent *ai)
 {
     AiLevel L = AI_LEVELS[ai->level];
     const Persona *p = &PERSONAS[ai->persona % PERSONA_COUNT];
+    // 選手の上乗せは難易度で変える（EASY は 4 割、NORMAL と PRO は全部）
+    static const float LEVEL_BOOST[3] = { 0.4f, 1.0f, 1.0f };
+    float f = LEVEL_BOOST[ai->level % 3];
+    #define BOOSTMUL(m) (1.0f - (1.0f - (m)) * f)
     // コートの得意・不得意：走る速さに加えて、タイミングの安定にも効く（ミスの少なさは AiSwing で）
     float form = p->surfSpeed[gSurface];
-    L.speed        += p->speedAdd + form;
-    L.timingSigmaMs *= Clamp(1.0f - 1.5f * form, 0.4f, 1.8f);
-    L.posErr        *= Clamp(1.0f - 1.5f * form, 0.4f, 1.8f);
-    L.reaction      = fmaxf(0.12f, L.reaction + p->reactionAdd);
-    L.timingSigmaMs *= p->timingMul;
-    L.posErr       *= p->posErrMul;
+    L.speed        += (p->speedAdd + form) * f;
+    L.timingSigmaMs *= Clamp(1.0f - 1.5f * form * f, 0.4f, 1.8f);
+    L.posErr        *= Clamp(1.0f - 1.5f * form * f, 0.4f, 1.8f);
+    L.reaction      = fmaxf(0.12f, L.reaction + p->reactionAdd * f);
+    L.timingSigmaMs *= BOOSTMUL(p->timingMul);
+    L.posErr       *= BOOSTMUL(p->posErrMul);
     L.aggression    = Clamp01(L.aggression + p->aggrAdd);
     L.serve1Kmh    += p->serveAdd;
     L.serve2Kmh    += p->serveAdd * 0.5f;
-    L.serveSkill    = Clamp(L.serveSkill + p->serveSkillAdd, 0.3f, 0.95f);
+    L.serveSkill    = Clamp(L.serveSkill + p->serveSkillAdd * f, 0.3f, 0.95f);
+    #undef BOOSTMUL
     L.serveMargin   = fmaxf(0.15f, L.serveMargin + p->serveMarginAdd);
     // 勝負強さ：大事なポイントほど、タイミングが安定し、反応が速く、サーブがぶれない
     float k = p->clutch * gPointImportance;
@@ -337,7 +342,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
-    gErrMul = pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
+    static const float LEVEL_ERR[3] = { 1.5f, 1.0f, 0.8f };   // 難易度でミスの量が変わる
+    gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);         // 得意なコートほどミスが減る
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
