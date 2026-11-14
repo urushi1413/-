@@ -565,17 +565,29 @@ typedef struct {
 
 typedef enum { APP_TITLE, APP_PLAY, APP_PAUSE, APP_BRACKET } AppState;
 
-// 大会：8 人の勝ち抜き。ent[r][i] はラウンド r の i 番目の出場者（slot の番号）
+// 大会（グランドスラム）：16 人の勝ち抜き。ent[r][i] はラウンド r の i 番目の出場者（slot の番号）
+#define TOUR_SIZE   16
+#define TOUR_ROUNDS 4        // 4 回戦、準々決勝、準決勝、決勝
+#define SLAM_COUNT  4        // 全豪、全仏、ウィンブルドン、全米
 typedef struct {
     bool active, women, playerOut, champion;
+    int  slam;               // 0 全豪 1 全仏 2 ウィンブルドン 3 全米
     int  surface, setsToWin;
-    int  slot[8];            // 出場者の選手番号（-1 = 自分、0 = 予選上がり）
-    int  ent[4][8];          // ラウンドごとの出場者
-    int  winner[3][4];       // ラウンドごとの試合の勝者（出場者の番号。-1 = まだ）
-    char score[3][4][32];    // 試合のスコア（勝者から見た）
-    int  round;              // 今のラウンド（0 準々決勝、1 準決勝、2 決勝、3 終わり）
+    bool season;             // シーズン：4 大会を続けて回る
+    int  seasonTitles;       // シーズンで取った大会の数
+    bool seasonWon[SLAM_COUNT];
+    int  slot[TOUR_SIZE];    // 出場者の選手番号（-1 = 自分、0 = 予選上がり）
+    int  seed[TOUR_SIZE];    // シード（0 = なし）
+    int  qual[TOUR_SIZE];    // 予選上がりの名前
+    float qstr[TOUR_SIZE];   // 予選上がりの強さ
+    int  ent[TOUR_ROUNDS + 1][TOUR_SIZE];        // ラウンドごとの出場者
+    int  winner[TOUR_ROUNDS][TOUR_SIZE / 2];     // ラウンドごとの試合の勝者（出場者の番号。-1 = まだ）
+    char score[TOUR_ROUNDS][TOUR_SIZE / 2][40];  // 試合のスコア（勝者から見た）
+    int  round;              // 今のラウンド（0 4 回戦 … 3 決勝、4 終わり）
     int  outRound;           // 負けたラウンド
 } Tournament;
+extern bool gAllWhite;       // ウィンブルドン：みんな白い服
+Color PersonaShirt(int persona);   // シャツの色（ウィンブルドンは白）
 // リプレイ：1 フレーム分の記録
 typedef struct { float dt; Vector3 ball; bool ballOn; Vector3 pPos, aPos; SwingAnim pA, aA; Color aShirt; } RFrame;
 void RecReset(void);
@@ -600,11 +612,15 @@ void MLogPoint(int point, const Score *before, int server, int serveNo, int rall
                const char *enderType, float enderKmh, float enderQ, float youMinDist, float importance, int persona, int level, int style);
 void MLogMatchEnd(const Score *s, int persona, int level, int style);
 
-void TourStart(Tournament *t, bool women, int surface, int setsToWin);
+void TourStart(Tournament *t, bool women, int slam, int setsToWin);
+void TourStartSeason(Tournament *t, bool women, int setsToWin);
+bool TourNextSlam(Tournament *t);
 int  TourOpponent(const Tournament *t);
+const char *TourOpponentName(const Tournament *t);
+int  TourSlamSurface(int slam);
 void TourRecordPlayerMatch(Tournament *t, bool playerWon, const Score *s);
 void TourDraw(const Tournament *t, int W, int H, float time);
-const char *TourName(int surface);
+const char *TourName(int slam);
 const char *TourRoundName(int round);
 
 typedef enum { MODE_MATCH, MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;

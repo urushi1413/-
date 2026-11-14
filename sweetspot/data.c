@@ -21,6 +21,7 @@ static const float PERSONA_HEIGHT[PERSONA_COUNT] = {
     178, 198,                                  // 錦織、ズベレフ
 };
 float gHeightDelta = 0.0f;
+bool gAllWhite = false;
 // ツアーごとの選手の並び
 static const int MEN_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 15, 16 };
 static const int WOMEN_IDS[] = { 9, 10, 11, 12, 13, 14 };
@@ -91,9 +92,15 @@ void ApplyLook(SwingAnim *a, int persona)
     a->scale = PersonaHeight(persona) / 185.0f;
     if (persona < 0) {   // 人間：紺のショーツ
         a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
+        if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
         return;
     }
     persona %= PERSONA_COUNT;
     a->female = PERSONAS[persona].female || (persona == 0 && gWomen);
     a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle; a->skin = SKIN[persona];
+    if (gAllWhite) {   // ウィンブルドン：服は白だけ
+        a->shorts = (Color){ 245, 245, 248, 255 };
+        if (a->headband.a) a->headband = (Color){ 250, 250, 250, 255 };
+    }
 }
+Color PersonaShirt(int persona) { return gAllWhite ? (Color){ 248, 248, 250, 255 } : PERSONAS[persona].shirt; }

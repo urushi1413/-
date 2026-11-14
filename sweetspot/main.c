@@ -1,6 +1,7 @@
 // SWEET SPOT — 打点と球種がちゃんと結果に効く、球足の速いリアル系テニス
 // ゲームの流れ（メニュー・入力・試合の進行・画面）
 #include "game.h"
+#include <ctype.h>
 
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
@@ -180,6 +181,9 @@ int main(void)
     // メニュー
     AppState app = APP_TITLE;
     static Tournament tour = { 0 };      // 大会
+    static char oppShort[24] = "";       // 大会の予選上がりの名前（試合中の表示用）
+#define OPP_SHORT ((ai.persona == 0 && tour.active && oppShort[0]) ? oppShort : PERSONAS[ai.persona].shortName)
+    int slamSel = 0;                     // メニューで選んだグランドスラム（4 = シーズン）
     // リプレイ・ハイライト
     long pointStart = 0;                 // 今のポイントが始まったフレーム（記録の通し番号）
     bool hlPending = false;              // 前のポイントをハイライトに取っておく
@@ -219,12 +223,20 @@ int main(void)
         if (bot.anim.splitT > 0.0f) bot.anim.splitT -= simDt;
         if (ai.anim.splitT > 0.0f)  ai.anim.splitT  -= simDt;
 
+        gAllWhite = tour.active && tour.slam == 2;   // ウィンブルドンは白い服
         // ================= 大会の組み合わせ表 =================
         if (app == APP_BRACKET) {
             SfxCrowd(false, 0.0f);
             if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && IsKeyPressed(KEY_SPACE))) {
                 int op = TourOpponent(&tour);
-                if (op >= 0) {
+                if (op < 0 && TourNextSlam(&tour)) {
+                    // シーズン：次の大会の組み合わせ表へ
+                } else if (op >= 0) {
+                    {   // 予選上がりは名字を大文字で
+                        const char *nm = TourOpponentName(&tour), *sp = strrchr(nm, ' ');
+                        snprintf(oppShort, sizeof(oppShort), "%s", sp ? sp + 1 : nm);
+                        for (char *c = oppShort; *c; c++) *c = (char)toupper((unsigned char)*c);
+                    }
                     ai.persona = op; gWomen = tour.women; gSurface = (SurfaceType)tour.surface; setsToWin = tour.setsToWin;
                     mode = MODE_MATCH; forceRestart = true; app = APP_PLAY;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
@@ -293,6 +305,7 @@ int main(void)
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
                     case MI_CAMERA: camMode = (camMode + 3 + change) % 3; break;
                     case MI_AIM:    aimLanes = !aimLanes; break;
+                    case MI_TOURNAMENT: slamSel = (slamSel + SLAM_COUNT + 1 + change) % (SLAM_COUNT + 1); break;
                     case MI_SOUND:  SfxSetVolume(roundf(Clamp(SfxGetVolume() + 0.1f * change, 0.0f, 1.0f) * 10.0f) / 10.0f); break;
                     default: break;
                 }
@@ -304,7 +317,8 @@ int main(void)
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_TOURNAMENT) {
                     // 大会を始める：今のツアー（男子・女子）、コート、試合の長さで
-                    TourStart(&tour, gWomen, gSurface, setsToWin);
+                    if (slamSel == SLAM_COUNT) TourStartSeason(&tour, gWomen, setsToWin);
+                    else TourStart(&tour, gWomen, slamSel, setsToWin);
                     app = APP_BRACKET;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
@@ -331,7 +345,7 @@ int main(void)
                 const char *label = "", *value = "";
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
-                    case MI_TOURNAMENT: label = TextFormat("TOURNAMENT  (%s, %s)", TourName(gSurface), gWomen ? "WOMEN" : "MEN"); break;
+                    case MI_TOURNAMENT: label = TextFormat("GRAND SLAM  < %s >  (%s)", slamSel == SLAM_COUNT ? "SEASON: ALL 4" : TourName(slamSel), gWomen ? "WOMEN" : "MEN"); break;
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
                     case MI_TOUR:    label = "Tour";            value = gWomen ? "WOMEN" : "MEN"; break;
@@ -1322,11 +1336,11 @@ int main(void)
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
                     snprintf(scoreCall, sizeof(scoreCall), "GAME, SET%s  %s   (%d - %d)", score.over ? " AND MATCH" : "",
-                             winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName, g[0], g[1]);
+                             winner == 0 ? "YOU" : OPP_SHORT, g[0], g[1]);
                     if (!score.over) { setBreak = true; summaryT = 0.0f; }
                 }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
-                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName, score.games[0], score.games[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : OPP_SHORT, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
@@ -1345,7 +1359,7 @@ int main(void)
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
                         smashPrevE = 0.0f;
                         phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.6f);
-                        const char *nm = PERSONAS[ai.persona].shortName;
+                        const char *nm = OPP_SHORT;
                         if (ai.smashes == 1) {
                             snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", nm, nm);
                         } else {
@@ -1399,9 +1413,9 @@ int main(void)
                 }
                 // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
                 {
-                    const char *who = winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName;
+                    const char *who = winner == 0 ? "YOU" : OPP_SHORT;
                     const char *big = gPointImportance >= 1.0f ? "BIG POINT  -  " : "";
-                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), "%s SMASHES THE RACKET", PERSONAS[ai.persona].shortName);
+                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), "%s SMASHES THE RACKET", OPP_SHORT);
                     else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), "%sACE  %s  %.0f km/h", big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
                     else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? "%s%s WINNER  (%d-shot rally)" : "%s%s WINNER", big, who, rallyHits);
                     else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), "%s%d-SHOT RALLY  -  point %s", big, rallyHits, who);
@@ -1523,7 +1537,7 @@ int main(void)
                     float want = (ai.persona == PERSONA_MURRAYE && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && ai.anim.celebT <= 0.0f) ? 1.0f : 0.0f;
                     ai.anim.slouch += (want - ai.anim.slouch) * Clamp01(frameDt * 3.0f);
                 }
-                DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
+                DrawFigure(ai.pos, false, PersonaShirt(ai.persona), &ai.anim, Vector3Length(ai.vel));
             }
 
             if (playerServing) {
@@ -1741,7 +1755,7 @@ int main(void)
             DrawText("R: replay", GetScreenWidth() / 2 - MeasureText("R: replay", 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
         if (tour.active && mode == MODE_MATCH) {
-            const char *tl = TextFormat("%s  -  %s", TourName(tour.surface), TourRoundName(tour.round));
+            const char *tl = TextFormat("%s  -  %s", TourName(tour.slam), TourRoundName(tour.round));
             DrawText(tl, (int)fmaxf(520.0f, GetScreenWidth() / 2 - MeasureText(tl, 18) / 2), 8, 18, Fade(YELLOW, 0.85f));
         }
         // ---- 際どい判定の拡大図（上から見たライン際。1cm = 6 ピクセル）----
@@ -1872,7 +1886,7 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? "YOU" : PERSONAS[ai.persona].shortName, sx + 58, ry + 3 + (k == 1 && strlen(PERSONAS[ai.persona].shortName) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(PERSONAS[ai.persona].shortName) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
+                DrawText(k == 0 ? "YOU" : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
@@ -1917,12 +1931,12 @@ int main(void)
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
-                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", PERSONAS[ai.persona].shortName),
-                                 tour.active ? "Enter: back to the draw    R: highlights" : "Enter: new match    R: highlights", &score, ms, mst, PERSONAS[ai.persona].shortName);
+                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", OPP_SHORT),
+                                 tour.active ? "Enter: back to the draw    R: highlights" : "Enter: new match    R: highlights", &score, ms, mst, OPP_SHORT);
             else if (setBreak && phaseTimer <= 0.0f)
-                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, PERSONAS[ai.persona].shortName);
+                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, OPP_SHORT);
             else if (showSummary)
-                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst, PERSONAS[ai.persona].shortName);
+                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst, OPP_SHORT);
         }
 
         // 統計（Tab）
@@ -2022,7 +2036,7 @@ int main(void)
         EndDrawing();
         // リプレイ用に記録（試合中だけ。描いたままの姿勢で）
         if (mode == MODE_MATCH && app == APP_PLAY) {
-            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PERSONAS[ai.persona].shirt };
+            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PersonaShirt(ai.persona) };
             RecPush(&f);
         }
     }
