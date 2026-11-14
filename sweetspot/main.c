@@ -139,6 +139,8 @@ int main(void)
     int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;
     float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
+    Vector3 lineCallPos = { 0 };         // 線審がアウトをコールした球の位置
+    float lineCallT = 0.0f;
     char  rageMsg[160] = { 0 };          // ラケットを叩きつけたときの表示（審判のコール）
     float rageMsgT = 0.0f, smashPrevE = 0.0f;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
@@ -195,6 +197,7 @@ int main(void)
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
+        lineCallT = fmaxf(lineCallT - frameDt, 0.0f);
         // スプリットステップの見た目の時間
         if (P.anim.splitT > 0.0f)   P.anim.splitT   -= simDt;
         if (bot.anim.splitT > 0.0f) bot.anim.splitT -= simDt;
@@ -1101,7 +1104,8 @@ int main(void)
                 } else if (serveNo == 1) {
                     serveNo = 2;
                     pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
-                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), "Fault (OUT %.0fcm)", fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg; }
+                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), "Fault (OUT %.0fcm)", fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg;
+                                                     lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
                     phase = PH_BETWEEN;
@@ -1109,6 +1113,7 @@ int main(void)
                 } else {
                     winner = 1 - hitter;
                     pointMsg = "Double fault";
+                    if (ball.result == RESULT_OUT) { lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     endKind = 4;
                 }
@@ -1116,7 +1121,7 @@ int main(void)
                 if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
                     winner = 1 - hitter;
                     endKind = 3;
-                    if (ball.result == RESULT_OUT) SfxCallOut();
+                    if (ball.result == RESULT_OUT) { SfxCallOut(); lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
                                                            : (hitter == 0 ? "Your error (out)" : "AI error (out)");
                     if (ball.result == RESULT_OUT) {   // どれだけ外れたか
@@ -1312,7 +1317,7 @@ int main(void)
         ClearBackground((Color){ 150, 190, 230, 255 });
         BeginMode3D(cam);
             DrawCourt();
-            if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime());
+            if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, -1); ApplyLook(&bot.anim, -1);

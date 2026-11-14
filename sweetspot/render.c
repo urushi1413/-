@@ -54,8 +54,9 @@ void DrawCourt(void)
 
 // ================= 観客席と審判 =================
 // 観客席：コートの両横と奥に段々の席。カメラとコートの間に来る側は描かない（視界をふさがないように）
-//   excite：ポイントの後の盛り上がり（0〜1）。観客が立ち上がって弾む
-typedef struct { Vector3 p; Color shirt, skin; float seed; } Fan;
+// 観客は 1 人ずつ形（頭・髪・目・口・肩・腕・脚）を作り、席ごとに 1 つの 3D モデルにまとめて描く（速い）。
+//   盛り上がったときは、上げた腕（拍手）だけを上に描き足す
+typedef struct { Vector3 p, f, r; Color shirt, skin; float seed; } Fan;
 #define FAN_MAX 1800
 static Fan gFans[FAN_MAX];
 static int gFanCount = 0;
@@ -63,6 +64,131 @@ static float gStandX0, gStandZ0;   // 横の席の内側の x、奥の席の内�
 #define STAND_ROWS  9
 #define STAND_STEP  0.80f   // 1 段の奥行き
 #define STAND_RISE  0.45f   // 1 段の高さ
+static Model gCrowd[3];             // 0 = 左, 1 = 右, 2 = 奥
+static bool  gCrowdOk = false;
+
+// ---- 頂点を積み上げて 1 つのメッシュにする（色は面の向きで陰をつける） ----
+typedef struct { float *v, *n; unsigned char *c; int count, cap; } MeshB;
+static void MBPush(MeshB *m, Vector3 p, Vector3 n, Color c)
+{
+    if (m->count >= m->cap) {
+        m->cap = m->cap ? m->cap * 2 : 4096;
+        m->v = MemRealloc(m->v, m->cap * 3 * sizeof(float));
+        m->n = MemRealloc(m->n, m->cap * 3 * sizeof(float));
+        m->c = MemRealloc(m->c, m->cap * 4);
+    }
+    int i = m->count++;
+    m->v[i * 3] = p.x; m->v[i * 3 + 1] = p.y; m->v[i * 3 + 2] = p.z;
+    m->n[i * 3] = n.x; m->n[i * 3 + 1] = n.y; m->n[i * 3 + 2] = n.z;
+    m->c[i * 4] = c.r; m->c[i * 4 + 1] = c.g; m->c[i * 4 + 2] = c.b; m->c[i * 4 + 3] = 255;
+}
+static void MBTri(MeshB *m, Vector3 a, Vector3 b, Vector3 c, Color col)
+{
+    Vector3 n = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a)));
+    float l = 0.70f + 0.30f * fmaxf(Vector3DotProduct(n, (Vector3){ 0.30f, 0.85f, 0.42f }), 0.0f);
+    Color s = { (unsigned char)(col.r * l), (unsigned char)(col.g * l), (unsigned char)(col.b * l), 255 };
+    MBPush(m, a, n, s); MBPush(m, b, n, s); MBPush(m, c, n, s);
+}
+static void MBQuad(MeshB *m, Vector3 a, Vector3 b, Vector3 c, Vector3 d, Color col) { MBTri(m, a, b, c, col); MBTri(m, a, c, d, col); }
+// 向きのある箱：中心、3 つの軸（半分の長さを掛けたもの）
+static void MBBox(MeshB *m, Vector3 o, Vector3 ax, Vector3 ay, Vector3 az, Color col)
+{
+    Vector3 P[8];
+    for (int i = 0; i < 8; i++)
+        P[i] = Vector3Add(o, Vector3Add(Vector3Scale(ax, (i & 1) ? 1.0f : -1.0f),
+                             Vector3Add(Vector3Scale(ay, (i & 2) ? 1.0f : -1.0f), Vector3Scale(az, (i & 4) ? 1.0f : -1.0f))));
+    MBQuad(m, P[0], P[2], P[3], P[1], col); MBQuad(m, P[4], P[5], P[7], P[6], col);   // -z, +z
+    MBQuad(m, P[0], P[1], P[5], P[4], col); MBQuad(m, P[2], P[6], P[7], P[3], col);   // -y, +y
+    MBQuad(m, P[0], P[4], P[6], P[2], col); MBQuad(m, P[1], P[3], P[7], P[5], col);   // -x, +x
+}
+static void MBSphere(MeshB *m, Vector3 c, float r, int rings, int slices, Color col)
+{
+    for (int i = 0; i < rings; i++) {
+        float t0 = PI * i / rings, t1 = PI * (i + 1) / rings;
+        for (int j = 0; j < slices; j++) {
+            float p0 = 2 * PI * j / slices, p1 = 2 * PI * (j + 1) / slices;
+            #define SP(t, p) (Vector3){ c.x + r * sinf(t) * cosf(p), c.y + r * cosf(t), c.z + r * sinf(t) * sinf(p) }
+            Vector3 a = SP(t0, p0), b = SP(t0, p1), d = SP(t1, p0), e = SP(t1, p1);
+            #undef SP
+            if (i > 0) MBTri(m, a, b, e, col);
+            if (i < rings - 1) MBTri(m, a, e, d, col);
+        }
+    }
+}
+// 太さの変わる筒（側面とふた）
+static void MBCyl(MeshB *m, Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
+{
+    Vector3 ax = Vector3Normalize(Vector3Subtract(b, a));
+    Vector3 u = fabsf(ax.y) < 0.9f ? Vector3Normalize(Vector3CrossProduct(ax, (Vector3){ 0, 1, 0 })) : (Vector3){ 1, 0, 0 };
+    Vector3 w = Vector3CrossProduct(ax, u);
+    for (int j = 0; j < sl; j++) {
+        float p0 = 2 * PI * j / sl, p1 = 2 * PI * (j + 1) / sl;
+        Vector3 d0 = Vector3Add(Vector3Scale(u, cosf(p0)), Vector3Scale(w, sinf(p0)));
+        Vector3 d1 = Vector3Add(Vector3Scale(u, cosf(p1)), Vector3Scale(w, sinf(p1)));
+        Vector3 a0 = Vector3Add(a, Vector3Scale(d0, ra)), a1 = Vector3Add(a, Vector3Scale(d1, ra));
+        Vector3 b0 = Vector3Add(b, Vector3Scale(d0, rb)), b1 = Vector3Add(b, Vector3Scale(d1, rb));
+        MBQuad(m, a0, a1, b1, b0, col);
+        MBTri(m, b, b0, b1, col);
+    }
+}
+
+// 座った観客 1 人。p：座面、f：顔の向き（コートの方）、r：右
+static void BuildFan(MeshB *m, const Fan *fn, unsigned int *rs)
+{
+    #define RND() ((*rs = *rs * 1103515245u + 12345u) >> 8 & 0xffff) / 65535.0f
+    Vector3 p = fn->p, f = fn->f, r = fn->r, up = { 0, 1, 0 };
+    #define AT(fw, rt, y) Vector3Add(p, Vector3Add(Vector3Scale(f, (fw)), Vector3Add(Vector3Scale(r, (rt)), Vector3Scale(up, (y)))))
+    const Color hairs[] = { { 40, 30, 25, 255 }, { 90, 60, 35, 255 }, { 200, 170, 110, 255 }, { 150, 150, 150, 255 }, { 20, 20, 20, 255 }, { 120, 60, 30, 255 } };
+    const Color pants[] = { { 50, 55, 70, 255 }, { 200, 190, 170, 255 }, { 30, 30, 35, 255 }, { 80, 90, 120, 255 } };
+    Color hair = hairs[(int)(RND() * 5.99f)], leg = pants[(int)(RND() * 3.99f)];
+    float w = 0.85f + 0.3f * RND();   // 体格
+    Color dark = { 30, 25, 25, 255 };
+    // 脚：太ももは前へ、すねは下の段へ
+    for (int s = -1; s <= 1; s += 2) {
+        MBBox(m, AT(0.18f, s * 0.09f * w, 0.07f), Vector3Scale(f, 0.20f), Vector3Scale(up, 0.06f), Vector3Scale(r, 0.065f * w), leg);
+        MBBox(m, AT(0.38f, s * 0.09f * w, -0.17f), Vector3Scale(f, 0.055f), Vector3Scale(up, 0.22f), Vector3Scale(r, 0.055f), leg);
+    }
+    // 胴：腰から肩へ（シャツ）。肩
+    MBCyl(m, AT(-0.02f, 0, 0.02f), AT(0.0f, 0, 0.46f), 0.13f * w, 0.16f * w, 8, fn->shirt);
+    MBBox(m, AT(0.0f, 0, 0.47f), Vector3Scale(f, 0.08f), Vector3Scale(up, 0.045f), Vector3Scale(r, 0.20f * w), fn->shirt);
+    // 腕：肩から膝の上へ（袖と手）
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 sh = AT(0.0f, s * 0.19f * w, 0.44f), el = AT(0.08f, s * 0.21f * w, 0.20f), hd = AT(0.26f, s * 0.12f * w, 0.14f);
+        MBCyl(m, sh, el, 0.055f, 0.048f, 6, fn->shirt);
+        MBCyl(m, el, hd, 0.042f, 0.036f, 6, fn->skin);
+    }
+    // 首と頭。髪（後ろと上）、帽子の人も。顔：目・口・眉
+    MBCyl(m, AT(0, 0, 0.48f), AT(0.01f, 0, 0.58f), 0.045f, 0.045f, 6, fn->skin);
+    Vector3 hc = AT(0.02f, 0, 0.68f);
+    MBSphere(m, hc, 0.105f, 6, 8, fn->skin);
+    float hat = RND();
+    if (hat < 0.15f) {   // キャップ
+        Color cap = fn->shirt.r > 200 && fn->shirt.g > 200 ? (Color){ 30, 50, 110, 255 } : (Color){ 245, 245, 245, 255 };
+        MBCyl(m, AT(0.0f, 0, 0.71f), AT(0.0f, 0, 0.79f), 0.112f, 0.10f, 8, cap);
+        MBBox(m, AT(0.13f, 0, 0.725f), Vector3Scale(f, 0.07f), Vector3Scale(up, 0.008f), Vector3Scale(r, 0.08f), cap);
+    } else if (hat < 0.22f) {   // つば広の帽子
+        Color sh = { 235, 225, 200, 255 };
+        MBCyl(m, AT(0.0f, 0, 0.72f), AT(0.0f, 0, 0.81f), 0.11f, 0.10f, 8, sh);
+        MBCyl(m, AT(0.0f, 0, 0.72f), AT(0.0f, 0, 0.73f), 0.19f, 0.19f, 10, sh);
+    } else if (RND() > 0.08f) {   // 髪（たまに坊主・はげ）
+        MBSphere(m, AT(-0.025f, 0, 0.70f), 0.108f, 6, 8, hair);
+        if (RND() < 0.35f) MBSphere(m, AT(-0.07f, 0, 0.60f), 0.09f, 5, 7, hair);   // 長い髪
+    }
+    Vector3 fc = AT(0.02f + 0.098f, 0, 0.68f);
+    if (RND() < 0.12f) {   // サングラス
+        MBBox(m, Vector3Add(fc, Vector3Scale(up, 0.02f)), Vector3Scale(f, 0.012f), Vector3Scale(up, 0.018f), Vector3Scale(r, 0.065f), dark);
+    } else {
+        for (int s = -1; s <= 1; s += 2) {
+            MBBox(m, Vector3Add(fc, Vector3Add(Vector3Scale(r, s * 0.036f), Vector3Scale(up, 0.018f))), Vector3Scale(f, 0.012f), Vector3Scale(up, 0.012f), Vector3Scale(r, 0.011f), dark);       // 目
+            MBBox(m, Vector3Add(Vector3Add(fc, Vector3Scale(f, -0.004f)), Vector3Add(Vector3Scale(r, s * 0.036f), Vector3Scale(up, 0.043f))), Vector3Scale(f, 0.01f), Vector3Scale(up, 0.006f), Vector3Scale(r, 0.02f), hair);   // 眉
+        }
+    }
+    MBBox(m, Vector3Add(Vector3Add(fc, Vector3Scale(f, -0.012f)), Vector3Scale(up, -0.045f)), Vector3Scale(f, 0.01f), Vector3Scale(up, 0.008f), Vector3Scale(r, 0.028f), (Color){ 150, 70, 70, 255 });   // 口
+    MBBox(m, Vector3Add(fc, Vector3Add(Vector3Scale(f, 0.012f), Vector3Scale(up, -0.008f))), Vector3Scale(f, 0.02f), Vector3Scale(up, 0.022f), Vector3Scale(r, 0.012f), fn->skin);   // 鼻
+    #undef AT
+    #undef RND
+}
+
 static void BuildFans(void)
 {
     if (gFanCount) return;
@@ -73,106 +199,185 @@ static void BuildFans(void)
     const Color shirts[] = { { 230, 230, 235, 255 }, { 40, 60, 120, 255 }, { 200, 50, 50, 255 }, { 250, 210, 60, 255 }, { 60, 140, 80, 255 },
                              { 30, 30, 35, 255 }, { 120, 170, 220, 255 }, { 240, 150, 170, 255 }, { 150, 110, 70, 255 }, { 245, 245, 245, 255 } };
     const Color skins[] = { { 240, 205, 170, 255 }, { 225, 180, 140, 255 }, { 190, 140, 100, 255 }, { 140, 95, 65, 255 }, { 250, 220, 190, 255 } };
+    MeshB mb[3] = { 0 };
     for (int side = 0; side < 3; side++) {      // 0 = 左, 1 = 右, 2 = 奥
+        Vector3 f = side == 0 ? (Vector3){ 1, 0, 0 } : side == 1 ? (Vector3){ -1, 0, 0 } : (Vector3){ 0, 0, 1 };
+        Vector3 rt = Vector3CrossProduct(f, (Vector3){ 0, 1, 0 });   // 顔の向きから見た右
         for (int row = 0; row < STAND_ROWS; row++) {
             float len = side < 2 ? 36.0f : 2.0f * (gStandX0 - 0.5f);
             int n = (int)(len / 0.62f);
             for (int i = 0; i < n && gFanCount < FAN_MAX; i++) {
                 if (RND() < 0.12f) continue;   // 空席
                 float u = -len * 0.5f + (i + 0.5f) * len / n;
-                float out = 0.5f + row * STAND_STEP, y = 0.6f + row * STAND_RISE;
+                float out = 0.65f + row * STAND_STEP, y = 0.75f + row * STAND_RISE;   // 段の後ろ寄りに座る
                 Vector3 p = side == 0 ? (Vector3){ -(gStandX0 + out), y, u } : side == 1 ? (Vector3){ gStandX0 + out, y, u }
                                       : (Vector3){ u, y, -(gStandZ0 + out) };
-                Fan f = { p, shirts[(int)(RND() * 9.99f)], skins[(int)(RND() * 4.99f)], RND() * 6.28f };
-                gFans[gFanCount++] = f;
+                Fan fn = { p, f, rt, shirts[(int)(RND() * 9.99f)], skins[(int)(RND() * 4.99f)], RND() * 6.28f };
+                gFans[gFanCount++] = fn;
+                BuildFan(&mb[side], &fn, &r);
             }
         }
     }
     #undef RND
+    for (int i = 0; i < 3; i++) {
+        Mesh mesh = { 0 };
+        mesh.vertexCount = mb[i].count; mesh.triangleCount = mb[i].count / 3;
+        mesh.vertices = mb[i].v; mesh.normals = mb[i].n; mesh.colors = mb[i].c;
+        UploadMesh(&mesh, false);
+        gCrowd[i] = LoadModelFromMesh(mesh);
+    }
+    gCrowdOk = true;
 }
 
-void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time)
+// 簡単な人（審判・線審・ボールキッズ）。base：足元（座っているなら椅子の座面の下の床）、f：顔の向き
+//   pose 0 = 立つ、1 = 椅子に座る、2 = しゃがむ。armOut：右腕を横へ伸ばす（アウトのコール）
+static void DrawPerson(Vector3 base, Vector3 f, int pose, Color shirt, Color pants, Color cap, Color skin, float armOut, Vector3 lookAt)
+{
+    Vector3 up = { 0, 1, 0 }, r = Vector3CrossProduct(f, up);
+    #define AT(fw, rt, y) Vector3Add(base, Vector3Add(Vector3Scale(f, (fw)), Vector3Add(Vector3Scale(r, (rt)), Vector3Scale(up, (y)))))
+    float hipY = pose == 0 ? 0.90f : pose == 1 ? 0.48f : 0.42f;
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 hip = AT(0, s * 0.10f, hipY), kn, ft;
+        if (pose == 0)      { kn = AT(0.02f, s * 0.11f, 0.47f); ft = AT(0, s * 0.12f, 0.06f); }
+        else if (pose == 1) { kn = AT(0.42f, s * 0.12f, 0.50f); ft = AT(0.46f, s * 0.12f, 0.06f); }
+        else                { kn = AT(0.35f, s * 0.14f, s < 0 ? 0.50f : 0.12f); ft = AT(s < 0 ? 0.30f : -0.15f, s * 0.14f, 0.06f); }   // 片膝をつく
+        DrawCylinderEx(hip, kn, 0.075f, 0.062f, 8, pants);
+        DrawCylinderEx(kn, ft, 0.060f, 0.050f, 8, pants);
+        DrawSphere(kn, 0.062f, pants);
+        DrawCube(Vector3Add(ft, Vector3Scale(f, 0.06f)), fabsf(f.x) * 0.22f + fabsf(r.x) * 0.10f, 0.08f, fabsf(f.z) * 0.22f + fabsf(r.z) * 0.10f, (Color){ 30, 30, 30, 255 });
+    }
+    Vector3 hip = AT(0, 0, hipY), chest = AT(pose == 2 ? 0.10f : 0.02f, 0, hipY + 0.48f);
+    DrawCylinderEx(hip, chest, 0.16f, 0.19f, 10, shirt);
+    DrawCylinderEx(Vector3Add(chest, Vector3Scale(r, -0.21f)), Vector3Add(chest, Vector3Scale(r, 0.21f)), 0.075f, 0.075f, 8, shirt);
+    for (int s = -1; s <= 1; s += 2) {
+        Vector3 sh = Vector3Add(chest, Vector3Scale(r, s * 0.21f)), el, hd;
+        if (s > 0 && armOut > 0.0f) {   // 右腕を横へまっすぐ伸ばす（アウト！）
+            el = Vector3Add(sh, Vector3Add(Vector3Scale(r, 0.30f * armOut), Vector3Scale(up, -0.28f * (1.0f - armOut))));
+            hd = Vector3Add(sh, Vector3Add(Vector3Scale(r, 0.60f * armOut), Vector3Scale(up, -0.55f * (1.0f - armOut) + 0.05f * armOut)));
+        } else if (pose == 1) { el = Vector3Add(sh, (Vector3){ 0, -0.28f, 0 }); el = Vector3Add(el, Vector3Scale(f, 0.08f)); hd = AT(0.36f, s * 0.13f, hipY + 0.10f); }
+        else                  { el = Vector3Add(sh, (Vector3){ 0, -0.28f, 0 }); hd = Vector3Add(el, Vector3Add((Vector3){ 0, -0.24f, 0 }, Vector3Scale(f, pose == 2 ? 0.20f : 0.04f))); }
+        DrawCylinderEx(sh, el, 0.05f, 0.045f, 6, shirt);
+        DrawCylinderEx(el, hd, 0.042f, 0.038f, 6, armOut > 0.0f && s > 0 ? shirt : skin);
+        DrawSphereEx(hd, 0.045f, 4, 6, skin);
+    }
+    Vector3 head = AT(pose == 2 ? 0.12f : 0.03f, 0, hipY + 0.73f);
+    DrawCylinderEx(chest, head, 0.05f, 0.05f, 6, skin);
+    DrawSphereEx(head, 0.11f, 6, 8, skin);
+    // 顔の向き：球を見る
+    Vector3 lk = Vector3Subtract(lookAt, head); lk.y = 0;
+    Vector3 ff = Vector3Length(lk) > 0.01f ? Vector3Normalize(lk) : f;
+    if (Vector3DotProduct(ff, f) < 0.0f) ff = Vector3Normalize(Vector3Add(ff, Vector3Scale(f, 1.2f)));   // 真後ろは向かない
+    DrawSphereEx(Vector3Add(head, Vector3Add(Vector3Scale(ff, -0.03f), (Vector3){ 0, 0.03f, 0 })), 0.105f, 6, 8, (Color){ 70, 55, 45, 255 });   // 髪
+    if (cap.a) {
+        DrawCylinderEx(Vector3Add(head, (Vector3){ 0, 0.03f, 0 }), Vector3Add(head, (Vector3){ 0, 0.12f, 0 }), 0.118f, 0.105f, 10, cap);
+        DrawCube(Vector3Add(head, Vector3Add(Vector3Scale(ff, 0.15f), (Vector3){ 0, 0.045f, 0 })), 0.12f, 0.015f, 0.12f, cap);   // つば
+    }
+    Vector3 fc = Vector3Add(head, Vector3Scale(ff, 0.10f));
+    Vector3 rr = Vector3CrossProduct(ff, up);
+    for (int s = -1; s <= 1; s += 2) DrawSphereEx(Vector3Add(fc, Vector3Add(Vector3Scale(rr, s * 0.035f), (Vector3){ 0, 0.02f, 0 })), 0.014f, 3, 4, (Color){ 30, 25, 25, 255 });
+    DrawSphereEx(Vector3Add(fc, Vector3Scale(ff, 0.01f)), 0.022f, 3, 4, skin);
+    #undef AT
+}
+
+void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT)
 {
     BuildFans();
-    const Surface *sf = &SURFACES[gSurface];
     Color wall = gSurface == SURF_HARD ? (Color){ 30, 60, 120, 255 } : (Color){ 25, 70, 45, 255 };
     Color step = { 150, 150, 155, 255 }, step2 = { 135, 135, 140, 255 };
-    (void)sf;
     // カメラがその席より外にいたら、その席は描かない
     bool showL = camPos.x > -gStandX0, showR = camPos.x < gStandX0, showB = camPos.z > -gStandZ0;
     float H = STAND_ROWS * STAND_RISE, D = STAND_ROWS * STAND_STEP;
-    // 囲いの壁（コート側）と段
-    if (showL || showR) for (int s = -1; s <= 1; s += 2) {
+    for (int s = -1; s <= 1; s += 2) {
         if ((s < 0 && !showL) || (s > 0 && !showR)) continue;
         DrawCube((Vector3){ s * (gStandX0 - 0.1f), 0.6f, 0 }, 0.2f, 1.2f, 36.0f, wall);
         for (int row = 0; row < STAND_ROWS; row++)
-            DrawCube((Vector3){ s * (gStandX0 + 0.5f + row * STAND_STEP), 0.3f + row * STAND_RISE * 0.5f + 0.15f, 0 },
-                     STAND_STEP, 0.6f + row * STAND_RISE, 36.0f, row % 2 ? step : step2);
+            DrawCube((Vector3){ s * (gStandX0 + 0.5f + row * STAND_STEP), (0.75f + row * STAND_RISE) * 0.5f, 0 },
+                     STAND_STEP, 0.75f + row * STAND_RISE, 36.0f, row % 2 ? step : step2);
         DrawCube((Vector3){ s * (gStandX0 + 0.5f + D), H + 1.0f, 0 }, 0.3f, 2.0f, 36.0f, wall);   // 一番上の壁
     }
     if (showB) {
         float w = 2.0f * gStandX0;
         DrawCube((Vector3){ 0, 0.6f, -(gStandZ0 - 0.1f) }, w, 1.2f, 0.2f, wall);
         for (int row = 0; row < STAND_ROWS; row++)
-            DrawCube((Vector3){ 0, 0.3f + row * STAND_RISE * 0.5f + 0.15f, -(gStandZ0 + 0.5f + row * STAND_STEP) },
-                     w, 0.6f + row * STAND_RISE, STAND_STEP, row % 2 ? step : step2);
+            DrawCube((Vector3){ 0, (0.75f + row * STAND_RISE) * 0.5f, -(gStandZ0 + 0.5f + row * STAND_STEP) },
+                     w, 0.75f + row * STAND_RISE, STAND_STEP, row % 2 ? step : step2);
         DrawCube((Vector3){ 0, H + 1.0f, -(gStandZ0 + 0.5f + D) }, w, 2.0f, 0.3f, wall);
     }
-    // 観客：座っている体と頭。盛り上がると立ち上がって弾む
-    for (int i = 0; i < gFanCount; i++) {
-        const Fan *f = &gFans[i];
-        if (f->p.x < -gStandX0 && !showL) continue;
-        if (f->p.x >  gStandX0 && !showR) continue;
-        if (f->p.z < -gStandZ0 && !showB) continue;
-        float up = excite * (0.5f + 0.5f * sinf(f->seed * 3.0f)) ;
-        float bob = excite * 0.06f * fabsf(sinf(time * 9.0f + f->seed * 5.0f));
-        float y = f->p.y + 0.22f + 0.25f * up + bob;
-        DrawCube((Vector3){ f->p.x, y, f->p.z }, 0.36f, 0.44f + 0.2f * up, 0.28f, f->shirt);
-        DrawCube((Vector3){ f->p.x, y + 0.34f + 0.1f * up, f->p.z }, 0.18f, 0.22f, 0.18f, f->skin);
-        if (up > 0.5f) {   // 立ち上がった人は手を上げて拍手
-            float cl = 0.05f * sinf(time * 14.0f + f->seed);
-            DrawCube((Vector3){ f->p.x - 0.10f - cl, y + 0.40f, f->p.z }, 0.07f, 0.28f, 0.07f, f->skin);
-            DrawCube((Vector3){ f->p.x + 0.10f + cl, y + 0.40f, f->p.z }, 0.07f, 0.28f, 0.07f, f->skin);
+    // 観客（席ごとのモデル）。盛り上がると少し弾む
+    if (gCrowdOk) {
+        bool show[3] = { showL, showR, showB };
+        for (int i = 0; i < 3; i++)
+            if (show[i]) DrawModel(gCrowd[i], (Vector3){ 0, excite * 0.04f * fabsf(sinf(time * 8.0f + i)), 0 }, 1.0f, WHITE);
+    }
+    // 盛り上がったら：半分くらいの人が両手を上げて拍手する
+    if (excite > 0.05f) {
+        for (int i = 0; i < gFanCount; i++) {
+            const Fan *f = &gFans[i];
+            if ((f->p.x < -gStandX0 && !showL) || (f->p.x > gStandX0 && !showR) || (f->p.z < -gStandZ0 && !showB)) continue;
+            float up = excite * (0.5f + 0.5f * sinf(f->seed * 3.0f));
+            if (up < 0.45f) continue;
+            float cl = 0.06f * sinf(time * 14.0f + f->seed * 4.0f);
+            for (int s = -1; s <= 1; s += 2) {
+                Vector3 sh = Vector3Add(f->p, Vector3Add(Vector3Scale(f->r, s * 0.19f), (Vector3){ 0, 0.47f, 0 }));
+                Vector3 hd = Vector3Add(f->p, Vector3Add(Vector3Add(Vector3Scale(f->r, s * (0.08f + cl)), Vector3Scale(f->f, 0.12f)), (Vector3){ 0, 1.02f, 0 }));
+                DrawCylinderEx(sh, hd, 0.05f, 0.04f, 5, f->shirt);
+                DrawSphereEx(hd, 0.045f, 3, 5, f->skin);
+            }
         }
     }
 
-    // 審判台：ネットの横（左）。高い椅子に座り、球を目で追う
+    // 審判台：ネットの横（左）。審判は座って、頭で球を追う
+    Color uniform = { 235, 230, 215, 255 }, uniPants = { 40, 45, 70, 255 }, uniCap = { 40, 45, 70, 255 }, skin = { 230, 195, 160, 255 };
     {
-        float ux = -(NET_POST_X + 0.9f);
-        Color metal = { 70, 75, 80, 255 }, blazer = { 30, 40, 70, 255 }, trousers = { 60, 60, 65, 255 }, skin = { 230, 195, 160, 255 };
+        float ux = -(NET_POST_X + 1.0f);
+        Color metal = { 70, 75, 80, 255 };
         for (int i = 0; i < 4; i++) {
-            float lx = ux + ((i & 1) ? 0.35f : -0.35f), lz = (i & 2) ? 0.35f : -0.35f;
-            DrawCylinderEx((Vector3){ lx, 0, lz }, (Vector3){ lx * 0.98f + ux * 0.02f, 1.9f, lz * 0.85f }, 0.035f, 0.03f, 6, metal);
+            float lx = ux + ((i & 1) ? 0.40f : -0.40f), lz = (i & 2) ? 0.40f : -0.40f;
+            DrawCylinderEx((Vector3){ lx, 0, lz }, (Vector3){ lx, 2.0f, lz * 0.9f }, 0.04f, 0.035f, 6, metal);
         }
-        for (int k = 1; k <= 4; k++) DrawCube((Vector3){ ux - 0.36f, k * 0.42f, 0 }, 0.05f, 0.04f, 0.6f, metal);   // はしご
-        DrawCube((Vector3){ ux, 1.92f, 0 }, 0.80f, 0.06f, 0.80f, metal);                                    // 台
-        DrawCube((Vector3){ ux + 0.38f, 2.15f, 0 }, 0.05f, 0.40f, 0.80f, wall);                              // 前の囲い
-        DrawCube((Vector3){ ux - 0.30f, 2.35f, 0 }, 0.08f, 0.80f, 0.55f, metal);                             // 背もたれ
-        // 座った審判：太ももは前（コートの方 +x）、すねは下
-        Vector3 hip = { ux - 0.15f, 2.20f, 0 };
-        for (int s = -1; s <= 1; s += 2) {
-            Vector3 h = { hip.x, hip.y, s * 0.11f }, kn = { hip.x + 0.42f, hip.y + 0.02f, s * 0.12f }, ft = { hip.x + 0.46f, hip.y - 0.40f, s * 0.12f };
-            DrawCylinderEx(h, kn, 0.075f, 0.065f, 8, trousers);
-            DrawCylinderEx(kn, ft, 0.06f, 0.05f, 8, trousers);
-            DrawCube((Vector3){ ft.x + 0.05f, ft.y - 0.03f, ft.z }, 0.22f, 0.07f, 0.10f, (Color){ 30, 30, 30, 255 });
+        for (int k = 1; k <= 4; k++) DrawCube((Vector3){ ux - 0.41f, k * 0.42f, 0 }, 0.05f, 0.04f, 0.7f, metal);   // はしご
+        DrawCube((Vector3){ ux, 2.02f, 0 }, 0.90f, 0.06f, 0.90f, metal);                                    // 台
+        DrawCube((Vector3){ ux + 0.44f, 2.30f, 0 }, 0.05f, 0.50f, 0.90f, wall);                              // 前の囲い
+        DrawCube((Vector3){ ux - 0.30f, 2.45f, 0 }, 0.08f, 0.85f, 0.60f, metal);                             // 背もたれ
+        DrawPerson((Vector3){ ux - 0.12f, 2.05f, 0 }, (Vector3){ 1, 0, 0 }, 1, uniform, uniPants, uniCap, skin, 0.0f, ballPos);
+    }
+    // 線審：コートのまわりの椅子に座る。アウトのときは、球に一番近い線審が立って右腕を横へ伸ばす
+    {
+        Vector3 judges[12];
+        Vector3 facing[12];
+        int nj = 0;
+        float bz = HALF_LEN + 5.4f, sxw = gStandX0 - 0.7f, sx = SINGLES_W * 0.5f;
+        for (int e = -1; e <= 1; e += 2) {   // 両方のベースラインの後ろ（サイドラインの延長）
+            for (int s = -1; s <= 1; s += 2) { judges[nj] = (Vector3){ s * sx, 0, e * bz }; facing[nj++] = (Vector3){ 0, 0, (float)-e }; }
         }
-        Vector3 chest = { hip.x + 0.03f, hip.y + 0.48f, 0 };
-        DrawCylinderEx(hip, chest, 0.17f, 0.20f, 10, blazer);
-        DrawCylinderEx((Vector3){ chest.x, chest.y + 0.04f, -0.22f }, (Vector3){ chest.x, chest.y + 0.04f, 0.22f }, 0.075f, 0.075f, 8, blazer);
-        for (int s = -1; s <= 1; s += 2) {   // 腕は膝の上
-            Vector3 sh = { chest.x, chest.y, s * 0.22f }, el = { chest.x + 0.10f, chest.y - 0.30f, s * 0.24f }, hd = { chest.x + 0.38f, chest.y - 0.34f, s * 0.14f };
-            DrawCylinderEx(sh, el, 0.05f, 0.045f, 6, blazer);
-            DrawCylinderEx(el, hd, 0.045f, 0.04f, 6, blazer);
-            DrawSphere(hd, 0.04f, skin);
+        for (int s = -1; s <= 1; s += 2)     // 横の壁際（ベースラインとサービスラインの延長）
+            for (int e = -1; e <= 1; e += 2) {
+                judges[nj] = (Vector3){ s * sxw, 0, e * HALF_LEN }; facing[nj++] = (Vector3){ (float)-s, 0, 0 };
+                judges[nj] = (Vector3){ s * sxw, 0, e * SERVICE_Z }; facing[nj++] = (Vector3){ (float)-s, 0, 0 };
+            }
+        int caller = -1;
+        if (callT > 0.0f) {
+            float best = 1e9f;
+            for (int i = 0; i < nj; i++) { float d = Vector3Distance(judges[i], (Vector3){ callPos.x, 0, callPos.z }); if (d < best) { best = d; caller = i; } }
         }
-        // 頭：球の方を向く
-        Vector3 head = { chest.x + 0.02f, chest.y + 0.26f, 0 };
-        DrawCylinderEx(chest, head, 0.05f, 0.05f, 6, skin);
-        DrawSphere(head, 0.11f, skin);
-        float yaw = atan2f(ballPos.z - head.z, ballPos.x - head.x);
-        Vector3 face = { head.x + 0.08f * cosf(yaw), head.y + 0.01f, head.z + 0.08f * sinf(yaw) };
-        DrawSphere((Vector3){ head.x - 0.03f * cosf(yaw), head.y + 0.04f, head.z - 0.03f * sinf(yaw) }, 0.105f, (Color){ 90, 90, 95, 255 });   // 髪
-        DrawSphere(face, 0.035f, (Color){ 215, 175, 140, 255 });   // 鼻（向きがわかるように）
+        for (int i = 0; i < nj; i++) {
+            if (judges[i].z > camPos.z - 2.5f) continue;   // カメラの手前（すぐ前）は描かない
+            if ((judges[i].x < -gStandX0 + 1.0f && !showL) || (judges[i].x > gStandX0 - 1.0f && !showR)) continue;
+            bool call = i == caller;
+            float arm = call ? Clamp01((1.6f - callT) / 0.15f) * Clamp01(callT / 0.3f) : 0.0f;
+            if (!call) {   // 椅子
+                Vector3 c = Vector3Add(judges[i], Vector3Scale(facing[i], -0.05f));
+                DrawCube((Vector3){ c.x, 0.45f, c.z }, 0.45f, 0.06f, 0.45f, (Color){ 60, 60, 65, 255 });
+                DrawCube(Vector3Add((Vector3){ c.x, 0.75f, c.z }, Vector3Scale(facing[i], -0.22f)), fabsf(facing[i].z) * 0.45f + 0.05f, 0.6f, fabsf(facing[i].x) * 0.45f + 0.05f, (Color){ 60, 60, 65, 255 });
+            }
+            DrawPerson(judges[i], facing[i], call ? 0 : 1, uniform, uniPants, uniCap, skin, arm, ballPos);
+        }
+    }
+    // ボールキッズ：ネットの両端にしゃがむ
+    {
+        Color kid = { 110, 60, 150, 255 }, kidPants = { 40, 40, 50, 255 };
+        DrawPerson((Vector3){ -(NET_POST_X + 0.3f), 0, 0.9f }, (Vector3){ 1, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 225, 185, 150, 255 }, 0.0f, ballPos);
+        DrawPerson((Vector3){ NET_POST_X + 0.6f, 0, -0.6f }, (Vector3){ -1, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 200, 150, 115, 255 }, 0.0f, ballPos);
     }
 }
 

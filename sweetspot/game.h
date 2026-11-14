@@ -592,7 +592,7 @@ Vector3 LocalToWorld(Vector3 base, bool facingNegZ, Vector3 l);
 float EaseOut(float u);
 Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent);
 void DrawRacketHead(Vector3 center, Vector3 normal, Color frame);
-void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time);
+void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT);
 void DrawRacket(Vector3 hand, Vector3 dir, Vector3 normal, Color frame);
 Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 *hand, Vector3 *dir, bool *hasHand);
 // 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
