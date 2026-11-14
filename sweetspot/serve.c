@@ -95,6 +95,7 @@ Ball HitServe(Vector3 contact, Vector3 target, ServeType type, float charge, flo
     float sk = 0.70f + 0.30f * q;
     Vector3 spin = { Lerp(sp->top0, sp->top1, charge) * sk, Lerp(sp->side0, sp->side1, charge) * sk,
                      Lerp(sp->gyro0, sp->gyro1, charge) * sk };
+    if (gLefty) { spin.y = -spin.y; spin.z = -spin.z; }   // 左利き：横回転とジャイロが逆向き
     Vector3 dir; float pitch;
     SolveServe(contact, target, kmh / 3.6f, spin, &dir, &pitch);
     float effort = (0.5f + 0.8f * charge) * (gCasual ? 0.55f : 1.0f);   // 振り切るほどぶれる（簡単モードは小さく）

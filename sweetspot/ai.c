@@ -26,6 +26,34 @@ const AiLevel AI_LEVELS[3] = {
     { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
 };
 
+// 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
+const Persona PERSONAS[PERSONA_COUNT] = {
+    //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
+    { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
+    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.15f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, { 0.00f, -0.10f,  0.25f }, { 200, 40, 50, 255 } },
+    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.49f, 0.49f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, { 0.20f,  0.05f,  0.05f }, { 40, 60, 140, 255 } },
+    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.56f, 0.56f, 0.05f, -8.0f, 0.08f,  0.00f, 1.35f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.60f, 0.4f, { 0.05f,  0.35f, -0.05f }, { 240, 140, 40, 255 } },
+    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, { 0.10f,  0.00f,  0.15f }, { 30, 150, 140, 255 } },
+};
+
+// 強さに選手の癖を足した、実際の能力
+AiLevel EffLevel(const Opponent *ai)
+{
+    AiLevel L = AI_LEVELS[ai->level];
+    const Persona *p = &PERSONAS[ai->persona % PERSONA_COUNT];
+    L.speed        += p->speedAdd + p->surfSpeed[gSurface];
+    L.reaction      = fmaxf(0.12f, L.reaction + p->reactionAdd);
+    L.timingSigmaMs *= p->timingMul;
+    L.posErr       *= p->posErrMul;
+    L.aggression    = Clamp01(L.aggression + p->aggrAdd);
+    L.serve1Kmh    += p->serveAdd;
+    L.serve2Kmh    += p->serveAdd * 0.5f;
+    L.serveSkill    = Clamp(L.serveSkill + p->serveSkillAdd, 0.3f, 0.95f);
+    L.serveMargin   = fmaxf(0.15f, L.serveMargin + p->serveMarginAdd);
+    return L;
+}
+
+
 // 速さ v0（目的地方向の成分）から距離 d を走って止まるまでの時間
 // 加速 a で最高速 vmax まで上げ、最後は減速 b で止まる（台形の速度変化）
 float TravelTime(float d, float v0, float vmax, float a, float b)
@@ -95,7 +123,10 @@ Vector3 ReturnPos(bool deuce, bool second)
 // 飛んでくる球を予測して、どこで打つかを決める（AI 座標で考える）
 void AiPlan(Opponent *ai, const Ball *worldBall)
 {
-    const AiLevel *lv = &AI_LEVELS[ai->level];
+    AiLevel lvE = EffLevel(ai);
+    const AiLevel *lv = &lvE;
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    (void)pp;
     Ball b = RotBall(*worldBall);
     Vector3 me = Rot180(ai->pos);
 
@@ -176,7 +207,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
         }
     }
     if (bestT < 0.0f) { bestT = lateT; bestStand = lateStand; bestBallX = lateBallX; }
-    ai->planFore = bestBallX >= bestStand.x;
+    ai->planFore = pp->lefty ? (bestBallX <= bestStand.x) : (bestBallX >= bestStand.x);   // 左利きは体の左がフォア
     if (bestT < 0.0f) { ai->planned = false; ai->standPos = AiHome(); return; }
 
     bestStand.x += RandNormal() * lv->posErr;
@@ -191,7 +222,10 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge,
                              Vector3 *target)
 {
-    const AiLevel *lv = &AI_LEVELS[ai->level];
+    AiLevel lvE = EffLevel(ai);
+    const AiLevel *lv = &lvE;
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    (void)pp;
     ShotType t = SHOT_TOP;
     float r = RandRange(0.0f, 1.0f);
     bool stretched = c->side > IDEAL_R + 0.45f || c->dive;
@@ -200,7 +234,9 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 
     if (c->height < 0.55f || (stretched && r < 0.7f)) t = SHOT_SLICE;          // 低い・遠い → つなぐ
     else if (c->height > 1.05f && c->quality > 0.55f && r < lv->aggression) t = SHOT_FLAT;   // 高くていい打点 → 叩く
-    if (playerAtNet && (stretched || r < 0.35f)) t = SHOT_TOP_LOB;              // 前に来たらロブ
+    // バックハンドのスライス（片手バックの選手ほど多い）
+    if (!c->forehand && !c->volley && !c->overhead && t == SHOT_TOP && RandRange(0.0f, 1.0f) < pp->backSlice) t = SHOT_SLICE;
+    if (playerAtNet && (stretched || r < pp->lobPref)) t = SHOT_TOP_LOB;      // 前に来たらロブ
     if (c->overhead) t = SHOT_FLAT;                                             // 頭上はスマッシュ
 
     // ネットでのボレー・スマッシュ：相手のいない方へ。相手が下がっていれば短いアングルかドロップボレー
@@ -223,7 +259,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
         }
         return t;
     }
-    if (playerDeep && meAi.z < HALF_LEN - 1.0f && r < 0.15f * lv->aggression) t = SHOT_DROP;
+    if (playerDeep && meAi.z < HALF_LEN - 1.0f && r < 0.15f * lv->aggression + pp->dropAdd) t = SHOT_DROP;
 
     // 球速の目安（打ち出し）。プロのラリーはフラット 130〜150、トップ 110〜135、スライス 80〜100km/h くらい
     float wantKmh;
@@ -234,6 +270,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
         default:         wantKmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, 0.5f); break;
     }
     wantKmh += RandNormal() * 8.0f - (stretched ? 20.0f : 0.0f);
+    if (c->isReturn) wantKmh += 6.0f * pp->returnAggro;    // リターンのうまい選手は少し強く返す
     const ShotSpec *ss = &SHOTS[t];
     *charge = (ss->maxKmh > ss->minKmh) ? Clamp01((wantKmh - ss->minKmh) / (ss->maxKmh - ss->minKmh)) : 0.5f;
 
@@ -253,6 +290,8 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     else if (playerAi.x < -0.6f) x =  wide;
     else                         x = (rand() % 2) ? wide : -wide;
     if (r > 0.85f) x = -x * 0.5f;   // たまに逆を突く
+    // 相手（右利き）のバック側を狙う：AI 座標では相手から見て左＝ +x
+    if (!attack && RandRange(0.0f, 1.0f) < pp->toBackhand) x = wide;
     float depth = sp->depth;
     if (t <= SHOT_SLICE && RandRange(0, 1) < 0.15f * lv->aggression) depth = sp->shortDepth;   // 短いアングル
     *target = (Vector3){ x, 0.0f, depth };
@@ -262,7 +301,10 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
 // AI が振る。当たったら true（ball は AI の打球に置き換わる）
 bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
 {
-    const AiLevel *lv = &AI_LEVELS[ai->level];
+    AiLevel lvE = EffLevel(ai);
+    const AiLevel *lv = &lvE;
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    (void)pp;
     ai->swung = true;
     ai->planned = false;
     Ball b = RotBall(*ball);
@@ -276,6 +318,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     Vector3 toBall = { b.pos.x - me.x, 0.0f, b.pos.z - me.z };
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
+    gLefty = pp->lefty; gSpinMul = pp->spinMul;
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
     ai->anim.slice = IsSliceShot(t);
@@ -285,18 +328,19 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
-    if (c.miss != MISS_NONE) return false;
+    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; return false; }
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
     else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
+    gLefty = false; gSpinMul = 1.0f;
     ai->lastTargetX = target.x;
     // 前に出るか：甘い球をベースラインの内側で攻めたら、強気なほど前に出る。ネットにいれば残る。
     // ロブで下がらされたら（サービスラインより 3m 以上後ろ）、ネットはあきらめる
     if (me.z > SERVICE_Z + 3.0f) ai->netRush = false;
     if (!ai->netRush && !c.dive && me.z < HALF_LEN - 2.0f && t <= SHOT_SLICE &&
-        RandRange(0.0f, 1.0f) < 0.25f + 0.6f * lv->aggression)
+        RandRange(0.0f, 1.0f) < (0.25f + 0.6f * lv->aggression) * pp->netRushMul)
         ai->netRush = true;
     if (me.z < SERVICE_Z + 1.5f) ai->netRush = true;
     out.lastHitter = HITTER_OPP;
@@ -311,7 +355,10 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
 // AI のサーブ。deuce: デュースサイドから打つ。first: ファーストサーブ
 Ball AiServe(Opponent *ai, bool deuce, bool first)
 {
-    const AiLevel *lv = &AI_LEVELS[ai->level];
+    AiLevel lvE = EffLevel(ai);
+    const AiLevel *lv = &lvE;
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    (void)pp;
     // AI 座標では自分と同じ：デュースサイドは x>0、対角のボックスは x<0
     Vector3 me = { deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
     ai->pos = Rot180(me);
@@ -321,7 +368,7 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
     // 強さごとの安定感（低いほどぶれて、フォルトが増える）。セカンドは安全に入れにいくので、ぶれは小さい
     q *= first ? lv->serveSkill : lv->serveSkill + (1.0f - lv->serveSkill) * 0.65f;
-    Vector3 contact = { me.x + 0.25f + off.x, SERVE_IDEAL_H - hErr, me.z - 0.35f + off.y };
+    Vector3 contact = { me.x + (pp->lefty ? -0.25f : 0.25f) + off.x, SERVE_IDEAL_H - hErr, me.z - 0.35f + off.y };   // 左利きは左でトス
 
     ServeType t;
     float charge;
@@ -342,7 +389,9 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     if (!deuce) tx = (ci == 0) ? x0 + m : (ci == 1 ? x1 - m : 0.5f * (x0 + x1));
     Vector3 target = { tx, 0.0f, -depth };
     float kmh;
+    gLefty = pp->lefty;   // 左利きのサーブは横回転が逆
     Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
+    gLefty = false;
     b.lastHitter = HITTER_OPP;
     // 見た目：頭上で打つ
     ai->anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };
@@ -353,14 +402,19 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     ai->planned = false;
     ai->lastTargetX = target.x;
     // サーブ＆ボレー：強気な AI がたまに。芝では多め
-    ai->netRush = first && RandRange(0.0f, 1.0f) < 0.15f * lv->aggression + (gSurface == SURF_GRASS ? 0.25f * lv->aggression : 0.0f);
+    float sv = pp->serveVolley >= 0.0f ? pp->serveVolley * (gSurface == SURF_GRASS ? 1.5f : 1.0f)
+                                       : 0.15f * lv->aggression + (gSurface == SURF_GRASS ? 0.25f * lv->aggression : 0.0f);
+    ai->netRush = first && RandRange(0.0f, 1.0f) < sv;
     return RotBall(b);
 }
 
 // 毎フレーム：反応して、計画を立て、走る
 void AiUpdate(Opponent *ai, const Ball *ball, float dt)
 {
-    const AiLevel *lv = &AI_LEVELS[ai->level];
+    AiLevel lvE = EffLevel(ai);
+    const AiLevel *lv = &lvE;
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    (void)pp;
     if (ball->lastHitter != ai->watching) {
         ai->watching = ball->lastHitter;
         ai->planned = false;
@@ -375,6 +429,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->anim.lungeT > 0.0f) ai->anim.lungeT -= dt;
     if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
     ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
+    ai->anim.lefty = pp->lefty; ai->anim.oneHanded = pp->oneHanded;
     ai->anim.velX = -ai->vel.x; ai->anim.velZ = ai->vel.z;   // AI は +z 向き
     // 飛びついて倒れている間は動けない
     if (ai->downTimer > 0.0f) {

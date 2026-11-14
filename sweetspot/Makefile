@@ -32,8 +32,3 @@ sim: tools/ai_vs_ai.c $(SRC) game.h
 	$(CC) -std=c99 -O2 -DRAYMATH_STATIC_INLINE -I$(RAYLIB_INC) tools/ai_vs_ai.c -o ai_vs_ai -lm -Wl,--unresolved-symbols=ignore-all
 	./ai_vs_ai
 
-# Windows 用の exe を Linux で作る（リポジトリに入れて、git pull だけで遊べるようにする）
-#   RAYLIB_WIN：Windows 用に作った raylib の src フォルダ（libraylib.a がある所）
-RAYLIB_WIN ?= ../raylib-win/src
-play_windows.exe: $(SRC) game.h
-	x86_64-w64-mingw32-gcc -std=c99 -Wall -O2 -I$(RAYLIB_WIN) $(SRC) -o play_windows.exe -L$(RAYLIB_WIN) -lraylib -lopengl32 -lgdi32 -lwinmm -limm32 -static -static-libgcc -mwindows

@@ -5,7 +5,7 @@
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
 
 // 試合の統計（中継のマッチサマリーの形）。mst はサーブの入り [0=1st 打数 1=1st 入 2=2nd 打数 3=2nd 入 4=返されなかった 5=DF]
-static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6])
+static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp)
 {
     int W = GetScreenWidth(), H = GetScreenHeight();
     int pw = 700, rowH = 34, nRows = 11;
@@ -23,7 +23,7 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     int y = py + 74;
     DrawRectangle(px, y, pw, 40, rowB);
     DrawText("YOU", px + 70 - MeasureText("YOU", 24) / 2, y + 8, 24, you);
-    DrawText("AI", px + pw - 70 - MeasureText("AI", 24) / 2, y + 8, 24, aiC);
+    DrawText(opp, px + pw - 70 - MeasureText(opp, 24) / 2, y + 8, 24, aiC);
     y += 44;
     for (int r = 0; r < nRows; r++) {
         const char *label = "";
@@ -152,6 +152,7 @@ int main(void)
     // 試合
     Opponent ai = { 0 };
     ai.level = 1;
+    ai.persona = 1;   // 相手の選手（1〜4）
     Score score = { 0 };
     MatchPhase phase = PH_SERVE;
     bool  serveJudged = false;
@@ -191,10 +192,10 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_MODE, MI_SETS, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            enum { MI_PLAY, MI_MODE, MI_SETS, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
             int items[16], n = 0;
             items[n++] = MI_PLAY;
-            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
+            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
             items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
@@ -202,7 +203,9 @@ int main(void)
             static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
 
             int W = GetScreenWidth(), H = GetScreenHeight();
-            int pw = 640, rowH = 40, ph = 150 + n * rowH + 110;
+            // 行が多いときは、画面に収まるように行を詰める
+            int pw = 640, rowH = Clamp((GetScreenHeight() - 270) / n, 28, 40), ph = 150 + n * rowH + 110;
+            int fs = rowH >= 36 ? 24 : 20;
             int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
             int rowY0 = py + 110;
 
@@ -229,6 +232,7 @@ int main(void)
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
+                    case MI_OPP:    ai.persona = (ai.persona - 1 + 4 + change) % 4 + 1; forceRestart = true; break;
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
@@ -271,6 +275,7 @@ int main(void)
                     case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
+                    case MI_OPP:     label = "Opponent";        value = PERSONAS[ai.persona].name; break;
                     case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
                     case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
                     case MI_COURT:   label = "Court";           value = gSurface == SURF_CLAY ? "CLAY (slow, high)"
@@ -287,10 +292,10 @@ int main(void)
                     case MI_TITLE:   label = "BACK TO TITLE"; break;
                     case MI_QUIT:    label = "QUIT"; break;
                 }
-                DrawText(label, px + 40, ry + 8, 24, sel ? YELLOW : RAYWHITE);
+                DrawText(label, px + 40, ry + (rowH - 4 - fs) / 2, fs, sel ? YELLOW : RAYWHITE);
                 if (value[0]) {
                     const char *v = TextFormat("<  %s  >", value);
-                    DrawText(v, px + pw - 40 - MeasureText(v, 24), ry + 8, 24, sel ? YELLOW : RAYWHITE);
+                    DrawText(v, px + pw - 40 - MeasureText(v, fs), ry + (rowH - 4 - fs) / 2, fs, sel ? YELLOW : RAYWHITE);
                 }
             }
             int hy = rowY0 + n * rowH + 14;
@@ -341,9 +346,9 @@ int main(void)
             P.pos = (Vector3){ 0.0f, 0.0f, HALF_LEN + 0.8f };
             P.vel = (Vector3){ 0 };
             P.hasLast = false;
-            int lvl = ai.level;
+            int lvl = ai.level, per = ai.persona;
             ai = (Opponent){ 0 };
-            ai.level = lvl;
+            ai.level = lvl; ai.persona = per;
             ai.pos = AiHome();
             ai.anim.swingT = -1.0f;
             P.anim = (SwingAnim){ .swingT = -1.0f };
@@ -659,7 +664,7 @@ int main(void)
                     bool dc = DeuceCourt(&score);
                     Vector3 me = { dc ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
                     ball = (Ball){ 0 };
-                    ball.pos = Rot180((Vector3){ me.x + 0.25f, 1.9f, me.z - 0.35f });
+                    ball.pos = Rot180((Vector3){ me.x + (PERSONAS[ai.persona].lefty ? -0.25f : 0.25f), 1.9f, me.z - 0.35f });
                     ball.vel = (Vector3){ 0.0f, TOSS_SPEED, 0.0f };
                     ball.active = true;
                     ball.netClearance = -99.0f;
@@ -1086,11 +1091,11 @@ int main(void)
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
                     snprintf(scoreCall, sizeof(scoreCall), "GAME, SET%s  %s   (%d - %d)", score.over ? " AND MATCH" : "",
-                             winner == 0 ? "YOU" : "AI", g[0], g[1]);
+                             winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName, g[0], g[1]);
                     if (!score.over) { setBreak = true; summaryT = 0.0f; }
                 }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
-                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : "AI", score.games[0], score.games[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : PERSONAS[ai.persona].shortName, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
@@ -1164,10 +1169,10 @@ int main(void)
             DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
-                DrawFigure(ai.pos, false, (Color){ 70, 90, 200, 255 }, &ai.anim, Vector3Length(ai.vel));
+                DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
             // サーブの構え：トスの前はボールを手に持っている
             if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over)
-                DrawSphere((Vector3){ ai.pos.x - 0.25f, 1.0f, ai.pos.z + 0.35f }, BALL_R * 1.6f, (Color){ 220, 255, 60, 255 });
+                DrawSphere((Vector3){ ai.pos.x + (PERSONAS[ai.persona].lefty ? 0.25f : -0.25f), 1.0f, ai.pos.z + 0.35f }, BALL_R * 1.6f, (Color){ 220, 255, 60, 255 });
 
             if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
@@ -1464,7 +1469,7 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? "YOU" : "AI", sx + 58, ry + 3, 24, nameC);
+                DrawText(k == 0 ? "YOU" : PERSONAS[ai.persona].shortName, sx + 58, ry + 3, k == 0 ? 24 : 20, nameC);
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
@@ -1501,12 +1506,12 @@ int main(void)
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
-                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : "MATCH SUMMARY - AI WINS",
-                                 "Enter: new match", &score, ms, mst);
+                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", PERSONAS[ai.persona].shortName),
+                                 "Enter: new match", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (setBreak && phaseTimer <= 0.0f)
-                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst);
+                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (showSummary)
-                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst);
+                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst, PERSONAS[ai.persona].shortName);
         }
 
         // 統計（Tab）

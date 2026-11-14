@@ -184,7 +184,16 @@ Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint)
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
     Color skin = { 240, 200, 160, 255 }, pants = { 40, 40, 60, 255 }, frame = { 30, 30, 30, 255 };
-    #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ (x), (y), (z) })
+    // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
+    SwingAnim mir;
+    if (a->lefty) {
+        mir = *a;
+        mir.contactLocal.x = -a->contactLocal.x;
+        mir.slideSide = -a->slideSide; mir.lungeSide = -a->lungeSide; mir.velX = -a->velX;
+        a = &mir;
+    }
+    float MX = a->lefty ? -1.0f : 1.0f;
+    #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x), (y), (z) })
 
     if (a->downT > 0.0f) {
         // 飛びついて倒れている
@@ -323,7 +332,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     int stroke; Vector3 tan;
     Vector3 rl = RacketLocal(a, &stroke, &tan);
     // 右利き：ラケットはいつも右手。バックハンドは両手打ち（右手でグリップ、左手をその上に添える）。スライスのバックは片手
-    bool twoHands = (stroke == 1) && !a->slice;
+    bool twoHands = (stroke == 1) && !a->slice && !a->oneHanded;   // 片手バックの選手もいる
     Vector3 pivot = twoHands ? lShoulder : rShoulder;
     Vector3 dir = Vector3Normalize(Vector3Subtract(rl, pivot));
     Vector3 hand = Vector3Subtract(rl, Vector3Scale(dir, 0.55f));       // グリップ

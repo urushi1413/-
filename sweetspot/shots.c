@@ -30,7 +30,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     float dz = player.z - bp.z;          // 前がプラス
     float r  = sqrtf(dx * dx + dz * dz);
     float ang = atan2f(dz, fabsf(dx)) * RAD2DEG;
-    c.forehand = dx >= 0.0f;
+    c.forehand = gLefty ? (dx <= 0.0f) : (dx >= 0.0f);   // 左利きは体の左がフォア
     c.side     = r;
     c.angleDeg = ang;
     c.height   = bp.y;
@@ -118,9 +118,10 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                  * (1.0f - STEP_STABILITY * step)
                  * (gCasual ? CASUAL_ERR : 1.0f);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
+    if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
-    float hand = c->forehand ? 1.0f : -1.0f;
+    float hand = (c->forehand ? 1.0f : -1.0f) * (gLefty ? -1.0f : 1.0f);   // 引っ張る向き・スライスの曲がる向き（左利きは逆）
     float over = fmaxf(fabsf(c->timeErrMs) - TIMING_PULL_DEAD_MS, 0.0f) * (c->timeErrMs >= 0.0f ? 1.0f : -1.0f);
     float yaw = hand * over * TIMING_PULL_DEG_MS * DEG2RAD * (gCasual ? 0.5f : 1.0f)
               + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
