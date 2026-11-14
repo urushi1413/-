@@ -174,6 +174,7 @@ int main(void)
 
     // メニュー
     AppState app = APP_TITLE;
+    static Tournament tour = { 0 };      // 大会
     int   menuSel = 0;
     float aimSens = 1.0f;          // マウス感度（倍率）
     bool  forceRestart = false;    // メニューでモードや AI を変えたら、戻ったときにやり直す
@@ -207,13 +208,33 @@ int main(void)
         if (bot.anim.splitT > 0.0f) bot.anim.splitT -= simDt;
         if (ai.anim.splitT > 0.0f)  ai.anim.splitT  -= simDt;
 
+        // ================= 大会の組み合わせ表 =================
+        if (app == APP_BRACKET) {
+            SfxCrowd(false, 0.0f);
+            if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && IsKeyPressed(KEY_SPACE))) {
+                int op = TourOpponent(&tour);
+                if (op >= 0) {
+                    ai.persona = op; gWomen = tour.women; gSurface = (SurfaceType)tour.surface; setsToWin = tour.setsToWin;
+                    mode = MODE_MATCH; forceRestart = true; app = APP_PLAY;
+                    mouseLocked = true; DisableCursor(); skipMouseDelta = true;
+                } else {
+                    tour.active = false; app = APP_TITLE; menuSel = 0;
+                }
+            }
+            BeginDrawing();
+            TourDraw(&tour, GetScreenWidth(), GetScreenHeight(), (float)GetTime());
+            EndDrawing();
+            continue;
+        }
+
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_MODE, MI_SETS, MI_TOUR, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
             int items[20], n = 0;
             items[n++] = MI_PLAY;
+            if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
             items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
             items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
@@ -246,7 +267,7 @@ int main(void)
             }
             if (app == APP_PAUSE && IsKeyPressed(KEY_ESCAPE)) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
             int it = items[menuSel];
-            if (activate && it != MI_PLAY && it != MI_RESTART && it != MI_TITLE && it != MI_QUIT) { change = +1; activate = false; }
+            if (activate && it != MI_PLAY && it != MI_TOURNAMENT && it != MI_RESTART && it != MI_TITLE && it != MI_QUIT) { change = +1; activate = false; }
             if (change != 0) {
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
@@ -274,7 +295,12 @@ int main(void)
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
                     app = APP_PLAY;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
+                } else if (it == MI_TOURNAMENT) {
+                    // 大会を始める：今のツアー（男子・女子）、コート、試合の長さで
+                    TourStart(&tour, gWomen, gSurface, setsToWin);
+                    app = APP_BRACKET;
                 } else if (it == MI_TITLE) {
+                    tour.active = false;   // 大会の途中なら、やめる
                     app = APP_TITLE; menuSel = 0;
                 } else if (it == MI_QUIT) {
                     quitGame = true;
@@ -298,6 +324,7 @@ int main(void)
                 const char *label = "", *value = "";
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
+                    case MI_TOURNAMENT: label = TextFormat("TOURNAMENT  (%s, %s)", TourName(gSurface), gWomen ? "WOMEN" : "MEN"); break;
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
                     case MI_TOUR:    label = "Tour";            value = gWomen ? "WOMEN" : "MEN"; break;
@@ -352,7 +379,14 @@ int main(void)
         forceRestart = false;
         if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
         for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
-        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) restart = true;
+        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
+            if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
+                TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score);
+                app = APP_BRACKET; mouseLocked = false; EnableCursor();
+                continue;
+            }
+            restart = true;
+        }
         if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
         if (IsKeyPressed(KEY_TAB)) {
             // Tab：セッションの統計 → （試合中なら）試合の統計 → 閉じる
@@ -1564,6 +1598,11 @@ int main(void)
             }
         EndMode3D();
 
+        // 大会の名前とラウンド
+        if (tour.active && mode == MODE_MATCH) {
+            const char *tl = TextFormat("%s  -  %s", TourName(tour.surface), TourRoundName(tour.round));
+            DrawText(tl, (int)fmaxf(520.0f, GetScreenWidth() / 2 - MeasureText(tl, 18) / 2), 8, 18, Fade(YELLOW, 0.85f));
+        }
         // ---- 際どい判定の拡大図（上から見たライン際。1cm = 6 ピクセル）----
         if (hawkT < 3.0f && mode != MODE_SERVE) {
             const float S = 600.0f;            // 1m あたりのピクセル
@@ -1738,7 +1777,7 @@ int main(void)
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", PERSONAS[ai.persona].shortName),
-                                 "Enter: new match", &score, ms, mst, PERSONAS[ai.persona].shortName);
+                                 tour.active ? "Enter: back to the draw" : "Enter: new match", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (setBreak && phaseTimer <= 0.0f)
                 DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, PERSONAS[ai.persona].shortName);
             else if (showSummary)

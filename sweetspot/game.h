@@ -537,7 +537,25 @@ typedef struct {
     int    style;            // 難易度（0=REAL 1=CASUAL）
 } PlayLog;
 
-typedef enum { APP_TITLE, APP_PLAY, APP_PAUSE } AppState;
+typedef enum { APP_TITLE, APP_PLAY, APP_PAUSE, APP_BRACKET } AppState;
+
+// 大会：8 人の勝ち抜き。ent[r][i] はラウンド r の i 番目の出場者（slot の番号）
+typedef struct {
+    bool active, women, playerOut, champion;
+    int  surface, setsToWin;
+    int  slot[8];            // 出場者の選手番号（-1 = 自分、0 = 予選上がり）
+    int  ent[4][8];          // ラウンドごとの出場者
+    int  winner[3][4];       // ラウンドごとの試合の勝者（出場者の番号。-1 = まだ）
+    char score[3][4][32];    // 試合のスコア（勝者から見た）
+    int  round;              // 今のラウンド（0 準々決勝、1 準決勝、2 決勝、3 終わり）
+    int  outRound;           // 負けたラウンド
+} Tournament;
+void TourStart(Tournament *t, bool women, int surface, int setsToWin);
+int  TourOpponent(const Tournament *t);
+void TourRecordPlayerMatch(Tournament *t, bool playerWon, const Score *s);
+void TourDraw(const Tournament *t, int W, int H, float time);
+const char *TourName(int surface);
+const char *TourRoundName(int round);
 
 typedef enum { MODE_MATCH, MODE_RALLY, MODE_RETURN, MODE_SERVE, MODE_COUNT } PracticeMode;
 
