@@ -428,7 +428,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
                     * (1.0f - RAGE_LAPSE * Clamp01(ai->rage));
-        if (RandRange(0.0f, 1.0f) < lapse) { sLapse = true; gErrMul *= AI_LAPSE_ERR; }
+        if (sAttack) lapse = fmaxf(lapse, AI_LAPSE_ATTACK_MIN);   // 決めにいく球は、ミスの少ない選手でも外すことがある
+        if (RandRange(0.0f, 1.0f) < lapse) { sLapse = true; gErrMul = fmaxf(gErrMul, 1.0f) * AI_LAPSE_ERR; }   // 打ち損じは、うまい選手でも普通の選手と同じくらいぶれる
         else if (sAttack) gErrMul *= AI_ATTACK_ERR;   // 決めにいく球は、少しだけ力む
     }
     ai->anim.slice = IsSliceShot(t);

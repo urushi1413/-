@@ -174,10 +174,13 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         }
         if (IsSliceShot(type) && !c->volley) {
             // 逆回転は浮くので、速すぎると下に向けて打っても落ちきらない。そういう球は打たない（少し遅くして沈める）
-            for (int it = 0; it < 8; it++) {
+            //   スライスはネットの上を余裕をもって通す（足りなければ少し遅くする）。まあまあの当たりでネットしないように
+            for (int it = 0; it < 10; it++) {
                 float a0 = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
-                if (PredictLandingDist(ballPos, dirFlat, kmh / 3.6f, a0, rpm) <= dist + 0.5f) break;
-                kmh *= 0.92f;
+                bool fits = PredictLandingDist(ballPos, dirFlat, kmh / 3.6f, a0, rpm) <= dist + 0.5f;
+                bool clears = type != SHOT_SLICE || PredictNetClearance(ballPos, dirFlat, kmh / 3.6f, a0, rpm) >= SLICE_NET_MARGIN;
+                if (fits && clears) break;
+                kmh *= 0.94f;
             }
         }
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
@@ -188,6 +191,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * speedScale
                * (c->volley && !c->overhead ? VOLLEY_PITCH_ERR : 1.0f) * (1.0f - FWD_PITCH_CUT * fwd) * DEG2RAD;
         angErr = Clamp(angErr, -PITCH_ERR_MAX * speedScale * DEG2RAD, PITCH_ERR_MAX * speedScale * DEG2RAD);   // とんでもなく長い・短い球にはしない（速い球ほど上限も小さく）
+        if (type == SHOT_SLICE && !c->volley && angErr < 0.0f) angErr *= 0.5f;   // スライスは面が開いているので、当たり損ねは下（ネット）より上（浮く）に外れる
         // 跳ね返りの分は、来た球の上下の動きを持ったまま出ていく：
         //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
         //   うまく当てるほど面で抑えられるが、半分は残る
@@ -196,7 +200,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
                 * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f)
                 * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f))   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
-                * (1.0f - FWD_REBOUND_CUT * fwd);   // 前の球は面で押さえやすい
+                * (1.0f - FWD_REBOUND_CUT * fwd)   // 前の球は面で押さえやすい
+                * (type == SHOT_SLICE && c->vyBall < 0.0f ? 0.5f : 1.0f);   // スライスは開いた面で運ぶので、沈む球でも下へずれにくい
         ang += angErr;
     }
 

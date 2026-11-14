@@ -78,10 +78,11 @@ typedef struct {
 #define AI_LAPSE_EASY    0.120f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
 #define AI_LAPSE_NORMAL  0.090f
 #define AI_LAPSE_PRO     0.070f
-#define AI_LAPSE_ATTACK  2.0f    //   決めにいく球はこの倍
+#define AI_LAPSE_ATTACK  3.0f    //   決めにいく球はこの倍
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
-#define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
+#define AI_ATTACK_ERR    3.0f    // 決めにいく球のぶれの倍率（力み）
+#define AI_LAPSE_ATTACK_MIN 0.12f  // 決めにいく球の打ち損じの最低の起きやすさ
 #define KNEE_BEND        0.10f   // 構えで腰を落とす量（m）。脚の長さ 0.88m に対して
 #define KNEE_LOAD        0.07f   // ストロークで引いたときにさらに沈む量（打つときに脚で押し上げる）
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
@@ -106,6 +107,10 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
 #define STAGGER_REACT    1.0f    //   相手が打ったときにまだよろめいていたら、残りの時間 × これだけ反応が遅れる（AI）
 #define STAGGER_HUMAN    0.5f    //   自分（人間）は崩れ具合をこれだけに（方向を読む分、AI より不利なので）
 #define STAGGER_SPEED0   0.10f   //   立て直し始めの走る速さの割合（だんだん戻る）
+#define FOOT_ASSIST_R     1.4f    // 足の自動調整：理想の立ち位置からこの距離以内なら寄せる（m）
+#define FOOT_ASSIST_SPEED 2.5f   //   寄せる速さの上限（m/s）
+#define FOOT_ASSIST_T     0.7f   //   打つ予定の時刻まで、この秒数以内で効く
+#define SLICE_NET_MARGIN  0.30f  // スライス（ストローク）がネットの上を通る余裕の目標（m）。足りなければ少し遅くする
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大

@@ -91,6 +91,8 @@ int main(void)
     int mlPoint = 0, mlShot = 0;         // 記録用：ポイントと打った球の通し番号
     Score mlBefore = { 0 };              // ポイントが始まったときのスコア
     float youMinDist = 99.0f;            // AI の球に一番近づいた距離（ウィナーを取られたとき、どれだけ遠かったか）
+    AssistPlan footPlan = { 0 };         // 足の自動調整に使う、この球の理想の立ち位置（相手が打った瞬間に一度だけ）
+    float footPlanAge = 1e9f, footPlanT0 = 0.0f; int footPlanType = -1;
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_REAL;  // N：難易度
@@ -598,6 +600,27 @@ int main(void)
             float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f)
                       * fminf(P.recoverT > 0.0f ? STRETCH_MOVE : 1.0f, StaggerSpeedMul(P.staggerT, P.staggerTotal));   // 体勢が崩れている間は遅い
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
+            // 足の自動調整：溜めていて、打つ直前（0.7 秒以内）に理想の立ち位置の近くにいたら、そこへ小刻みに寄せる
+            {
+                bool oppBall = ball.active && ball.lastHitter == HITTER_OPP && mode != MODE_SERVE;
+                ShotType ft = P.chargingShot >= 0 ? (ShotType)P.chargingShot : SHOT_TOP;
+                if (!oppBall) { footPlan.valid = false; footPlanAge = 1e9f; }
+                else if (!footPlan.valid || ball.age < footPlanAge || (int)ft != footPlanType) {
+                    footPlan = PlanAssist(P.pos, P.vel, &ball, ft);
+                    footPlanType = (int)ft; footPlanT0 = ball.age;   // 予定の時刻は、この瞬間からの秒数
+                }
+                if (oppBall) footPlanAge = ball.age;
+                if (oppBall && footPlan.valid && footPlan.standValid && P.chargingShot >= 0 &&
+                    footPlanT0 + footPlan.tContact - ball.age < FOOT_ASSIST_T && footPlanT0 + footPlan.tContact - ball.age > 0.05f) {
+                    Vector3 to = { footPlan.stand.x - P.pos.x, 0.0f, footPlan.stand.z - P.pos.z };
+                    float d = Vector3Length(to);
+                    if (d > 0.04f && d < FOOT_ASSIST_R) {
+                        want = Vector3Add(want, Vector3Scale(to, fminf(d * 5.0f, FOOT_ASSIST_SPEED) / d));
+                        float wl = Vector3Length(want);
+                        if (wl > PLAYER_SPEED) want = Vector3Scale(want, PLAYER_SPEED / wl);
+                    }
+                }
+            }
             float v = Vector3Length(P.vel);
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
             if (!P.sliding && P.chargingShot >= 0 && v > SLIDE_MIN_SPEED &&
