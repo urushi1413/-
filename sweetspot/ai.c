@@ -28,12 +28,12 @@ const AiLevel AI_LEVELS[3] = {
 
 // 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
 const Persona PERSONAS[PERSONA_COUNT] = {
-    //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
-    { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
-    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.15f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, { 0.00f, -0.10f,  0.25f }, { 200, 40, 50, 255 } },
-    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.49f, 0.49f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, { 0.20f,  0.05f,  0.05f }, { 40, 60, 140, 255 } },
-    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.56f, 0.56f, 0.05f, -8.0f, 0.08f,  0.00f, 1.35f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.60f, 0.4f, { 0.05f,  0.35f, -0.05f }, { 240, 140, 40, 255 } },
-    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, { 0.10f,  0.00f,  0.15f }, { 30, 150, 140, 255 } },
+    //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
+    { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, 0.00f, 0.00f, 0.00f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
+    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.15f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, { 0.00f, -0.10f,  0.25f }, { 200, 40, 50, 255 } },
+    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.49f, 0.49f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, { 0.20f,  0.05f,  0.05f }, { 40, 60, 140, 255 } },
+    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.35f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, { 0.05f,  0.55f, -0.05f }, { 240, 140, 40, 255 } },
+    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, { 0.10f,  0.00f,  0.15f }, { 30, 150, 140, 255 } },
 };
 
 // 強さに選手の癖を足した、実際の能力
@@ -112,6 +112,13 @@ Vector3 AiNetPos(const Opponent *ai)
 }
 
 Vector3 AiHome(void) { return (Vector3){ 0.0f, 0.0f, -(HALF_LEN + 0.8f) }; }
+// 選手ごとの構える位置：ライジング好みほどベースラインに近い（最大 0.6m 前）
+static Vector3 AiHomeFor(const Opponent *ai)
+{
+    Vector3 h = AiHome();
+    h.z += 0.6f * PERSONAS[ai->persona % PERSONA_COUNT].risingPref;
+    return h;
+}
 
 // リターンの構え位置（自分側の座標。AI は Rot180 して使う）。ボックスの外寄り、ベースラインの 1.3m 後ろ
 // ファーストは下がって時間を作り（ベースラインの 1.8m 後ろ）、セカンドは前で待つ（0.3m 後ろ）
@@ -141,7 +148,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
         if (!misjudge) {
             ai->leaving = true;
             ai->planned = false;
-            ai->standPos = ai->netRush ? ai->pos : AiHome();   // ネットにいれば、そのまま見送る
+            ai->standPos = ai->netRush ? ai->pos : AiHomeFor(ai);   // ネットにいれば、そのまま見送る
             return;
         }
     }
@@ -182,6 +189,8 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
             Vector3 back = { q.pos.x + IDEAL_SIDE, 0.0f, q.pos.z + IDEAL_FWD };
             stand = (Vector3Distance(fore, me) <= Vector3Distance(back, me)) ? fore : back;
             cost = fabsf(q.pos.y - 1.0f) + 0.4f * fmaxf(q.pos.z - (HALF_LEN + 2.0f), 0.0f);
+            // ライジング好み：下がらずに、上がり際で打ちにいく
+            cost += pp->risingPref * (0.5f * fmaxf(q.pos.z - HALF_LEN, 0.0f) - (q.vel.y > 0.3f ? 0.25f : 0.0f));
             if (atNet) cost += 0.6f;   // ネットにいるなら、バウンドさせるよりボレーで取りたい
         }
         // 理想の距離で構えるのが無理なら、踏み込んで腕を伸ばせば届く位置（体から 1.75m）でもいい（ただし打点は悪くなる）
@@ -208,7 +217,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     }
     if (bestT < 0.0f) { bestT = lateT; bestStand = lateStand; bestBallX = lateBallX; }
     ai->planFore = pp->lefty ? (bestBallX <= bestStand.x) : (bestBallX >= bestStand.x);   // 左利きは体の左がフォア
-    if (bestT < 0.0f) { ai->planned = false; ai->standPos = AiHome(); return; }
+    if (bestT < 0.0f) { ai->planned = false; ai->standPos = AiHomeFor(ai); return; }
 
     bestStand.x += RandNormal() * lv->posErr;
     bestStand.z += RandNormal() * lv->posErr;
@@ -318,23 +327,25 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     Vector3 toBall = { b.pos.x - me.x, 0.0f, b.pos.z - me.z };
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
-    gLefty = pp->lefty; gSpinMul = pp->spinMul;
+    gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
     ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
     c.stepIn = -meVel.z;
+    if (c.miss == MISS_NONE && c.volley && !c.overhead)   // ボレーのうまい選手は、当たりの悪さを取り戻す
+        c.quality += (1.0f - c.quality) * 0.5f * pp->volleySkill;
     ai->anim.lastContact = c;
     if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
-    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; return false; }
+    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; return false; }
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
     else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
-    gLefty = false; gSpinMul = 1.0f;
+    gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f;
     ai->lastTargetX = target.x;
     // 前に出るか：甘い球をベースラインの内側で攻めたら、強気なほど前に出る。ネットにいれば残る。
     // ロブで下がらされたら（サービスラインより 3m 以上後ろ）、ネットはあきらめる
@@ -422,7 +433,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->swung = false;
         // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
         if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
-        else ai->standPos = ai->netRush ? AiNetPos(ai) : AiHome();   // 自分が打った後：ネットに詰めるか、戻る
+        else ai->standPos = ai->netRush ? AiNetPos(ai) : AiHomeFor(ai);   // 自分が打った後：ネットに詰めるか、戻る
     }
     // 見た目のタイマー
     if (ai->anim.swingT >= 0.0f) ai->anim.swingT = fminf(ai->anim.swingT + dt, 5.0f);
@@ -430,6 +441,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->anim.downT > 0.0f) ai->anim.downT -= dt;
     ai->anim.runPhase += Vector3Length(ai->vel) * dt * 2.2f;
     ai->anim.lefty = pp->lefty; ai->anim.oneHanded = pp->oneHanded;
+    ai->anim.atNet = ai->pos.z > -VOICE_NET_Z;   // AI はネットが +z 側
     ai->anim.velX = -ai->vel.x; ai->anim.velZ = ai->vel.z;   // AI は +z 向き
     // 飛びついて倒れている間は動けない
     if (ai->downTimer > 0.0f) {

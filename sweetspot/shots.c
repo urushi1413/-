@@ -119,6 +119,10 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                  * (gCasual ? CASUAL_ERR : 1.0f);
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
     if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
+    if (type == SHOT_SLICE && gSliceEdge > 0.0f) {   // キレのあるスライス：速く、逆回転が強い（低く滑る）
+        kmh *= 1.0f + 0.15f * gSliceEdge;
+        rpm *= 1.0f + 0.30f * gSliceEdge;
+    }
 
     // 狙いをずらす：横方向（タイミング＋ばらつき）
     float hand = (c->forehand ? 1.0f : -1.0f) * (gLefty ? -1.0f : 1.0f);   // 引っ張る向き・スライスの曲がる向き（左利きは逆）

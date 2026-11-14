@@ -497,6 +497,7 @@ int main(void)
         if (Vector3Length(P.vel) > 0.3f) P.anim.slideSide = P.vel.x;   // 自分は -z 向きなので右＝+x
         P.anim.runPhase += Vector3Length(P.vel) * simDt * 2.2f;
         P.anim.velX = P.vel.x; P.anim.velZ = -P.vel.z;   // 自分は -z 向き
+        P.anim.atNet = P.pos.z < VOICE_NET_Z;              // サービスラインの 1.5m 後ろより前ならボレーの構え
 
         // ---- 狙い（ずっと残る）。自分は -z を向いているので、深く＝ -z ----
         // 左右：ライン際（AIM_SIDE_SAFE より外）へ動かすときは重くする。狙ってなら行けるが、うっかりは行かない

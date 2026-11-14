@@ -283,6 +283,7 @@ typedef struct {
     float   crouch;        // しゃがみ（0〜1、見た目）
     float   lungeT;        // 跳んで伸びて取った後の残り時間（見た目）
     float   lungeSide;     // 跳んだ向き（体から見て右 +1、左 -1）
+    bool    atNet;         // ネット前にいる（ボレーの構え：ラケットを前に出して小さく構える）
     bool    lefty;         // 左利き（見た目を左右反転して描く）
     bool    oneHanded;     // 片手バックハンド
     float   velX, velZ;    // 走っている速さ（体から見て：x=右、z=前）
@@ -348,6 +349,9 @@ typedef struct {
     float serveVolley;       // ファーストサーブでサーブ＆ボレーする割合（芝では 1.5 倍）
     float toBackhand;        // 相手のバック側を狙う割合
     float returnAggro;       // リターンを深く強く返す度合い（0〜1）
+    float volleySkill;       // ボレーのうまさ（0〜1）：当たりの悪さを取り戻す割合
+    float risingPref;        // ライジング好み（0〜1）：ベースライン近くで構え、上がり際で打ちにいく
+    float sliceEdge;         // スライスのキレ（0〜1）：速く、逆回転が強い（低く滑る）
     float surfSpeed[3];      // コートごとの得意・不得意（走る速さの上乗せ）HARD, CLAY, GRASS
     Color shirt;
 } Persona;
@@ -475,7 +479,8 @@ extern SurfaceType gSurface;
 extern bool gCasual;
 extern bool gCrouch;
 extern bool  gLefty;     // AI の打球を評価している間だけ、左利きなら true
-extern float gSpinMul;   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
+extern float gSpinMul;
+extern float gSliceEdge; // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];
