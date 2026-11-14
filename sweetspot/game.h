@@ -82,6 +82,7 @@ typedef struct {
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
 #define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
+#define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
 enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT,
        CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART, CELEB_COUNT };
@@ -328,6 +329,9 @@ typedef struct {
     float   celebDur;      // しぐさの長さ（秒）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
+    bool    serveStance;   // サーブの構え（トスの前）：横向きで、左手にボール
+    bool    holdBall;      // 左手にボールを持っている
+    float   splitT;        // スプリットステップの残り時間
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
 } SwingAnim;
 

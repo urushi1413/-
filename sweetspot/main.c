@@ -193,6 +193,10 @@ int main(void)
     while (!WindowShouldClose() && !quitGame) {
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
+        // スプリットステップの見た目の時間
+        if (P.anim.splitT > 0.0f)   P.anim.splitT   -= simDt;
+        if (bot.anim.splitT > 0.0f) bot.anim.splitT -= simDt;
+        if (ai.anim.splitT > 0.0f)  ai.anim.splitT  -= simDt;
 
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
@@ -437,6 +441,7 @@ int main(void)
             if (phaseTimer <= 0.0f) {
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
                 SfxServe(bot.anim.lastContact.quality, bot.lastKmh, false, Vector3Distance(cam.position, ball.pos));
+                ai.anim.splitT = SPLIT_TIME;
                 rallyHits = 1;
                 P.pos = Rot180(bot.pos);
                 trailColor = RAYWHITE;
@@ -640,6 +645,7 @@ int main(void)
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
                         SfxServe(q, P.lastServeKmh, playerGrunt, Vector3Distance(cam.position, ball.pos));
+                        ai.anim.splitT = SPLIT_TIME;
                         playerGrunt = false;
                         rallyHits = 1;
                         P.lastAimTarget = target;
@@ -729,6 +735,7 @@ int main(void)
                 ai.anim.windup = 0.0f;
                 ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
                 SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
+                P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // レシーバーのスプリットステップ
                 aiGrunt = false;
                 rallyHits = 1;
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
@@ -910,6 +917,7 @@ int main(void)
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
+                        ai.anim.splitT = SPLIT_TIME;
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;
@@ -984,6 +992,7 @@ int main(void)
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
                     ms[1].shots++; ms[1].speedSum += ai.lastKmh;
+                    P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // 相手が打った：スプリットステップ
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
                            DefensiveVoice(&ai.anim.lastContact, ai.lastType, -ai.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     aiGrunt = false;
@@ -997,6 +1006,7 @@ int main(void)
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
                     ms[0].shots++; ms[0].speedSum += bot.lastKmh;
+                    ai.anim.splitT = SPLIT_TIME;
                     SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt,
                            DefensiveVoice(&bot.anim.lastContact, bot.lastType, P.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     botGrunt = false;
@@ -1299,6 +1309,10 @@ int main(void)
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, -1); ApplyLook(&bot.anim, -1);
+            // サーブの構え（トスの前）：横向きに立ち、左手にボール
+            P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY;
+            bot.anim.serveStance = bot.anim.holdBall = false;
+            ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over;
             DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
@@ -1312,9 +1326,6 @@ int main(void)
                 }
                 DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
             }
-            // サーブの構え：トスの前はボールを手に持っている
-            if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over)
-                DrawSphere((Vector3){ ai.pos.x + (PERSONAS[ai.persona].lefty ? 0.25f : -0.25f), 1.0f, ai.pos.z + 0.35f }, BALL_R * 1.6f, (Color){ 220, 255, 60, 255 });
 
             if (playerServing) {
                 // 狙うサービスボックスを薄く塗る
@@ -1324,9 +1335,6 @@ int main(void)
                          Fade(YELLOW, 0.15f));
                 // 理想の打点
                 DrawSphereWires(tossIdeal, 0.12f, 6, 8, Fade(RAYWHITE, 0.8f));
-                // 構えているときはボールを手に持つ
-                if (P.sv == SV_READY)
-                    DrawSphere((Vector3){ P.pos.x + 0.25f, 1.0f, P.pos.z - 0.3f }, BALL_R, (Color){ 210, 240, 40, 255 });
             } else if (mode != MODE_SERVE && !botControls) {
                 // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
                 DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
