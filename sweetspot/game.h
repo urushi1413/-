@@ -82,7 +82,8 @@ typedef struct {
 #define AIM_SIDE_SAFE    2.90f   // これより外（サイドラインの約 1.2m 内側から先）はライン際：印の動きが重くなり、印の色が変わる
 #define AIM_SIDE_HEAVY   0.35f   //   ライン際で外へ動かすときの重さ（マウスの動きのこの割合しか動かない）
 #define AIM_SIDE_REAL    3.85f   // 左右の狙いの限界（サイドラインの約 0.25m 内側）
-#define AIM_SIDE_CASUAL  3.40f
+#define CASUAL_SIDE_MARGIN 0.25f  // カジュアルでは、落ちる所をサイドラインのこれだけ内側に収める（横にはアウトしない）
+#define AIM_SIDE_CASUAL  3.60f   // カジュアルは横にアウトしないので、サイドラインの約 0.5m 内側まで狙える
 #define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----

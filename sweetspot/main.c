@@ -517,11 +517,11 @@ int main(void)
         {
             float dx = in.aim.x;
             bool outward = (P.aimX > 0.0f && dx > 0.0f) || (P.aimX < 0.0f && dx < 0.0f);
-            if (outward && fabsf(P.aimX) >= AIM_SIDE_SAFE) dx *= AIM_SIDE_HEAVY;
+            if (outward && fabsf(P.aimX) >= AIM_SIDE_SAFE && style != STYLE_CASUAL) dx *= AIM_SIDE_HEAVY;   // カジュアルは重くしない
             P.aimX += dx;
         }
         P.aimDepth -= in.aim.y;
-        P.aimX = Clamp(P.aimX, -AIM_SIDE_REAL, AIM_SIDE_REAL);
+        P.aimX = Clamp(P.aimX, -(style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL), style == STYLE_CASUAL ? AIM_SIDE_CASUAL : AIM_SIDE_REAL);
         P.aimDepth = Clamp(P.aimDepth, -(HALF_LEN - 0.3f), -1.2f);
 
         // ---- サーブ（自分）----
@@ -1331,7 +1331,7 @@ int main(void)
                 }
                 DrawLine3D((Vector3){ r0.x, 0.013f, r0.z }, (Vector3){ r1.x, 0.013f, r1.z }, Fade(RAYWHITE, 0.5f));
                 Vector3 am = { et.x, 0.015f, et.z };
-                bool lineZone = !playerServing && fabsf(et.x) > AIM_SIDE_SAFE;   // ライン際：橙
+                bool lineZone = !playerServing && style != STYLE_CASUAL && fabsf(et.x) > AIM_SIDE_SAFE;   // ライン際：橙（カジュアルは出ない）
                 Color ac = longOut ? RED : lineZone ? ORANGE : (P.chargingShot >= 0) ? SHOTS[P.chargingShot].color
                          : (P.chargingServe >= 0 ? SERVES[P.chargingServe].color : Fade(RAYWHITE, 0.7f));
                 DrawCircle3D(am, 0.45f, (Vector3){ 1, 0, 0 }, 90.0f, ac);
