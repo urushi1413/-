@@ -87,6 +87,10 @@ int main(void)
 
     static PlayLog plog = { 0 };   // プレイ記録（playlog.csv）
     LogOpen(&plog);
+    MLogOpen();   // 試合の記録（matchlog.csv）
+    int mlPoint = 0, mlShot = 0;         // 記録用：ポイントと打った球の通し番号
+    Score mlBefore = { 0 };              // ポイントが始まったときのスコア
+    float youMinDist = 99.0f;            // AI の球に一番近づいた距離（ウィナーを取られたとき、どれだけ遠かったか）
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_REAL;  // N：難易度
@@ -452,6 +456,7 @@ int main(void)
             P.vel = (Vector3){ 0 };
             P.hasLast = false;
             RecReset(); pointStart = 0; hlPending = false;
+            MLogNewMatch(); mlPoint = 0; mlShot = 0;
             int lvl = ai.level, per = ai.persona;
             ai = (Opponent){ 0 };
             ai.level = lvl; ai.persona = per;
@@ -475,6 +480,7 @@ int main(void)
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
             if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }   // 前のポイント（喜ぶところまで）
+            mlPoint++; mlShot = 0; mlBefore = score; youMinDist = 99.0f;
             pointStart = RecTotal();
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             ai.anim.celebT = 0.0f;
@@ -539,6 +545,7 @@ int main(void)
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
                 SfxServe(bot.anim.lastContact.quality, bot.lastKmh, false, Vector3Distance(cam.position, ball.pos));
                 ai.anim.splitT = SPLIT_TIME;
+                MLogShot(mlPoint, ++mlShot, false, "SERVE", bot.lastKmh, bot.anim.lastContact.quality, false, false, false, false, P.pos, ball.pos.y, ai.pos, Vector3Length(ai.vel));
                 rallyHits = 1;
                 P.pos = Rot180(bot.pos);
                 trailColor = RAYWHITE;
@@ -746,6 +753,7 @@ int main(void)
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
                         SfxServe(q, P.lastServeKmh, playerGrunt, Vector3Distance(cam.position, ball.pos));
                         ai.anim.splitT = SPLIT_TIME;
+                        if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, "SERVE", P.lastServeKmh, q, false, false, false, false, P.pos, hb.pos.y, ai.pos, Vector3Length(ai.vel));
                         playerGrunt = false;
                         rallyHits = 1;
                         P.lastAimTarget = target;
@@ -836,6 +844,8 @@ int main(void)
                 ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
                 SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
                 P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // レシーバーのスプリットステップ
+                MLogShot(mlPoint, ++mlShot, true, "SERVE", ai.lastKmh, ai.anim.lastContact.quality, false, false, false, false, ai.pos, ball.pos.y, P.pos, Vector3Length(P.vel));
+                youMinDist = 99.0f;
                 aiGrunt = false;
                 rallyHits = 1;
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
@@ -1025,6 +1035,7 @@ int main(void)
                         gHumanShot = false;
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
                         ai.anim.splitT = SPLIT_TIME;
+                        if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, SHOTS[type].name, P.lastKmh, c.quality, false, false, c.volley, c.isReturn, P.pos, c.height, ai.pos, Vector3Length(ai.vel));
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;
@@ -1099,6 +1110,8 @@ int main(void)
             if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
                     ms[1].shots++; ms[1].speedSum += ai.lastKmh;
+                    MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
+                    youMinDist = 99.0f;
                     P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // 相手が打った：スプリットステップ
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
                            DefensiveVoice(&ai.anim.lastContact, ai.lastType, -ai.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
@@ -1114,6 +1127,7 @@ int main(void)
                     ball = FlipSides(fb);
                     ms[0].shots++; ms[0].speedSum += bot.lastKmh;
                     ai.anim.splitT = SPLIT_TIME;
+                    MLogShot(mlPoint, ++mlShot, false, SHOTS[bot.lastType].name, bot.lastKmh, bot.lastQ, bot.lastAttack, bot.lastLapse, bot.anim.lastContact.volley, bot.anim.lastContact.isReturn, P.pos, bot.anim.lastContact.height, ai.pos, Vector3Length(ai.vel));
                     SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt,
                            DefensiveVoice(&bot.anim.lastContact, bot.lastType, P.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     botGrunt = false;
@@ -1147,6 +1161,7 @@ int main(void)
             bouncePos = (ball.bounces == 1) ? ball.firstBounce : ball.pos;   // 判定に使った、弾んだ瞬間の位置
             bounceT = 0.0f;
             if (ball.bounces == 1) {
+                if (mode == MODE_MATCH) MLogLand(&ball);
                 markPos = ball.firstBounce; markT = 0.0f;
                 // 際どい球（ラインから 8cm 以内）：ホークアイのような拡大図を出す
                 if (fabsf(ball.lineDist - BALL_R) < 0.08f && !ball.hitNet) { hawk = ball; hawkT = 0.0f; }
@@ -1186,6 +1201,13 @@ int main(void)
 
         // ---- 試合：ポイントの判定 ----
         if (mode == MODE_MATCH && phase == PH_PLAY) {
+            // AI の球に一番近づいた距離（打てる高さで、こちらのコートにあるうち）
+            if (ball.active && ball.lastHitter == HITTER_OPP && ball.bounces <= 1 && ball.pos.z > 0.0f && ball.pos.y < 2.5f) {
+                Vector3 me = botControls ? Rot180(bot.pos) : P.pos;
+                (void)me;
+                float d = sqrtf((P.pos.x - ball.pos.x) * (P.pos.x - ball.pos.x) + (P.pos.z - ball.pos.z) * (P.pos.z - ball.pos.z));
+                if (d < youMinDist) youMinDist = d;
+            }
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
             bool returnShot = retPending && !ball.isServe;   // 今飛んでいるのはリターン
@@ -1338,6 +1360,19 @@ int main(void)
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
+                }
+                // ---- 試合の記録 ----
+                {
+                    const char *ek = endKind == 1 ? "ace" : endKind == 2 ? "winner" : endKind == 4 ? "double_fault"
+                                   : (ball.result == RESULT_NET ? "error_net" : "error_out");
+                    bool youEnd = hitter == 0;
+                    ShotType et = youEnd ? (botControls ? bot.lastType : P.lastType) : ai.lastType;
+                    const char *etn = ball.isServe ? "SERVE" : SHOTS[et].name;
+                    float ekmh = ball.isServe ? (youEnd ? (botControls ? bot.lastKmh : P.lastServeKmh) : ai.lastKmh) : (youEnd ? (botControls ? bot.lastKmh : P.lastKmh) : ai.lastKmh);
+                    float eq = youEnd ? (botControls ? bot.lastQ : P.lastContact.quality) : ai.lastQ;
+                    MLogPoint(mlPoint, &mlBefore, server, serveNo, rallyHits, winner, ek, hitter, etn, ekmh, eq,
+                              (!youEnd && endKind <= 2) ? youMinDist : -1.0f, gPointImportance, ai.persona, ai.level, style);
+                    if (score.over) MLogMatchEnd(&score, ai.persona, ai.level, style);
                 }
                 // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
                 {

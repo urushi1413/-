@@ -454,6 +454,7 @@ typedef struct {
     // 最後のショット（HUD 用）
     ShotType lastType;
     float   lastQ, lastKmh;
+    bool    lastAttack, lastLapse;   // 最後のショットが決めにいく球か、打ち損じか（記録用）
     bool    lastServe;     // 最後に打ったのがサーブか（表示用）
     int     persona;       // 選手（PERSONAS の番号。0 は癖なし）
     // 追い込まれてラケットを叩きつけると、しばらく強くなる（ジョコビッチ）
@@ -577,6 +578,16 @@ const RFrame *Highlight(int k, int *n, const char **caption);
 Camera3D ReplayCamera(Vector3 ball, Camera3D prev, bool first);
 void DrawReplayFrame(const RFrame *f, Camera3D cam);
 void DrawCourt(void);
+
+// 試合の記録（matchlog.csv）
+void MLogOpen(void);
+void MLogNewMatch(void);
+void MLogShot(int point, int shotNo, bool ai, const char *type, float kmh, float q, bool attack, bool lapse, bool volley, bool ret,
+              Vector3 hit, float contactH, Vector3 opp, float oppSpeed);
+void MLogLand(const Ball *b);
+void MLogPoint(int point, const Score *before, int server, int serveNo, int rally, int winner, const char *endKind, int ender,
+               const char *enderType, float enderKmh, float enderQ, float youMinDist, float importance, int persona, int level, int style);
+void MLogMatchEnd(const Score *s, int persona, int level, int style);
 
 void TourStart(Tournament *t, bool women, int surface, int setsToWin);
 int  TourOpponent(const Tournament *t);

@@ -469,6 +469,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->lastQ = c.quality;
     ai->lastKmh = kmh;
     ai->lastServe = false;
+    ai->lastAttack = sAttack; ai->lastLapse = sLapse;
     return true;
 }
 
