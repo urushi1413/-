@@ -5,9 +5,10 @@
 // 選手の強さ：癖なしの NORMAL の AI に取るポイントの割合（%）。HARD, CLAY, GRASS。0 番（予選上がり）は 50
 static const float TOUR_STR[PERSONA_COUNT][3] = {
     { 50, 50, 50 },
-    { 60, 52, 68 }, { 69, 65, 65 }, { 64, 74, 67 }, { 62, 53, 62 },   // フェデラー、ジョコビッチ、ナダル、マレー
-    { 70, 67, 67 }, { 70, 60, 65 }, { 62, 49, 60 }, { 61, 49, 67 },   // アルカラス、シナー、メドベデフ、キルギオス
-    { 69, 58, 71 }, { 64, 76, 62 }, { 66, 54, 61 }, { 64, 58, 64 }, { 64, 67, 58 }, { 62, 56, 74 },   // 女子
+    { 60, 55, 71 }, { 68, 70, 67 }, { 66, 76, 65 }, { 62, 56, 60 },   // フェデラー、ジョコビッチ、ナダル、マレー
+    { 72, 71, 69 }, { 74, 64, 62 }, { 65, 50, 56 }, { 60, 52, 65 },   // アルカラス、シナー、メドベデフ、キルギオス
+    { 71, 60, 71 }, { 66, 79, 64 }, { 64, 57, 57 }, { 67, 59, 64 }, { 59, 72, 60 }, { 65, 62, 73 },   // 女子
+    { 71, 61, 65 }, { 69, 71, 66 },                                    // 錦織、ズベレフ
 };
 
 const char *TourName(int surface)
@@ -32,8 +33,7 @@ void TourStart(Tournament *t, bool women, int surface, int setsToWin)
     t->active = true; t->women = women; t->surface = surface; t->setsToWin = setsToWin;
     // 出る選手：そのツアーの選手から 7 人（足りなければ予選上がり）＋自分。組み合わせはくじ
     int pool[16], np = 0;
-    int first = women ? WOMEN_FIRST : MEN_FIRST, last = women ? WOMEN_LAST : MEN_LAST;
-    for (int p = first; p <= last; p++) pool[np++] = p;
+    for (int i = 0; i < TourPersonaCount(women); i++) pool[np++] = TourPersonaAt(women, i);
     for (int i = np - 1; i > 0; i--) { int j = GetRandomValue(0, i); int tmp = pool[i]; pool[i] = pool[j]; pool[j] = tmp; }
     int entr[8], ne = 0;
     entr[ne++] = -1;

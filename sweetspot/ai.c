@@ -27,7 +27,7 @@ const AiLevel AI_LEVELS[3] = {
 };
 
 // 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
-const float RAGE_SMASH[PERSONA_COUNT] = { 0.0f, 0.0f, 0.75f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.55f };   // ジョコビッチとキルギオス
+const float RAGE_SMASH[PERSONA_COUNT] = { 0.0f, 0.0f, 0.75f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.55f, 0, 0, 0, 0, 0, 0, 0.0f, 0.40f };   // ジョコビッチ、キルギオス、ズベレフ
 
 // ポイント後のしぐさ。大事なポイント（と長いラリー、少しだけ普通のウィナー）は winChance、セットと試合は必ず。マレーは落とすと怒る
 const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
@@ -47,6 +47,8 @@ const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
     { { CELEB_FIST, CELEB_JUMP_FIST, 0 },                      { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.60f, 0.00f },   // ガウフ
     { { CELEB_FIST, CELEB_COMEON, 0 },                         { CELEB_FIST, CELEB_ARMS_UP },        { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.75f, 0.00f },   // シャラポワ：拳を握って背を向ける
     { { CELEB_FIST, CELEB_RACKET_POINT, 0 },                   { CELEB_RACKET_UP, CELEB_ARMS_UP },   { CELEB_HANDS_HEAD, CELEB_ARMS_UP },{ 0, 0 },                             0.45f, 0.00f },   // バーティ：控えめ
+    { { CELEB_FIST, CELEB_FIST, CELEB_RACKET_POINT },           { CELEB_FIST, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_KNEES },     { 0, 0 },                             0.55f, 0.00f },   // 錦織：小さく「カモン」
+    { { CELEB_ROAR, CELEB_FIST, CELEB_RACKET_UP },              { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_KNEES, CELEB_ARMS_UP },     { CELEB_RANT, 0 },                    0.65f, 0.25f },   // ズベレフ：吠える、ときどき怒る
 };
 
 // しぐさの長さ
@@ -81,6 +83,11 @@ const Persona PERSONAS[PERSONA_COUNT] = {
     { "Coco Gauph",       "GAUPH",    false, false, 0.45f, -0.06f, 0.60f, 0.58f, 0.00f, 8.0f, 0.06f, -0.03f, 1.05f, 0.05f, 0.35f, 0.03f, 0.7f, 0.02f, 0.20f, 0.6f, 0.30f, 0.10f, 0.00f, 0.88f, 0.30f, { -0.06f, -0.10f, -0.12f }, { 250, 180, 40, 255 }, true },
     { "Maria Sharapowa",  "SHARAPOWA", false, false, -0.05f, -0.02f, 0.58f, 0.60f, 0.25f, 6.0f, 0.06f, -0.04f, 0.90f, 0.02f, 0.20f, 0.03f, 0.6f, 0.02f, 0.20f, 0.8f, 0.25f, 0.40f, 0.00f, 0.95f, 0.50f, { -0.08f, 0.10f, -0.15f }, { 255, 190, 210, 255 }, true },
     { "Ash Bartie",       "BARTIE",   false, false, 0.25f, -0.04f, 0.58f, 0.58f, 0.05f, 6.0f, 0.08f, -0.04f, 1.05f, 0.60f, 0.30f, 0.08f, 1.3f, 0.10f, 0.25f, 0.5f, 0.60f, 0.40f, 0.90f, 0.85f, 0.30f, { -0.06f, -0.15f, 0.10f }, { 40, 120, 200, 255 }, true },
+    // ---- 男子（追加 2）----
+    //   錦織：足が速く反応も速い。上がり際で早く打つ。リターンとバックハンドがうまい。サーブは遅め。ハードが得意
+    { "Kei Nishikoli",   "NISHIKOLI", false, false, 0.30f, -0.04f, 0.60f, 0.58f, 0.10f, -6.0f, 0.03f, -0.02f, 1.10f, 0.05f, 0.30f, 0.06f, 0.8f,  0.02f, 0.20f, 0.9f, 0.30f, 0.70f, 0.00f, 0.92f, 0.20f, { -0.02f, -0.15f, -0.12f }, { 60, 60, 70, 255 } },
+    //   ズベレフ：サーブがとても速い。両手バックが強い。ベースラインの後ろで粘る。クレーとハードが得意
+    { "Sascha Zverew",   "ZVEREW",    false, false, 0.25f, -0.03f, 0.57f, 0.57f, 0.10f, 15.0f, 0.08f, -0.05f, 1.05f, 0.03f, 0.25f, 0.02f, 0.6f,  0.02f, 0.25f, 0.6f, 0.20f, 0.10f, 0.00f, 0.85f, 0.15f, { 0.04f, 0.10f, -0.06f }, { 120, 180, 230, 255 } },
 };
 
 // 強さに選手の癖を足した、実際の能力
@@ -96,6 +103,11 @@ AiLevel EffLevel(const Opponent *ai)
     float form = p->surfSpeed[gSurface];
     L.speed        += (p->speedAdd + form) * f;
     if (gWomen) L.speed *= WOMEN_RUN_K;
+    {   // 身長のトレードオフ：背が高いほど足と反応が少し遅い（低いと速い）
+        float hd = HeightDelta(ai->persona);
+        L.speed *= 1.0f - HEIGHT_SPEED_PER_CM * hd;
+        L.reaction = fmaxf(0.10f, L.reaction + HEIGHT_REACT_PER_CM * hd);
+    }
     L.timingSigmaMs *= Clamp(1.0f - 1.5f * form * f, 0.4f, 1.8f);
     L.posErr        *= Clamp(1.0f - 1.5f * form * f, 0.4f, 1.8f);
     L.reaction      = fmaxf(0.12f, L.reaction + p->reactionAdd * f);
@@ -417,7 +429,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
             * (1.0f - RAGE_ERR * Clamp01(ai->rage));                            // ラケットを叩きつけた後はミスが減る
     gTimingTolMul = 1.0f;   // AI のタイミングの許容幅はそのまま（人間だけ広い）
-    gReachAdd = (PersonaHeight(ai->persona) - 185.0f) * REACH_PER_CM;   // 身長で届く範囲が変わる
+    gReachAdd = HeightDelta(ai->persona) * REACH_PER_CM;   // 身長で届く範囲が変わる
+    gHeightDelta = HeightDelta(ai->persona);              // 背が高いほど低い球がつらい
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     sAttack = false;
     bool sLapse = false;
@@ -445,7 +458,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
-    gTimingTolMul = HUMAN_TIMING_TOL; gReachAdd = 0.0f;
+    gTimingTolMul = HUMAN_TIMING_TOL; gReachAdd = 0.0f; gHeightDelta = 0.0f;
     if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
     {   // よろめき
         float sg = StaggerAmount(&c, fabsf(ai->vel.x));
@@ -493,7 +506,7 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
     // 強さごとの安定感（低いほどぶれて、フォルトが増える）。セカンドは安全に入れにいくので、ぶれは小さい
     q *= first ? lv->serveSkill : lv->serveSkill + (1.0f - lv->serveSkill) * 0.65f;
-    Vector3 contact = { me.x + (pp->lefty ? -0.25f : 0.25f) + off.x, SERVE_IDEAL_H * PersonaHeight(ai->persona) / 185.0f - hErr, me.z - 0.35f + off.y };   // 背の高い選手ほど高い打点から打つ   // 左利きは左でトス
+    Vector3 contact = { me.x + (pp->lefty ? -0.25f : 0.25f) + off.x, SERVE_IDEAL_H * (1.0f + HeightDelta(ai->persona) / 185.0f) - hErr, me.z - 0.35f + off.y };   // 背の高い選手ほど高い打点から打つ   // 左利きは左でトス
 
     ServeType t;
     float charge;

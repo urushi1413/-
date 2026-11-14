@@ -430,12 +430,15 @@ typedef struct {
     Color shirt;
     bool  female;
 } Persona;
-#define PERSONA_COUNT 15     // 0 は癖なし（シミュレーション用）、1〜8 が男子、9〜14 が女子
+#define PERSONA_COUNT 17     // 0 は癖なし（シミュレーション用）、1〜8・15・16 が男子、9〜14 が女子
 #define MEN_FIRST     1
 #define MEN_LAST      8
 #define WOMEN_FIRST   9
 #define WOMEN_LAST    14
 #define PERSONA_MURRAYE 4
+int TourPersonaCount(bool women);           // ツアーの選手の数
+int TourPersonaAt(bool women, int i);       // ツアーの i 番目の選手
+int TourPersonaIndex(bool women, int p);    // 選手がツアーの何番目か（いなければ 0）
 #define WOMEN_SHOT_K    0.92f   // 女子：ストロークの速さ
 #define WOMEN_SERVE_K   0.88f   //       サーブの速さ
 #define WOMEN_SPIN_K    0.88f   //       回転
@@ -623,6 +626,11 @@ extern bool  gWomen;
 extern float gTimingTolMul;
 extern float gReachAdd;       // 届く範囲の上乗せ（m）。背の高い選手ほど長い（AI が打つ間だけ）
 float PersonaHeight(int persona);   // 選手の身長（cm）。-1 は人間（男子 185、女子 175）
+float HeightDelta(int persona);     // ツアーの標準（男子 185、女子 175）との差（cm）。人間は 0
+extern float gHeightDelta;          // 打っている選手の身長の差（cm）：高いほど低い球が打ちにくく、高い球が打ちやすい
+#define HEIGHT_SPEED_PER_CM  0.0035f   // 身長 1cm 高いと、走る速さがこの割合だけ落ちる（低いと速い）
+#define HEIGHT_REACT_PER_CM  0.0012f   //   反応がこの秒数だけ遅れる
+#define HEIGHT_BALL_PER_CM   0.0045f   //   球がこの m だけ低く感じる（背が高いと低い球がつらい、高い球は楽）
 #define REACH_PER_CM  0.0045f   // 身長 1cm あたりの届く範囲の違い（m）   // タイミングの許容幅の倍率（人間 HUMAN_TIMING_TOL、AI が打つ間だけ 1）      // 女子の試合（球速・回転が少し遅い）
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率

@@ -43,6 +43,8 @@ static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "gauph",    1.42f, 0.80f, 0.55f },
     { "sharapowa",1.45f, 1.00f, 1.00f },   // 一番大きい声（毎回）
     { "bartie",   1.38f, 0.70f, 0.35f },
+    { "nishikoli",1.05f, 0.80f, 0.50f },
+    { "zverew",   0.95f, 0.90f, 0.60f },
 };
 static const VoiceProfile VOICE_HUMAN = { "you", 1.00f, 0.90f, 0.60f };
 static const VoiceProfile VOICE_HUMAN_W = { "you", 1.35f, 0.90f, 0.60f };   // 女子の試合：自分と癖なしの AI は声を高く

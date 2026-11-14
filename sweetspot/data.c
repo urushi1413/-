@@ -18,7 +18,16 @@ static const float PERSONA_HEIGHT[PERSONA_COUNT] = {
     185, 188, 185, 191,                        // フェデラー、ジョコビッチ、ナダル、マレー
     183, 191, 198, 193,                        // アルカラス、シナー、メドベデフ、キルギオス
     175, 176, 182, 175, 188, 166,              // ウィリアムズ、シフィオンテク、サバレンカ、ガウフ、シャラポワ、バーティ
+    178, 198,                                  // 錦織、ズベレフ
 };
+float gHeightDelta = 0.0f;
+// ツアーごとの選手の並び
+static const int MEN_IDS[] = { 1, 2, 3, 4, 5, 6, 7, 8, 15, 16 };
+static const int WOMEN_IDS[] = { 9, 10, 11, 12, 13, 14 };
+int TourPersonaCount(bool women) { return women ? (int)(sizeof(WOMEN_IDS) / sizeof(int)) : (int)(sizeof(MEN_IDS) / sizeof(int)); }
+int TourPersonaAt(bool women, int i) { int n = TourPersonaCount(women); i = ((i % n) + n) % n; return women ? WOMEN_IDS[i] : MEN_IDS[i]; }
+int TourPersonaIndex(bool women, int p) { for (int i = 0; i < TourPersonaCount(women); i++) if (TourPersonaAt(women, i) == p) return i; return 0; }
+float HeightDelta(int persona) { return persona < 0 ? 0.0f : PersonaHeight(persona) - (gWomen ? 175.0f : 185.0f); }
 float PersonaHeight(int persona)
 {
     if (persona <= 0) return gWomen ? 175.0f : 185.0f;
@@ -67,6 +76,8 @@ void ApplyLook(SwingAnim *a, int persona)
         { {  30,  25,  20, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.3f, 0 },   // ガウフ
         { { 220, 190, 120, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.4f, 0 },   // シャラポワ：金髪
         { {  70,  50,  35, 255 }, {  40,  60, 100, 255 }, { 250, 250, 250, 255 },   0.5f, 0 },   // バーティ
+        { {  20,  18,  18, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.3f, 0 },   // 錦織
+        { { 205, 175, 110, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.2f, 0 },   // ズベレフ：金髪
 };
     // 肌の色（だいたい）
     static const Color SKIN[PERSONA_COUNT] = {
@@ -75,6 +86,7 @@ void ApplyLook(SwingAnim *a, int persona)
         { 215, 168, 125, 255 }, { 242, 208, 180, 255 }, { 240, 205, 175, 255 }, { 200, 145, 105, 255 },   // アルカラス、シナー、メドベデフ、キルギオス
         { 110,  70,  50, 255 }, { 240, 205, 175, 255 }, { 238, 200, 165, 255 }, { 120,  78,  55, 255 },   // ウィリアムズ、シフィオンテク、サバレンカ、ガウフ
         { 242, 210, 185, 255 }, { 210, 160, 120, 255 },                                                   // シャラポワ、バーティ
+        { 226, 190, 150, 255 }, { 242, 210, 185, 255 },                                                   // 錦織、ズベレフ
     };
     a->scale = PersonaHeight(persona) / 185.0f;
     if (persona < 0) {   // 人間：紺のショーツ

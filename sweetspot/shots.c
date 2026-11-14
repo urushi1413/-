@@ -81,7 +81,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming * gTimingTolMul;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + qualityReach + sp->reach) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
-        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y + (gCrouch ? CROUCH_LIFT : 0.0f), c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
+        c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y + (gCrouch ? CROUCH_LIFT : 0.0f) - gHeightDelta * HEIGHT_BALL_PER_CM, c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
     }
     // 3 つの掛け算をそのまま使うと、どれも 8 割の「悪くない当たり」が 5 割になってしまうので、0.6 乗して緩める
     //   リターンは反応で打つので、緩めない

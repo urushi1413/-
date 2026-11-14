@@ -283,12 +283,8 @@ int main(void)
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
-                    case MI_TOUR:   gWomen = !gWomen; ai.persona = gWomen ? WOMEN_FIRST : MEN_FIRST; forceRestart = true; break;
-                    case MI_OPP: {
-                        int first = gWomen ? WOMEN_FIRST : MEN_FIRST, cnt = (gWomen ? WOMEN_LAST : MEN_LAST) - first + 1;
-                        ai.persona = first + ((ai.persona - first) % cnt + cnt + change) % cnt;
-                        forceRestart = true;
-                    } break;
+                    case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); forceRestart = true; break;
+                    case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
