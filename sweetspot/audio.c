@@ -33,11 +33,28 @@ static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "djokovik", 1.10f, 0.90f, 0.65f },   // 短く鋭い
     { "nadar",    0.86f, 1.00f, 0.92f },   // ほぼ毎回、低く長く大きい
     { "murraye",  0.95f, 0.85f, 0.60f },
+    { "alcarazz", 1.00f, 0.95f, 0.70f },
+    { "sinnerr",  1.05f, 0.80f, 0.55f },
+    { "medvedeb", 0.95f, 0.70f, 0.35f },
+    { "kirgios",  1.00f, 0.95f, 0.60f },
+    { "williamz", 1.30f, 1.00f, 0.85f },   // 女子：声が高い
+    { "swiontek", 1.40f, 0.85f, 0.60f },
+    { "sabalenco",1.28f, 1.00f, 0.95f },   // 大きな声
+    { "gauph",    1.42f, 0.80f, 0.55f },
+    { "sharapowa",1.45f, 1.00f, 1.00f },   // 一番大きい声（毎回）
+    { "bartie",   1.38f, 0.70f, 0.35f },
 };
 static const VoiceProfile VOICE_HUMAN = { "you", 1.00f, 0.90f, 0.60f };
+static const VoiceProfile VOICE_HUMAN_W = { "you", 1.35f, 0.90f, 0.60f };   // 女子の試合：自分と癖なしの AI は声を高く
+static const VoiceProfile VOICE_AI_W = { "ai", 1.35f, 0.90f, 0.60f };
 static SfxSlot gPV[PERSONA_COUNT + 1][V_COUNT];   // 選手ごとの録音（最後は人間）
 static int     gVoiceWho = -1;                    // 今鳴っている声の主（打球の声の続きに使う）
-static const VoiceProfile *Prof(int who) { return (who < 0 || who >= PERSONA_COUNT) ? &VOICE_HUMAN : &VOICE[who]; }
+static const VoiceProfile *Prof(int who)
+{
+    if (who < 0 || who >= PERSONA_COUNT) return gWomen ? &VOICE_HUMAN_W : &VOICE_HUMAN;
+    if (who == 0 && gWomen) return &VOICE_AI_W;
+    return &VOICE[who];
+}
 static SfxSlot *PSlot(int who, int v) { return &gPV[(who < 0 || who >= PERSONA_COUNT) ? PERSONA_COUNT : who][v]; }
 
 static bool    gAudioOk = false;

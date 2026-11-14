@@ -211,10 +211,10 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_MODE, MI_SETS, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
-            int items[16], n = 0;
+            enum { MI_PLAY, MI_MODE, MI_SETS, MI_TOUR, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
+            int items[20], n = 0;
             items[n++] = MI_PLAY;
-            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
+            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
             items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
@@ -251,7 +251,12 @@ int main(void)
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
-                    case MI_OPP:    ai.persona = (ai.persona - 1 + 4 + change) % 4 + 1; forceRestart = true; break;
+                    case MI_TOUR:   gWomen = !gWomen; ai.persona = gWomen ? WOMEN_FIRST : MEN_FIRST; forceRestart = true; break;
+                    case MI_OPP: {
+                        int first = gWomen ? WOMEN_FIRST : MEN_FIRST, cnt = (gWomen ? WOMEN_LAST : MEN_LAST) - first + 1;
+                        ai.persona = first + ((ai.persona - first) % cnt + cnt + change) % cnt;
+                        forceRestart = true;
+                    } break;
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
@@ -295,6 +300,7 @@ int main(void)
                     case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
+                    case MI_TOUR:    label = "Tour";            value = gWomen ? "WOMEN" : "MEN"; break;
                     case MI_OPP:     label = "Opponent";        value = PERSONAS[ai.persona].name; break;
                     case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
                     case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
@@ -1342,7 +1348,7 @@ int main(void)
                 ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 ApplyLook(&ai.anim, ai.persona);
                 {   // マレー：ポイントの間は背中を丸めてうつむいて歩く
-                    float want = (ai.persona == 4 && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && ai.anim.celebT <= 0.0f) ? 1.0f : 0.0f;
+                    float want = (ai.persona == PERSONA_MURRAYE && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && ai.anim.celebT <= 0.0f) ? 1.0f : 0.0f;
                     ai.anim.slouch += (want - ai.anim.slouch) * Clamp01(frameDt * 3.0f);
                 }
                 DrawFigure(ai.pos, false, PERSONAS[ai.persona].shirt, &ai.anim, Vector3Length(ai.vel));
@@ -1686,7 +1692,7 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? "YOU" : PERSONAS[ai.persona].shortName, sx + 58, ry + 3, k == 0 ? 24 : 20, nameC);
+                DrawText(k == 0 ? "YOU" : PERSONAS[ai.persona].shortName, sx + 58, ry + 3 + (k == 1 && strlen(PERSONAS[ai.persona].shortName) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(PERSONAS[ai.persona].shortName) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);

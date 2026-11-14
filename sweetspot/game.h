@@ -332,6 +332,7 @@ typedef struct {
     int     celebKind;     // しぐさの種類（CELEB_*）
     float   celebDur;      // しぐさの長さ（秒）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
+    bool    female;        // 女子（スカートとポニーテール）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     bool    serveStance;   // サーブの構え（トスの前）：横向きで、左手にボール
     bool    smash;         // 頭上の振りがスマッシュ（ラリー中）。false ならサーブ
@@ -406,8 +407,18 @@ typedef struct {
     float clutch;            // 大事なポイントでの強くなり方（0〜1）
     float surfSpeed[3];      // コートごとの得意・不得意（走る速さの上乗せ。タイミングの安定とミスの少なさにも効く）HARD, CLAY, GRASS
     Color shirt;
+    bool  female;
 } Persona;
-#define PERSONA_COUNT 5      // 0 は癖なし（シミュレーション用）、1〜4 が選手
+#define PERSONA_COUNT 15     // 0 は癖なし（シミュレーション用）、1〜8 が男子、9〜14 が女子
+#define MEN_FIRST     1
+#define MEN_LAST      8
+#define WOMEN_FIRST   9
+#define WOMEN_LAST    14
+#define PERSONA_MURRAYE 4
+#define WOMEN_SHOT_K    0.92f   // 女子：ストロークの速さ
+#define WOMEN_SERVE_K   0.88f   //       サーブの速さ
+#define WOMEN_SPIN_K    0.88f   //       回転
+#define WOMEN_RUN_K     0.95f   //       AI の走る速さ
 
 typedef struct {
     Vector3 pos;          // 足元（ワールド座標）
@@ -543,6 +554,7 @@ extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
+extern bool  gWomen;      // 女子の試合（球速・回転が少し遅い）
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];

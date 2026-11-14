@@ -8,7 +8,8 @@ bool  gLefty = false;
 float gSpinMul = 1.0f;
 float gSliceEdge = 0.0f;
 float gErrMul = 1.0f;
-float gRiseSkill = 0.0f;   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
+float gRiseSkill = 0.0f;
+bool  gWomen = false;   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
 bool  gHumanShot = false;
 float gPointImportance = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
 bool gCasual = false;     // 自分の打球を評価している間だけ、簡単モードなら true
@@ -42,11 +43,22 @@ void ApplyLook(SwingAnim *a, int persona)
         { {  28,  24,  24, 255 }, {  30,  40,  80, 255 }, { 0 },                    0.3f, 0 },   // ジョコビッチ
         { {  45,  32,  24, 255 }, {  45,  45,  55, 255 }, { 245, 245, 245, 255 },   0.0f, 1 },   // ナダル：バンダナ、頭の上へ振り上げるフォア
         { { 105,  72,  45, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.2f, 0 },   // マレー
-    };
+            { {  50,  35,  25, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.2f, 0 },   // アルカラス
+        { { 200,  90,  40, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.2f, 0 },   // シナー：赤毛
+        { { 110,  80,  55, 255 }, {  30,  40,  70, 255 }, { 0 },                    0.0f, 0 },   // メドベデフ
+        { {  25,  20,  20, 255 }, {  30,  30,  35, 255 }, { 250, 250, 250, 255 },   0.3f, 0 },   // キルギオス：ヘッドバンド
+        { {  25,  20,  20, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.2f, 0 },   // ウィリアムズ
+        { {  90,  60,  40, 255 }, { 245, 245, 248, 255 }, { 250, 250, 250, 255 },   0.2f, 0 },   // シフィオンテク：キャップ代わりのバンド
+        { {  90,  60,  40, 255 }, {  30,  30,  35, 255 }, { 0 },                    0.1f, 0 },   // サバレンカ
+        { {  30,  25,  20, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.3f, 0 },   // ガウフ
+        { { 220, 190, 120, 255 }, { 245, 245, 248, 255 }, { 0 },                    0.4f, 0 },   // シャラポワ：金髪
+        { {  70,  50,  35, 255 }, {  40,  60, 100, 255 }, { 250, 250, 250, 255 },   0.5f, 0 },   // バーティ
+};
     if (persona < 0) {   // 人間：紺のショーツ
-        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0;
+        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen;
         return;
     }
     persona %= PERSONA_COUNT;
+    a->female = PERSONAS[persona].female || (persona == 0 && gWomen);
     a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle;
 }

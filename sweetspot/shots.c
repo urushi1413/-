@@ -122,6 +122,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                  * (gCasual ? CASUAL_ERR : 1.0f) * gErrMul;
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
     if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
+    if (gWomen) { kmh *= WOMEN_SHOT_K; rpm *= WOMEN_SPIN_K; }   // 女子は少し遅く、回転も少ない
     if (type == SHOT_SLICE && gSliceEdge > 0.0f) {   // キレのあるスライス：速く、逆回転が強い（低く滑る）
         kmh *= 1.0f + 0.15f * gSliceEdge;
         rpm *= 1.0f + 0.30f * gSliceEdge;
