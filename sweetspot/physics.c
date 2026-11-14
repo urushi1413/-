@@ -119,6 +119,13 @@ void StepBall(Ball *b, float dt)
 
     // 地面
     if (b->pos.y < BALL_R) {
+        // 地面に触れた点：このステップの途中で高さ BALL_R を横切った所（ステップの終わりの点だと、
+        //   速い球はステップの間に 10cm ほど先へ進んでいて、判定が外側にずれる）
+        if (prev.y > BALL_R && prev.y > b->pos.y) {
+            float f = (prev.y - BALL_R) / (prev.y - b->pos.y);
+            b->pos.x = prev.x + (b->pos.x - prev.x) * f;
+            b->pos.z = prev.z + (b->pos.z - prev.z) * f;
+        }
         b->pos.y = BALL_R;
         if (b->vel.y < -0.3f) {
             Bounce(b);

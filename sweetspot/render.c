@@ -603,7 +603,12 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     float volLow = volleySwing ? Clamp((0.95f - a->contactLocal.y) * 0.6f, 0.0f, 0.32f) * Smooth01(a->swingT / 0.06f) : 0.0f;
 
     // ---- 腰の高さ：構えでは膝を曲げて低く、走ると上下に弾む ----
-    float hipY = 0.88f - 0.05f * Clamp01(a->windup) - 0.03f * move * fabsf(sinf(ph));
+    // 膝はいつも曲げておく（構え・走り）。引くときにさらに沈み（ため）、振りながら脚で押し上げる
+    float load = 0.0f;
+    if (swinging && !a->lastContact.volley && !a->lastContact.overhead)
+        load = KNEE_LOAD * (1.0f - Smooth01((a->swingT - 0.03f) / 0.14f));
+    else if (!swinging) load = KNEE_LOAD * Clamp01(a->windup);
+    float hipY = 0.88f - KNEE_BEND * (1.0f - 0.3f * move) - load - 0.03f * move * fabsf(sinf(ph));
     Vector3 leanV = { mdx * 0.10f * move, 0.0f, 0.05f + mdz * 0.10f * move };   // 前傾（走る向きへ）
     hipY -= 0.30f * a->crouch;                 // しゃがむ（Q）：腰を落として前に屈む
     hipY -= volLow; leanV.z += 0.5f * volLow + 0.06f * volStep;
@@ -629,7 +634,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     // ポイント後のしぐさ
     CelebOut co = { 0 };
     bool celeb = CelebPose(a, &co);
-    if (celeb) { hipY -= co.hipDrop + 0.42f * co.kneel; leanV.z += co.lean; pos.y += co.jump; }
+    if (celeb) { hipY += KNEE_BEND * co.k; hipY -= co.hipDrop + 0.42f * co.kneel; leanV.z += co.lean; pos.y += co.jump; }   // しぐさの間は膝を伸ばす
     leanV.z += 0.12f * a->slouch;              // 背中を丸める
     if (a->smashT > 0.0f) {                    // 叩きつけるたびに前へかがむ
         float down = Clamp01((1.9f - hand.y) / 1.3f);

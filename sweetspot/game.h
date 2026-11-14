@@ -82,6 +82,8 @@ typedef struct {
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
 #define AI_ATTACK_ERR    1.3f    // 決めにいく球のぶれの倍率（力み）
+#define KNEE_BEND        0.10f   // 構えで腰を落とす量（m）。脚の長さ 0.88m に対して
+#define KNEE_LOAD        0.07f   // ストロークで引いたときにさらに沈む量（打つときに脚で押し上げる）
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
 enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT,
