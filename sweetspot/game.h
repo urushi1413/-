@@ -168,6 +168,8 @@ typedef enum { STYLE_REAL, STYLE_CASUAL, STYLE_COUNT } PlayStyle;
 #define ERR_YAW_Q        2.5f
 #define ERR_PITCH_BASE   0.2f
 #define ERR_PITCH_Q      3.5f
+#define PITCH_ERR_REF_MS 22.0f   // この速さ（約 80km/h）の球で、上下のぶれが基準どおり。速い球ほど小さく
+#define PITCH_ERR_MAX    4.0f    // 上下のぶれの上限（度）
 // 芯を外したときのラケットのねじれ。来た球が重い（速い）ほど大きい
 // 倍率 = 1 + (1 - 質) × (来た球の速さ - TWIST_FREE_KMH) / TWIST_KMH
 // ラリーの普通の球（45km/h 以下）では効かず、速いサーブや強打で効く

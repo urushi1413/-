@@ -161,8 +161,11 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         // ボレーは面を固めて当てるだけなので、上下のぶれは小さい
-        angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul
+        // 速い球ほど、角度が少しずれただけで遠くまで外れる。外れる距離がそろうように、速い球ほど角度のぶれを小さく
+        float speedScale = Clamp(PITCH_ERR_REF_MS / fmaxf(kmh / 3.6f, 1.0f), 0.35f, 1.5f);
+        angErr = RandNormal() * (ERR_PITCH_BASE + (1.0f - q) * (1.0f - q) * ERR_PITCH_Q) * errMul * speedScale
                * (c->volley && !c->overhead ? VOLLEY_PITCH_ERR : 1.0f) * DEG2RAD;
+        angErr = Clamp(angErr, -PITCH_ERR_MAX * speedScale * DEG2RAD, PITCH_ERR_MAX * speedScale * DEG2RAD);   // とんでもなく長い・短い球にはしない（速い球ほど上限も小さく）
         // 跳ね返りの分は、来た球の上下の動きを持ったまま出ていく：
         //   跳ね上がってくる速い球（サーブ）を返すと上に行きやすく、沈んでくる球は下（ネット）へ行きやすい。
         //   うまく当てるほど面で抑えられるが、半分は残る
