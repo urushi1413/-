@@ -416,6 +416,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
             * (1.0f - RAGE_ERR * Clamp01(ai->rage));                            // ラケットを叩きつけた後はミスが減る
+    gTimingTolMul = 1.0f;   // AI のタイミングの許容幅はそのまま（人間だけ広い）
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     sAttack = false;
     bool sLapse = false;
@@ -443,6 +444,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
+    gTimingTolMul = HUMAN_TIMING_TOL;
     if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
     {   // よろめき
         float sg = StaggerAmount(&c, fabsf(ai->vel.x));

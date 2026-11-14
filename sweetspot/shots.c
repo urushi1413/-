@@ -72,12 +72,12 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         // 頭上：高さがタイミング（落ちてくる球をどこで叩くか）、体の前右の点からの距離が位置
         float ox = fabsf(dx) - OVERHEAD_SIDE, oz = dz - OVERHEAD_FWD;
         float otol = bp.y < OVERHEAD_IDEAL_H ? OVERHEAD_TOL_H_LOW : OVERHEAD_TOL_H;
-        c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / (otol * hk), 0.10f, 1.0f);
+        c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / (otol * hk * gTimingTolMul), 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - sqrtf(ox * ox + oz * oz) / (OVERHEAD_TOL_R * tk), 0.10f, 1.0f);
         c.qHeight = 1.0f;
     } else {
         float idealAng = c.volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
-        float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming;
+        float tol = Lerp(TOL_ANG_COMPACT, TOL_ANG_FULL, charge) * (c.volley ? VOLLEY_TOL_BONUS : 1.0f) * tk * sp->tolTiming * gTimingTolMul;
         c.qTiming = Clamp(1.0f - fabsf(ang - idealAng) / tol, 0.10f, 1.0f);
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + qualityReach + sp->reach) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
         c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y + (gCrouch ? CROUCH_LIFT : 0.0f), c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);

@@ -111,6 +111,7 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
 #define FOOT_ASSIST_SPEED 2.5f   //   寄せる速さの上限（m/s）
 #define FOOT_ASSIST_T     0.7f   //   打つ予定の時刻まで、この秒数以内で効く
 #define SLICE_NET_MARGIN  0.30f  // スライス（ストローク）がネットの上を通る余裕の目標（m）。足りなければ少し遅くする
+#define HUMAN_TIMING_TOL  1.5f   // 人間のタイミングの許容幅の倍率（マウスを離す瞬間で合わせるのは AI より不利なので）
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
@@ -616,7 +617,8 @@ extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
-extern bool  gWomen;      // 女子の試合（球速・回転が少し遅い）
+extern bool  gWomen;
+extern float gTimingTolMul;   // タイミングの許容幅の倍率（人間 HUMAN_TIMING_TOL、AI が打つ間だけ 1）      // 女子の試合（球速・回転が少し遅い）
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
