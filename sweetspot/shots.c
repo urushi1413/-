@@ -82,7 +82,9 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         c.qDist   = Clamp(1.0f - fabsf(fminf(r, REACH_SIDE) - IDEAL_R) / ((sp->tolSide + qualityReach + sp->reach) * tk), 0.10f, 1.0f);   // 届けば最低限は当たる
         c.qHeight = Clamp(1.0f - HeightErr(sp, bp.y + (gCrouch ? CROUCH_LIFT : 0.0f), c.easeKmh) / (sp->tolHeight * hk * HeightTolScale(c.easeKmh)), 0.10f, 1.0f);
     }
-    c.quality = c.qTiming * c.qDist * c.qHeight;
+    // 3 つの掛け算をそのまま使うと、どれも 8 割の「悪くない当たり」が 5 割になってしまうので、0.6 乗して緩める
+    //   リターンは反応で打つので、緩めない
+    c.quality = powf(c.qTiming * c.qDist * c.qHeight, c.isReturn ? 1.0f : QUALITY_EXP);
     if (c.dive) c.quality *= DIVE_QUALITY;
     if (c.stretch) c.quality *= STRETCH_QUALITY;
     if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
@@ -110,8 +112,9 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     if (c->isReturn) racketKmh *= RETURN_SWING;                 // リターンは合わせるだけ：遅くなる分、弾道が高くなって入るが浮く
     float step = Clamp(c->stepIn / STEP_FULL, -1.0f, 1.0f);
     racketKmh += fmaxf(step, 0.0f) * STEP_POWER_KMH;
-    float paceKmh  = RACKET_EA * c->inKmh * (0.60f + 0.40f * q);
-    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.65f + 0.35f * q);
+    // 芯を外すと遅くなる。ただしプロの球は多少外しても速い（長さのぶれは、速い球ほど角度のぶれを小さくして抑えている）
+    float paceKmh  = RACKET_EA * c->inKmh * (0.70f + 0.30f * q);
+    float swingKmh = (1.0f + RACKET_EA) * racketKmh * (0.75f + 0.25f * q);
     float kmh = paceKmh + swingKmh;
     float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
@@ -158,6 +161,14 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                 kmh = fmaxf(kmh * 0.88f, VOLLEY_MIN_KMH);
             }
         }
+        if (IsSliceShot(type) && !c->volley) {
+            // 逆回転は浮くので、速すぎると下に向けて打っても落ちきらない。そういう球は打たない（少し遅くして沈める）
+            for (int it = 0; it < 8; it++) {
+                float a0 = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
+                if (PredictLandingDist(ballPos, dirFlat, kmh / 3.6f, a0, rpm) <= dist + 0.5f) break;
+                kmh *= 0.92f;
+            }
+        }
         ang = SolveLaunchAngle(ballPos, dirFlat, dist, kmh / 3.6f, rpm, sp->highArc);
         // 縦方向のばらつき（ネットやアウトの原因）。完璧な打点でもゼロにはならない
         // ボレーは面を固めて当てるだけなので、上下のぶれは小さい
@@ -172,7 +183,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
         float vin = fmaxf(c->inKmh / 3.6f, 1.0f);
         //   リターンは遅く合わせる分もともと高い弾道になるので、上へのずれは半分（入るが浮く）
         angErr += (paceKmh / fmaxf(kmh, 1.0f)) * atan2f(c->vyBall * REBOUND_VY_KEEP, vin) * (1.0f - 0.5f * q)
-                * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f);   // ボレーは面で押さえるので小さい
+                * (c->isReturn ? 0.5f : 1.0f) * (c->volley ? 0.3f : 1.0f)
+                * (1.0f - 0.65f * (c->vyBall > 0.0f ? gRiseSkill : 0.0f));   // ライジングの名手は、上がり際の跳ね上がりを抑えられる   // ボレーは面で押さえるので小さい
         ang += angErr;
     }
 

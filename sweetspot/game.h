@@ -75,6 +75,7 @@ typedef struct {
 #define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）
 #define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
 #define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
+#define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
 #define SIT_BONUS        0.60f   //   当たりの悪さを最大でこの割合だけ取り戻す（質 30% → 72%）
@@ -92,7 +93,7 @@ typedef struct {
 #define AIM_LANE_WIDE    3.5f    //   ライン際：真ん中から 3.5m（サイドラインの約 0.6m 内側）
 #define AIM_LANE_WIDE_CASUAL 3.3f
 #define AIM_SIDE_CASUAL  3.60f   // カジュアルは横にアウトしないので、サイドラインの約 0.5m 内側まで狙える
-#define HOLD_POWER_MAX   0.85f             // 押しきったときの強さ（全力で振り切るのとは違う）
+#define HOLD_POWER_MAX   1.00f             // 押しきったときの強さ（全力で振り切るのとは違う）
 
 // ---- 打点（右利き。体の右がフォア、左がバック） ----
 #define PLAYER_SPEED     6.0f    // 走る速さ（m/s）
@@ -500,6 +501,7 @@ extern bool  gLefty;     // AI の打球を評価している間だけ、左利�
 extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
+extern float gRiseSkill;
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];

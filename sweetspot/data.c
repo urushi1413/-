@@ -8,6 +8,7 @@ bool  gLefty = false;
 float gSpinMul = 1.0f;
 float gSliceEdge = 0.0f;
 float gErrMul = 1.0f;
+float gRiseSkill = 0.0f;   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
 bool  gHumanShot = false;
 float gPointImportance = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
 bool gCasual = false;     // 自分の打球を評価している間だけ、簡単モードなら true
@@ -24,8 +25,8 @@ const char *STYLE_NAMES[STYLE_COUNT] = { "REAL", "CASUAL" };
 // 最後の 2 つ：タイミングの許容幅の倍率、リーチの上乗せ（m）
 const ShotSpec SHOTS[SHOT_COUNT] = {
     //                     name         km/h            rpm               高さ(理想,許容) 距離許容 深さ(普通, S, W)    高い弾道 固定角  （末尾：タイミング許容, リーチ, 上の幅）
-    [SHOT_FLAT]      = { "FLAT DRIVE", 110.0f, 190.0f, 1300.0f, 1900.0f, 1.20f, 0.60f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE, 0.80f, 0.00f , 0.50f },
-    [SHOT_TOP]       = { "TOPSPIN",   95.0f, 150.0f,  1800.0f,  3200.0f, 1.00f, 0.80f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 }, 1.00f, 0.00f , 0.25f },
+    [SHOT_FLAT]      = { "FLAT DRIVE", 130.0f, 175.0f, 2300.0f, 2900.0f, 1.20f, 0.60f, 0.60f,  -9.0f, -6.0f, -10.3f, false, 0.0f, RAYWHITE, 0.80f, 0.00f , 0.50f },
+    [SHOT_TOP]       = { "TOPSPIN",  105.0f, 155.0f,  2600.0f,  3600.0f, 1.00f, 0.80f, 0.80f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 255, 200, 40, 255 }, 1.00f, 0.00f , 0.25f },
     [SHOT_SLICE]     = { "SLICE",     75.0f, 120.0f, -1200.0f, -2200.0f, 0.75f, 1.00f, 1.10f,  -9.0f, -6.0f, -10.3f, false, 0.0f, (Color){ 80, 220, 255, 255 }, 1.30f, 0.25f , 0.30f },
     [SHOT_SLICE_LOB] = { "SLICE LOB", 50.0f,  65.0f,  -800.0f, -1500.0f, 0.80f, 1.00f, 1.10f, -10.0f, -8.0f, -11.0f, true, 0.0f, (Color){ 150, 160, 255, 255 }, 1.40f, 0.30f , 0.30f },
     [SHOT_TOP_LOB]   = { "TOP LOB",   60.0f,  90.0f,  2000.0f,  3500.0f, 1.00f, 0.80f, 0.80f, -10.0f, -8.0f, -11.0f, false, 0.0f, (Color){ 255, 130, 40, 255 }, 1.00f, 0.00f , 0.25f },

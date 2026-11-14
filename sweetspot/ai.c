@@ -21,19 +21,19 @@ Ball RotBall(Ball b)
 const AiLevel AI_LEVELS[3] = {
     //          走る  反応   タイミング 位置   強気   見極め  1st     2nd     サーブの安定感
     //                                                                                コースの厳しさ 深さ
-    { "EASY",   5.0f, 0.35f, 30.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f, 0.60f, 5.7f },
-    { "NORMAL", 5.6f, 0.28f, 20.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f, 0.42f, 5.8f },
-    { "PRO",    6.2f, 0.22f, 12.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
+    { "EASY",   5.0f, 0.35f, 22.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f, 0.60f, 5.7f },
+    { "NORMAL", 5.6f, 0.28f, 12.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f, 0.42f, 5.8f },
+    { "PRO",    6.2f, 0.22f,  7.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
 };
 
 // 選手（強さ EASY/NORMAL/PRO に上乗せする癖）。0 は癖なし
 const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
     { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
-    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.15f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.95f, 0.20f, { -0.16f, -0.24f, -0.11f }, { 200, 40, 50, 255 } },
-    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { 0.00f, -0.02f, -0.08f }, { 40, 60, 140, 255 } },
-    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.20f, { -0.22f, 0.35f, -0.05f }, { 240, 140, 40, 255 } },
-    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.20f, { -0.10f, -0.26f, -0.19f }, { 30, 150, 140, 255 } },
+    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.20f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
+    { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { -0.10f, -0.14f, -0.14f }, { 40, 60, 140, 255 } },
+    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.20f, { -0.22f, 0.40f, -0.15f }, { 240, 140, 40, 255 } },
+    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.20f, { -0.16f, -0.30f, -0.24f }, { 30, 150, 140, 255 } },
 };
 
 // 強さに選手の癖を足した、実際の能力
@@ -288,8 +288,8 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     float wantKmh;
     switch (t) {
         // 当たりの質で実際の速さは 1〜2 割落ちるので、そのぶん高めに狙う
-        case SHOT_FLAT:  wantKmh = 135.0f + 40.0f * lv->aggression; break;
-        case SHOT_TOP:   wantKmh = 118.0f + 40.0f * lv->aggression; break;
+        case SHOT_FLAT:  wantKmh = 145.0f + 40.0f * lv->aggression; break;
+        case SHOT_TOP:   wantKmh = 132.0f + 30.0f * lv->aggression; break;
         case SHOT_SLICE: wantKmh =  88.0f + 22.0f * lv->aggression; break;
         default:         wantKmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, 0.5f); break;
     }
@@ -299,11 +299,14 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     *charge = (ss->maxKmh > ss->minKmh) ? Clamp01((wantKmh - ss->minKmh) / (ss->maxKmh - ss->minKmh)) : 0.5f;
 
     // 甘い球（いい打点で、ベースラインより内側）は決めにいく：速く、厳しく
-    bool attack = c->quality > 0.6f && meAi.z < HALF_LEN - 0.3f && (t == SHOT_TOP || t == SHOT_FLAT) &&
+    bool attack = c->quality > 0.5f && meAi.z < HALF_LEN - 0.3f && (t == SHOT_TOP || t == SHOT_FLAT) &&
                   RandRange(0, 1) < 0.3f + 0.6f * lv->aggression;
     if (attack) {
+        // 甘い球はフラットドライブで叩く（今のプロの打ち方）
+        if (t == SHOT_TOP && c->height > 0.7f) t = SHOT_FLAT;
         const ShotSpec *as = &SHOTS[t];
-        *charge = Clamp01(*charge + 15.0f / (as->maxKmh - as->minKmh));
+        float want = (t == SHOT_FLAT ? 160.0f : 145.0f) + 25.0f * lv->aggression;
+        *charge = Clamp01((want - as->minKmh) / (as->maxKmh - as->minKmh));
     }
 
     // コース：プレイヤーのいない方へ。強気なほどサイドラインに近い
@@ -344,6 +347,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     static const float LEVEL_ERR[3] = { 1.5f, 1.0f, 0.8f };   // 難易度でミスの量が変わる
+    gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f);         // 得意なコートほどミスが減る
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
@@ -357,13 +361,13 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
-    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; return false; }
+    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
     else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
-    gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f;
+    gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f;
     ai->lastTargetX = target.x;
     // 前に出るか：甘い球をベースラインの内側で攻めたら、強気なほど前に出る。ネットにいれば残る。
     // ロブで下がらされたら（サービスラインより 3m 以上後ろ）、ネットはあきらめる
