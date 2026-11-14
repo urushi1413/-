@@ -443,6 +443,12 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
     if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
+    {   // よろめき
+        float sg = StaggerAmount(&c, fabsf(ai->vel.x));
+        ai->staggerTotal = ai->staggerT = sg > 0.0f ? STAGGER_T0 + STAGGER_T1 * sg : 0.0f;
+        ai->anim.staggerSide = c.forehand ? 1.0f : -1.0f;
+        ai->staggerS = sg;
+    }
     if (c.dive) { ai->downTimer = DIVE_DOWN_TIME; ai->anim.downT = DIVE_DOWN_TIME; }
     else if (c.stretch) ai->downTimer = STRETCH_RECOVER;   // 体勢を立て直すまで動けない
 
@@ -537,6 +543,7 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->swung = false;
         // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
         if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
+        if (ball->lastHitter == HITTER_PLAYER && ai->staggerT > 0.0f) ai->seeTimer += ai->staggerT * STAGGER_REACT;   // よろめいていると一歩目が遅れる
         else ai->standPos = ai->netRush ? AiNetPos(ai) : AiHomeFor(ai);   // 自分が打った後：ネットに詰めるか、戻る
     }
     // 見た目のタイマー
@@ -555,6 +562,10 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->planned = false;
         return;
     }
+    float smul = StaggerSpeedMul(ai->staggerT, ai->staggerTotal);   // よろめいている間は遅い
+    if (ai->staggerT > 0.0f) ai->staggerT -= dt;
+    ai->anim.staggerK = ai->staggerTotal > 0.0f ? fmaxf(ai->staggerT, 0.0f) / ai->staggerTotal * ai->staggerS : 0.0f;
+    lvE.speed *= smul;
     if (ball->lastHitter == HITTER_PLAYER && !ai->planned && !ai->leaving && !ai->swung && ball->active) {
         ai->seeTimer -= dt;
         if (ai->seeTimer <= 0.0f) AiPlan(ai, ball);

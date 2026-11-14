@@ -139,6 +139,7 @@ int main(void)
     int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;
     float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
+    float stagS = 0.0f;                  // 自分のよろめきの強さ（見た目）
     Vector3 lineCallPos = { 0 };         // 線審がアウトをコールした球の位置
     float lineCallT = 0.0f;
     char  rageMsg[160] = { 0 };          // ラケットを叩きつけたときの表示（審判のコール）
@@ -477,6 +478,7 @@ int main(void)
             pointStart = RecTotal();
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             ai.anim.celebT = 0.0f;
+            ai.staggerT = 0.0f; bot.staggerT = 0.0f; P.staggerT = 0.0f;   // ポイントの間に体勢は戻る
             netFlag[0] = netFlag[1] = false;
             // このポイントの大事さ（勝負強い選手が強くなる）
             {
@@ -587,7 +589,7 @@ int main(void)
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
             float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f)
-                      * (P.recoverT > 0.0f ? STRETCH_MOVE : 1.0f);   // 踏み込みで体勢が崩れている間は遅い
+                      * fminf(P.recoverT > 0.0f ? STRETCH_MOVE : 1.0f, StaggerSpeedMul(P.staggerT, P.staggerTotal));   // 体勢が崩れている間は遅い
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
             float v = Vector3Length(P.vel);
             // 溜めながら速く走っていて、減速・切り返しをしたら滑り込む
@@ -610,6 +612,8 @@ int main(void)
         if (P.anim.swingT >= 0.0f) P.anim.swingT = fminf(P.anim.swingT + simDt, 5.0f);
         if (P.anim.lungeT > 0.0f) P.anim.lungeT -= simDt;
         if (P.recoverT > 0.0f) P.recoverT -= simDt;
+        if (P.staggerT > 0.0f) P.staggerT -= simDt;
+        P.anim.staggerK = P.staggerTotal > 0.0f ? fmaxf(P.staggerT, 0.0f) / P.staggerTotal * stagS : 0.0f;
         {   // しゃがみの見た目（なめらかに）
             float ct = (in.crouch && !botControls) ? 1.0f : 0.0f;
             P.anim.crouch += (ct - P.anim.crouch) * fminf(simDt * 12.0f, 1.0f);
@@ -966,6 +970,11 @@ int main(void)
                     P.lastContactPos = sb;
                     if (c.miss == MISS_NONE && c.dive) { P.downT = DIVE_DOWN_TIME; P.vel = (Vector3){ 0 }; }
                     if (c.miss == MISS_NONE && c.stretch) { P.recoverT = STRETCH_RECOVER; P.vel = Vector3Scale(P.vel, 0.3f); }
+                    {   // よろめき：体勢の崩れ具合で、立て直すまで遅くなる
+                        stagS = StaggerAmount(&c, fabsf(P.vel.x)) * STAGGER_HUMAN;
+                        P.staggerTotal = P.staggerT = stagS > 0.0f ? STAGGER_T0 + STAGGER_T1 * stagS : 0.0f;
+                        P.anim.staggerSide = c.forehand ? 1.0f : -1.0f;
+                    }
 
                     P.hasLast = true;
                     P.lastContact = c;

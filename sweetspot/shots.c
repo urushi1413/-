@@ -303,4 +303,23 @@ float ServeDepthFromTime(float t)
     return SERVE_DEPTH_SHORT + (SERVE_DEPTH_LONG - SERVE_DEPTH_SHORT) * Clamp(u, 0.0f, 1.2f);
 }
 
+// よろめき：打った後の体勢の崩れ具合（0〜1）。当たりの悪さ、打点の遠さ、来た球の重さ、走りながら・下がりながら、打点の高さ
+float StaggerAmount(const Contact *c, float lateralSpeed)
+{
+    if (c->miss != MISS_NONE) return 0.0f;
+    float s = 0.45f * (1.0f - c->quality)
+            + 0.90f * Clamp01((0.65f - c->qDist) / 0.5f) + (c->lunge ? 0.25f : 0.0f)
+            + 0.35f * Clamp01((c->inKmh - 60.0f) / 70.0f)
+            + 0.30f * Clamp01((lateralSpeed - 2.5f) / 3.0f)
+            + 0.25f * Clamp01(-c->stepIn / 2.0f)
+            + 0.20f * Clamp01((fabsf(c->height - 1.0f) - 0.4f) / 0.6f);
+    if (c->volley) s *= 0.5f;   // ボレーは小さく振るので崩れにくい
+    return Clamp01(s - 0.15f) / 0.85f;   // 少しの崩れはすぐ戻る
+}
+float StaggerSpeedMul(float t, float total)
+{
+    if (t <= 0.0f || total <= 0.0f) return 1.0f;
+    return Lerp(STAGGER_SPEED0, 1.0f, 1.0f - t / total);
+}
+
 bool IsSliceShot(ShotType t) { return t == SHOT_SLICE || t == SHOT_SLICE_LOB || t == SHOT_DROP; }

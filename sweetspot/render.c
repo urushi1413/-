@@ -974,6 +974,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     bool celeb = CelebPose(a, &co);
     if (celeb) { hipY += KNEE_BEND * co.k; hipY -= co.hipDrop + 0.42f * co.kneel; leanV.z += co.lean; pos.y += co.jump; }   // しぐさの間は膝を伸ばす
     leanV.z += 0.12f * a->slouch;              // 背中を丸める
+    // よろめき：打った方へ体が流れて傾き、腰が落ちる（立て直すにつれて戻る）
+    float stg = (!swinging || a->swingT > 0.12f) ? a->staggerK : 0.0f;
+    if (stg > 0.0f) { leanV.x += a->staggerSide * 0.18f * stg; leanV.z -= 0.05f * stg; hipY -= 0.05f * stg; }
     if (a->smashT > 0.0f) {                    // 叩きつけるたびに前へかがむ
         float down = Clamp01((1.9f - hand.y) / 1.3f);
         leanV.z += 0.28f * down; hipY -= 0.10f * down;
@@ -1187,6 +1190,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     bool idle = !swinging && a->windup <= 0.0f;
     float su = swinging ? a->swingT : 0.0f;
     if (a->smashT > 0.0f)            otherHand = (Vector3){ -0.32f, hipY + 0.32f, 0.12f };            // 叩きつけ：片手で
+    else if (stg > 0.25f && !swinging && a->windup <= 0.0f) otherHand = Vector3Lerp(neck, (Vector3){ -0.58f, hipY + 0.42f, -0.05f }, Clamp01(stg * 1.5f));   // よろめき：左手を広げてバランスを取る
     else if (celeb) { otherHand = co.lh; otherHand.y -= co.hipDrop + 0.42f * co.kneel; }
     else if (swinging && volleyPose) {
         // ボレー：構えでは左手でラケットを支え、当てるときに離してバランスを取る（フォアは前へ、バックは後ろへ）

@@ -101,6 +101,11 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
 #define FWD_SPIN_ADD_FLAT 1.6f   //   フラットドライブは（最大で 2.6 倍）
 #define FWD_PITCH_CUT     0.45f  //   上下のぶれを減らす割合
 #define FWD_REBOUND_CUT   0.60f  //   沈んでくる球で下へずれる分を減らす割合
+#define STAGGER_T0       0.10f   // よろめき：打った後に体勢を立て直す時間 = T0 + T1 × 崩れ具合（0〜1）
+#define STAGGER_T1       1.40f
+#define STAGGER_REACT    1.0f    //   相手が打ったときにまだよろめいていたら、残りの時間 × これだけ反応が遅れる（AI）
+#define STAGGER_HUMAN    0.5f    //   自分（人間）は崩れ具合をこれだけに（方向を読む分、AI より不利なので）
+#define STAGGER_SPEED0   0.10f   //   立て直し始めの走る速さの割合（だんだん戻る）
 #define QUALITY_EXP      0.60f   // 当たりの質＝（タイミング×距離×高さ）のこの乗
 #define SIT_H0           1.10f   // 上から叩ける球：この高さから効き始め
 #define SIT_H1           1.70f   //   この高さで最大
@@ -344,6 +349,8 @@ typedef struct {
     bool    smash;         // 頭上の振りがスマッシュ（ラリー中）。false ならサーブ
     bool    holdBall;      // 左手にボールを持っている
     float   splitT;        // スプリットステップの残り時間
+    float   staggerK;      // よろめきの強さ（0〜1、見た目）
+    float   staggerSide;   // よろめく向き（体から見て右 +1、左 -1）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
 } SwingAnim;
 
@@ -438,6 +445,7 @@ typedef struct {
     Hitter  watching;     // 最後に見た打者（打者が変わったら反応を始める）
     int     level;
     float   downTimer;    // 飛びついて倒れている間は動けない
+    float   staggerT, staggerTotal, staggerS;   // よろめき：体勢を立て直すまでの残り時間と全体、崩れ具合
     bool    sliding;      // 滑り込んでいる
     bool    netRush;      // ネットに出ている（出ようとしている）
     float   lastTargetX;  // 最後に打ったコース（AI 座標）。ネットではその側を守る
@@ -646,7 +654,9 @@ Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent);
 void DrawRacketHead(Vector3 center, Vector3 normal, Color frame);
 void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT);
 void DrawRacket(Vector3 hand, Vector3 dir, Vector3 normal, Color frame);
-float Smooth01(float x);   // 0〜1 をなめらかに（3x²−2x³）
+float Smooth01(float x);
+float StaggerAmount(const Contact *c, float lateralSpeed);   // 打った後の体勢の崩れ（0〜1）
+float StaggerSpeedMul(float t, float total);                 // よろめいている間の走る速さの割合   // 0〜1 をなめらかに（3x²−2x³）
 Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 *hand, Vector3 *dir, bool *hasHand);
 // 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
 void ApplyLook(SwingAnim *a, int persona);
@@ -703,6 +713,7 @@ typedef struct {
     SwingAnim anim;            // 見た目（体とラケット）
     float downT;               // 飛びついて倒れている残り時間
     float recoverT;            // 踏み込みで体勢が崩れている残り時間（動きが遅い）
+    float staggerT, staggerTotal;   // よろめき
     bool  sliding;             // 滑り込んでいる
     float aimX, aimDepth;      // 狙い
     float aimSlide;            // マウスを左右に振った量（これで狙いの位置を選ぶ）
