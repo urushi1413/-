@@ -369,7 +369,7 @@ typedef struct {
 #define LOG_HEADER "time_s,mode,ai_level,event,shot,charge,stroke,volley,dive,miss,quality,q_timing,q_dist,q_height," \
                    "angle_deg,dist_m,height_m,timing_offset_ms,best_quality_here,in_kmh,out_kmh,step_in," \
                    "player_x,player_z,player_speed,ball_x,ball_y,ball_z,ball_age_s,first_move_s,charge_start_s,result,assist," \
-                   "launch_deg,apex_m,style,court,ball_vy"
+                   "launch_deg,apex_m,style,court,ball_vy,datetime"
 #define AIM_SENS 0.015f   // マウス 1 ピクセルで狙いが動く距離（m）
 
 // ---- 型（ほかのファイルから移したもの） ----
@@ -705,6 +705,7 @@ const char *PointLabel(const Score *s, int k);
 Assist ComputeAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type, float charge);
 AssistPlan PlanAssist(Vector3 player, Vector3 playerVel, const Ball *ball, ShotType type);
 void LogOpen(PlayLog *L);
+const char *LogStamp(void);   // 今の日付と時刻（記録用）
 void LogFlush(PlayLog *L, const char *result);
 void LogTimingAnalysis(const PlayLog *L, Vector3 player, const Ball *pre, ShotType type, float charge, float *bestQ, float *offsetMs);
 const char *StrokeName(const Contact *c);

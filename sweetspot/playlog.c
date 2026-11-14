@@ -1,5 +1,16 @@
 // SWEET SPOT — プレイ記録（playlog.csv）
 #include "game.h"
+#include <time.h>
+
+// 今の日付と時刻（パソコンの時計。記録に書いて、日ごとの遊んだ時間を数えるため）
+const char *LogStamp(void)
+{
+    static char b[32];
+    time_t t = time(NULL);
+    struct tm *lt = localtime(&t);
+    if (lt) strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", lt); else b[0] = 0;
+    return b;
+}
 
 // ================= プレイ記録（playlog.csv） =================
 // 自分のプレイを 1 行ずつ CSV に書き出す。どこで失敗しているかを数字で調べるため。
@@ -40,8 +51,8 @@ void LogFlush(PlayLog *L, const char *result)
     }
     if (L->f) {
         const char *vy = L->hasVy ? TextFormat("%.2f", L->pendingVy) : "";
-        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d,%s,%s\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style, SURFACES[gSurface].name, vy);
-        else                       fprintf(L->f, "%s,%s,%d,,,%d,%s,%s\n", L->row, result, L->assist, L->style, SURFACES[gSurface].name, vy);
+        if (L->pendingApex > 0.0f) fprintf(L->f, "%s,%s,%d,%.1f,%.2f,%d,%s,%s,%s\n", L->row, result, L->assist, L->pendingLaunch, L->pendingApex, L->style, SURFACES[gSurface].name, vy, LogStamp());
+        else                       fprintf(L->f, "%s,%s,%d,,,%d,%s,%s,%s\n", L->row, result, L->assist, L->style, SURFACES[gSurface].name, vy, LogStamp());
         fflush(L->f);
     }
     L->pendingApex = 0.0f;
@@ -97,10 +108,10 @@ void LogTrackIncoming(PlayLog *L, const Ball *ball, Vector3 player, Vector3 play
                 L->noSwingOut++;
             }
             if (L->f) {
-                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d,%s,\n",
+                fprintf(L->f, "%.2f,%s,%s,no_swing,,,,,,%s,,,,,%.1f,%.2f,%.2f,,,%.0f,,,%.2f,%.2f,,,,,%.2f,%.2f,%.2f,%s,%d,,,%d,%s,,%s\n",
                         GetTime(), mode, level, reachable ? "reachable" : "unreachable",
                         L->angAtMin, L->minR, L->hAtMin, L->kmhAtMin, player.x, player.z,
-                        L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist, L->style, SURFACES[gSurface].name);
+                        L->ageAtMin, L->firstMove, L->chargeStart, res, L->assist, L->style, SURFACES[gSurface].name, LogStamp());
                 fflush(L->f);
             }
         }

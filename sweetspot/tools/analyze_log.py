@@ -35,6 +35,29 @@ def main(path):
 
     print(f"=== {path}: swing {len(swings)} / no_swing {len(noswing)} / serve {len(serves)} ===\n")
 
+    # 0. 日ごとの遊んだ時間（datetime 列がある記録だけ）。記録と記録の間が 2 分以内なら、続けて遊んでいたとみなす
+    stamped = [r for r in rows if r.get("datetime")]
+    if stamped:
+        import datetime as dt
+        per_day = {}
+        prev = None
+        for r in stamped:
+            try:
+                t = dt.datetime.strptime(r["datetime"], "%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                continue
+            day = t.strftime("%Y-%m-%d")
+            d = per_day.setdefault(day, [0.0, 0, t, t])
+            d[1] += 1
+            d[2] = min(d[2], t); d[3] = max(d[3], t)
+            if prev is not None and 0 <= (t - prev).total_seconds() <= 120 and prev.strftime("%Y-%m-%d") == day:
+                d[0] += (t - prev).total_seconds()
+            prev = t
+        print("[0] 日ごとの遊んだ時間（打球と打球の間が 2 分以内のところだけ数える）")
+        for day, (sec, n, t0, t1) in sorted(per_day.items()):
+            print(f"  {day}  {sec / 3600:4.1f} 時間（{int(sec // 60)} 分）  記録 {n} 行  {t0.strftime('%H:%M')}〜{t1.strftime('%H:%M')}")
+        print()
+
     # 1. 振った球の結末
     hits = [r for r in swings if r["miss"] == ""]
     print("[1] 振った球の結末")
