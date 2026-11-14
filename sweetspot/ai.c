@@ -30,7 +30,7 @@ const AiLevel AI_LEVELS[3] = {
 const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
     { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
-    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.35f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.20f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
+    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.25f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.20f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
     { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { -0.10f, -0.14f, -0.14f }, { 40, 60, 140, 255 } },
     { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.20f, { -0.22f, 0.40f, -0.15f }, { 240, 140, 40, 255 } },
     { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.20f, { -0.16f, -0.30f, -0.24f }, { 30, 150, 140, 255 } },
@@ -255,7 +255,12 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     bool playerAtNet = playerAi.z > -7.0f;        // プレイヤーが前に出てきている（AI 座標で相手は -z 側）
     bool playerDeep  = playerAi.z < -(HALF_LEN + 2.0f);
 
-    if (c->height < 0.55f || (stretched && r < 0.7f)) t = SHOT_SLICE;          // 低い・遠い → つなぐ
+    // 低い・遠い → つなぐ。ただ膝くらい（40〜55cm）なら、強気な選手は膝を曲げてトップスピンで持ち上げる
+    //   ライジングの名手は、上がり際の低い球もそのまま振り抜く
+    float rise = (c->vyBall > 0.0f) ? pp->risingPref : 0.0f;
+    bool low = c->height < 0.40f - 0.12f * rise ||
+               (c->height < 0.55f && RandRange(0.0f, 1.0f) > 0.7f * lv->aggression + 0.6f * rise);
+    if (low || (stretched && r < 0.7f)) t = SHOT_SLICE;
     else if (c->height > 1.05f && c->quality > 0.55f && r < lv->aggression) t = SHOT_FLAT;   // 高くていい打点 → 叩く
     // バックハンドのスライス（片手バックの選手ほど多い）
     if (!c->forehand && !c->volley && !c->overhead && t == SHOT_TOP && RandRange(0.0f, 1.0f) < pp->backSlice) t = SHOT_SLICE;
@@ -290,7 +295,7 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
         // 当たりの質で実際の速さは 1〜2 割落ちるので、そのぶん高めに狙う
         case SHOT_FLAT:  wantKmh = 145.0f + 40.0f * lv->aggression; break;
         case SHOT_TOP:   wantKmh = 132.0f + 30.0f * lv->aggression; break;
-        case SHOT_SLICE: wantKmh =  88.0f + 22.0f * lv->aggression; break;
+        case SHOT_SLICE: wantKmh =  95.0f + 20.0f * lv->aggression; break;
         default:         wantKmh = Lerp(SHOTS[t].minKmh, SHOTS[t].maxKmh, 0.5f); break;
     }
     wantKmh += RandNormal() * 8.0f - (stretched ? 20.0f : 0.0f);
