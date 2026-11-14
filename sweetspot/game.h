@@ -352,6 +352,8 @@ typedef struct {
     float volleySkill;       // ボレーのうまさ（0〜1）：当たりの悪さを取り戻す割合
     float risingPref;        // ライジング好み（0〜1）：ベースライン近くで構え、上がり際で打ちにいく
     float sliceEdge;         // スライスのキレ（0〜1）：速く、逆回転が強い（低く滑る）
+    float errMul;            // 打球のぶれの大きさ（小さいほどミスしない）
+    float clutch;            // 大事なポイントでの強くなり方（0〜1）
     float surfSpeed[3];      // コートごとの得意・不得意（走る速さの上乗せ）HARD, CLAY, GRASS
     Color shirt;
 } Persona;
@@ -480,7 +482,9 @@ extern bool gCasual;
 extern bool gCrouch;
 extern bool  gLefty;     // AI の打球を評価している間だけ、左利きなら true
 extern float gSpinMul;
-extern float gSliceEdge; // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
+extern float gSliceEdge;
+extern float gErrMul;          // AI の打球を作っている間だけ、ぶれの倍率
+extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true
 extern const Surface SURFACES[SURF_COUNT];

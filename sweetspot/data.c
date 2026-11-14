@@ -6,7 +6,9 @@ SurfaceType gSurface = SURF_HARD;
 bool gCrouch = false;
 bool  gLefty = false;
 float gSpinMul = 1.0f;
-float gSliceEdge = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
+float gSliceEdge = 0.0f;
+float gErrMul = 1.0f;
+float gPointImportance = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
 bool gCasual = false;     // 自分の打球を評価している間だけ、簡単モードなら true
 
 const Surface SURFACES[SURF_COUNT] = {

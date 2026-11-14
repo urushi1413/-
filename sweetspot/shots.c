@@ -116,7 +116,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
                  * (1.0f - STEP_STABILITY * step)
-                 * (gCasual ? CASUAL_ERR : 1.0f);
+                 * (gCasual ? CASUAL_ERR : 1.0f) * gErrMul;
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
     if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
     if (type == SHOT_SLICE && gSliceEdge > 0.0f) {   // キレのあるスライス：速く、逆回転が強い（低く滑る）

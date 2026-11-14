@@ -369,6 +369,17 @@ int main(void)
         if (mode == MODE_MATCH && needSetup && !score.over) {
             needSetup = false;
             netFlag[0] = netFlag[1] = false;
+            // このポイントの大事さ（勝負強い選手が強くなる）
+            {
+                int sv = CurrentServer(&score), rv = 1 - sv;
+                Score t1 = score, t2 = score;
+                AwardPoint(&t1, rv); AwardPoint(&t2, sv);
+                bool rvGame = t1.games[rv] != score.games[rv] || t1.sets[rv] != score.sets[rv];
+                bool setPt  = t1.sets[rv] != score.sets[rv] || t2.sets[sv] != score.sets[sv];
+                if (rvGame || setPt)                      gPointImportance = 1.0f;   // ブレーク／セット／マッチポイント
+                else if (score.tiebreak || (score.points[0] >= 2 && score.points[1] >= 2)) gPointImportance = 0.5f;   // 30-30、デュース、タイブレーク
+                else                                      gPointImportance = 0.0f;
+            }
             bool deuce = DeuceCourt(&score);
             deuceSide = deuce;
             ball = (Ball){ 0 };
