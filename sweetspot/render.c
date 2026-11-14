@@ -76,6 +76,34 @@ void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
 }
 // このファイルの中では、筒・球・箱をすべて陰影つきで描く
 static void LitSphere(Vector3 c, float r, Color col) { LitSphereEx(c, r, 8, 10, col); }
+// 楕円の断面の筒（胴体用）：横（sideA/B の向き）に広く、前後に薄い。下と上で向きを変えられる（腰と肩のひねり）
+static void LitEllipseTube(Vector3 a, Vector3 b, Vector3 sideA, Vector3 sideB, float wa, float da, float wb, float db, int sl, Color col, bool capTop, bool capBot)
+{
+    Vector3 ax = Vector3Subtract(b, a);
+    float len = Vector3Length(ax);
+    if (len < 1e-5f) return;
+    ax = Vector3Scale(ax, 1.0f / len);
+    Vector3 sa = Vector3Normalize(Vector3Subtract(sideA, Vector3Scale(ax, Vector3DotProduct(sideA, ax))));
+    Vector3 sb = Vector3Normalize(Vector3Subtract(sideB, Vector3Scale(ax, Vector3DotProduct(sideB, ax))));
+    Vector3 fa = Vector3CrossProduct(ax, sa), fb = Vector3CrossProduct(ax, sb);
+    rlCheckRenderBatchLimit(sl * 12);
+    rlBegin(RL_TRIANGLES);
+    for (int j = 0; j < sl; j++) {
+        float p0 = 2 * PI * j / sl, p1 = 2 * PI * (j + 1) / sl;
+        #define RIM(base, s, f, w, d, p) Vector3Add(base, Vector3Add(Vector3Scale(s, (w) * cosf(p)), Vector3Scale(f, (d) * sinf(p))))
+        #define NRM(s, f, w, d, p) Vector3Normalize(Vector3Add(Vector3Scale(s, cosf(p) / (w)), Vector3Scale(f, sinf(p) / (d))))
+        Vector3 a0 = RIM(a, sa, fa, wa, da, p0), a1 = RIM(a, sa, fa, wa, da, p1);
+        Vector3 b0 = RIM(b, sb, fb, wb, db, p0), b1 = RIM(b, sb, fb, wb, db, p1);
+        Vector3 na0 = NRM(sa, fa, wa, da, p0), na1 = NRM(sa, fa, wa, da, p1), nb0 = NRM(sb, fb, wb, db, p0), nb1 = NRM(sb, fb, wb, db, p1);
+        LitVertex(a0, na0, col); LitVertex(b1, nb1, col); LitVertex(b0, nb0, col);
+        LitVertex(a0, na0, col); LitVertex(a1, na1, col); LitVertex(b1, nb1, col);
+        if (capTop) { LitVertex(b, ax, col); LitVertex(b0, ax, col); LitVertex(b1, ax, col); }
+        if (capBot) { Vector3 nd = Vector3Negate(ax); LitVertex(a, nd, col); LitVertex(a1, nd, col); LitVertex(a0, nd, col); }
+        #undef RIM
+        #undef NRM
+    }
+    rlEnd();
+}
 #define DrawCylinderEx(...) LitCylinderEx(__VA_ARGS__)
 #define DrawSphere(...)     LitSphere(__VA_ARGS__)
 #define DrawSphereEx(...)   LitSphereEx(__VA_ARGS__)
@@ -1231,14 +1259,19 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.13f, hr.z), 0.10f, 0.105f, 10, shorts);
         }
     }
-    // シャツ：ウエストから胸へ広がる。胸の左右に 2 本重ねて、横に広く前後に薄くする
-    for (int sd = -1; sd <= 1; sd += 2) {
-        Vector3 w0 = { waist.x + sd * 0.06f * hcy, waist.y - 0.10f, waist.z - sd * 0.06f * hsy };
-        Vector3 c1 = { chest.x + sd * 0.09f * cy, chest.y + 0.08f, chest.z - sd * 0.09f * sy };
-        DrawCylinderEx(WV(w0), WV(c1), 0.105f, 0.125f, 10, shirt);
-        DrawSphere(WV(c1), a->female ? 0.112f : 0.125f, shirt);
+    // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
+    {
+        float fs = a->female ? 0.90f : 1.0f;
+        Vector3 hipSide = Vector3Subtract(W(hcy, 0, -hsy), W(0, 0, 0)), shSide = Vector3Subtract(W(cy, 0, -sy), W(0, 0, 0));
+        Vector3 c0 = { pelvis.x, hipY + 0.07f, pelvis.z };
+        Vector3 c1 = { waist.x, hipY + 0.22f, waist.z };
+        Vector3 c2 = { chest.x, hipY + 0.47f, chest.z };
+        Vector3 c3 = { chest.x, hipY + 0.57f, chest.z };
+        LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs, 0.110f, 0.150f * fs, 0.100f, 14, shirt, false, true);
+        LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs, 0.100f, 0.190f * fs, 0.118f, 14, shirt, false, false);
+        LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs, 0.118f, 0.120f * fs, 0.075f, 14, shirt, true, false);
     }
-    Limb(WV(lShoulder), WV(rShoulder), 0.070f, 0.070f, shirt);
+    Limb(WV(lShoulder), WV(rShoulder), 0.062f, 0.062f, shirt);
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
     Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
     Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
