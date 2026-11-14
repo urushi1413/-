@@ -406,6 +406,7 @@ int main(void)
                 rp.first = false;
                 BeginDrawing();
                 ClearBackground((Color){ 150, 190, 230, 255 });
+                DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 80, 135, 210, 255 }, (Color){ 200, 222, 242, 255 });   // 空：上ほど濃い青
                 BeginMode3D(rp.cam);
                 DrawReplayFrame(f, rp.cam);
                 EndMode3D();
@@ -1501,6 +1502,7 @@ int main(void)
         // ---- 描画 ----
         BeginDrawing();
         ClearBackground((Color){ 150, 190, 230, 255 });
+        DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 80, 135, 210, 255 }, (Color){ 200, 222, 242, 255 });   // 空：上ほど濃い青
         BeginMode3D(cam);
             DrawCourt();
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);

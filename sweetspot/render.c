@@ -1,5 +1,85 @@
 // SWEET SPOT — コートと人とラケットの描画、表示用の文字
 #include "game.h"
+#include "rlgl.h"
+
+// ---- 陰影：光の向き（左上前の太陽）から、面ごとに明るさを変えて描く（一色ののっぺりした見た目をやめる） ----
+static Color Shade(Color c, Vector3 n)
+{
+    const Vector3 L = { 0.348f, 0.846f, 0.403f };   // 光の来る向き（正規化済み）
+    float l = 0.55f + 0.50f * fmaxf(Vector3DotProduct(n, L), 0.0f) + 0.06f * fmaxf(-n.y, 0.0f) * 0.0f;
+    l = fminf(l, 1.05f);
+    return (Color){ (unsigned char)fminf(c.r * l, 255.0f), (unsigned char)fminf(c.g * l, 255.0f), (unsigned char)fminf(c.b * l, 255.0f), c.a };
+}
+static void LitVertex(Vector3 p, Vector3 n, Color c) { Color s = Shade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z); }
+// 太さの変わる筒（側面とふた）
+void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
+{
+    Vector3 ax = Vector3Subtract(b, a);
+    float len = Vector3Length(ax);
+    if (len < 1e-5f) return;
+    ax = Vector3Scale(ax, 1.0f / len);
+    if (sl < 6) sl = 6;
+    Vector3 u = fabsf(ax.y) < 0.9f ? Vector3Normalize(Vector3CrossProduct(ax, (Vector3){ 0, 1, 0 })) : (Vector3){ 1, 0, 0 };
+    Vector3 w = Vector3CrossProduct(ax, u);
+    rlCheckRenderBatchLimit(sl * 12);
+    rlBegin(RL_TRIANGLES);
+    for (int j = 0; j < sl; j++) {
+        float p0 = 2 * PI * j / sl, p1 = 2 * PI * (j + 1) / sl;
+        Vector3 d0 = Vector3Add(Vector3Scale(u, cosf(p0)), Vector3Scale(w, sinf(p0)));
+        Vector3 d1 = Vector3Add(Vector3Scale(u, cosf(p1)), Vector3Scale(w, sinf(p1)));
+        Vector3 a0 = Vector3Add(a, Vector3Scale(d0, ra)), a1 = Vector3Add(a, Vector3Scale(d1, ra));
+        Vector3 b0 = Vector3Add(b, Vector3Scale(d0, rb)), b1 = Vector3Add(b, Vector3Scale(d1, rb));
+        LitVertex(a0, d0, col); LitVertex(b1, d1, col); LitVertex(b0, d0, col);
+        LitVertex(a0, d0, col); LitVertex(a1, d1, col); LitVertex(b1, d1, col);
+        Vector3 nb = ax, na = Vector3Negate(ax);
+        LitVertex(b, nb, col); LitVertex(b0, nb, col); LitVertex(b1, nb, col);
+        LitVertex(a, na, col); LitVertex(a1, na, col); LitVertex(a0, na, col);
+    }
+    rlEnd();
+}
+void LitSphereEx(Vector3 c, float r, int rings, int slices, Color col)
+{
+    if (rings < 4) rings = 4;
+    if (slices < 6) slices = 6;
+    rlCheckRenderBatchLimit(rings * slices * 6);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < rings; i++) {
+        float t0 = PI * i / rings, t1 = PI * (i + 1) / rings;
+        for (int j = 0; j < slices; j++) {
+            float q0 = 2 * PI * j / slices, q1 = 2 * PI * (j + 1) / slices;
+            Vector3 n00 = { sinf(t0) * cosf(q0), cosf(t0), sinf(t0) * sinf(q0) }, n01 = { sinf(t0) * cosf(q1), cosf(t0), sinf(t0) * sinf(q1) };
+            Vector3 n10 = { sinf(t1) * cosf(q0), cosf(t1), sinf(t1) * sinf(q0) }, n11 = { sinf(t1) * cosf(q1), cosf(t1), sinf(t1) * sinf(q1) };
+            Vector3 p00 = Vector3Add(c, Vector3Scale(n00, r)), p01 = Vector3Add(c, Vector3Scale(n01, r));
+            Vector3 p10 = Vector3Add(c, Vector3Scale(n10, r)), p11 = Vector3Add(c, Vector3Scale(n11, r));
+            LitVertex(p00, n00, col); LitVertex(p11, n11, col); LitVertex(p10, n10, col);
+            LitVertex(p00, n00, col); LitVertex(p01, n01, col); LitVertex(p11, n11, col);
+        }
+    }
+    rlEnd();
+}
+// 箱（面ごとに明るさを変える）
+void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
+{
+    float x = wx * 0.5f, y = hy * 0.5f, z = lz * 0.5f;
+    Vector3 P[8];
+    for (int i = 0; i < 8; i++) P[i] = (Vector3){ p.x + ((i & 1) ? x : -x), p.y + ((i & 2) ? y : -y), p.z + ((i & 4) ? z : -z) };
+    static const int F[6][4] = { { 0, 2, 3, 1 }, { 4, 5, 7, 6 }, { 0, 1, 5, 4 }, { 2, 6, 7, 3 }, { 0, 4, 6, 2 }, { 1, 3, 7, 5 } };
+    static const Vector3 N[6] = { { 0, 0, -1 }, { 0, 0, 1 }, { 0, -1, 0 }, { 0, 1, 0 }, { -1, 0, 0 }, { 1, 0, 0 } };
+    rlCheckRenderBatchLimit(36);
+    rlBegin(RL_TRIANGLES);
+    for (int f = 0; f < 6; f++) {
+        Vector3 a = P[F[f][0]], b = P[F[f][1]], c = P[F[f][2]], d = P[F[f][3]];
+        LitVertex(a, N[f], col); LitVertex(b, N[f], col); LitVertex(c, N[f], col);
+        LitVertex(a, N[f], col); LitVertex(c, N[f], col); LitVertex(d, N[f], col);
+    }
+    rlEnd();
+}
+// このファイルの中では、筒・球・箱をすべて陰影つきで描く
+static void LitSphere(Vector3 c, float r, Color col) { LitSphereEx(c, r, 8, 10, col); }
+#define DrawCylinderEx(...) LitCylinderEx(__VA_ARGS__)
+#define DrawSphere(...)     LitSphere(__VA_ARGS__)
+#define DrawSphereEx(...)   LitSphereEx(__VA_ARGS__)
+#define DrawCube(...)       LitCube(__VA_ARGS__)
 
 // ---- 描画まわり ----
 void LineAlongX(float z, float x0, float x1)
@@ -23,6 +103,13 @@ void DrawCourt(void)
             float z = -HALF_LEN + COURT_LEN * (i + 0.5f) / 12.0f;
             if (i % 2) DrawPlane((Vector3){ 0, 0.0012f, z }, (Vector2){ DOUBLES_W, COURT_LEN / 12.0f }, (Color){ 80, 155, 68, 255 });
         }
+        // ベースラインのあたりは芝がすり切れて土が見える
+        for (int e = -1; e <= 1; e += 2)
+            for (int k = 0; k < 7; k++) {
+                float x = -2.4f + 0.8f * k, r = 0.9f - 0.12f * fabsf(k - 3.0f);
+                DrawCylinder((Vector3){ x, 0.0015f, e * (HALF_LEN + 0.3f) }, r, r, 0.0005f, 16, (Color){ 165, 150, 95, 150 });
+                DrawCylinder((Vector3){ x * 0.6f, 0.0016f, e * (HALF_LEN - 0.4f) }, r * 0.6f, r * 0.6f, 0.0005f, 14, (Color){ 150, 145, 90, 110 });
+            }
     }
 
     // ラインは規則どおりコートの内側に引く（コートの寸法はラインの外側まで。ラインに触れればイン）
@@ -47,6 +134,18 @@ void DrawCourt(void)
         float h = NetHeightAt((x0 + x1) * 0.5f);
         DrawCube((Vector3){ (x0 + x1) * 0.5f, h * 0.5f, 0 }, x1 - x0, h, 0.01f, (Color){ 20, 20, 20, 160 });
         DrawCube((Vector3){ (x0 + x1) * 0.5f, h - 0.025f, 0 }, x1 - x0, 0.05f, 0.015f, RAYWHITE);
+    }
+    // ネットの網目（たるみに沿って）
+    {
+        Color mesh = { 235, 235, 235, 70 };
+        for (float x = -NET_POST_X; x <= NET_POST_X; x += 0.10f)
+            DrawLine3D((Vector3){ x, 0.0f, 0.0f }, (Vector3){ x, NetHeightAt(x) - 0.05f, 0.0f }, mesh);
+        for (float y = 0.10f; y < NET_H_POST; y += 0.10f) {
+            for (int i = 0; i < segs; i++) {
+                float x0 = -NET_POST_X + (2.0f * NET_POST_X) * i / segs, x1 = -NET_POST_X + (2.0f * NET_POST_X) * (i + 1) / segs;
+                if (y < NetHeightAt(x0) - 0.05f && y < NetHeightAt(x1) - 0.05f) DrawLine3D((Vector3){ x0, y, 0.0f }, (Vector3){ x1, y, 0.0f }, mesh);
+            }
+        }
     }
     DrawCylinder((Vector3){ -NET_POST_X, 0, 0 }, 0.05f, 0.05f, NET_H_POST, 8, DARKGRAY);
     DrawCylinder((Vector3){  NET_POST_X, 0, 0 }, 0.05f, 0.05f, NET_H_POST, 8, DARKGRAY);
@@ -876,6 +975,13 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
+    // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
+    {
+        rlDisableDepthMask();
+        for (int k = 0; k < 3; k++)
+            DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
+        rlEnableDepthMask();
+    }
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
     if (a->lefty) {
