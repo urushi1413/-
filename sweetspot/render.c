@@ -999,7 +999,8 @@ static void Limb(Vector3 a, Vector3 b, float ra, float rb, Color c)
 
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
-    Color skin = { 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
+    Color skin = a->skin.a ? a->skin : (Color){ 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
+    float sc = a->scale > 0.0f ? a->scale : 1.0f;   // 体の大きさ（身長）
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
@@ -1019,7 +1020,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         a = &mir;
     }
     float MX = a->lefty ? -1.0f : 1.0f;
-    #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x), (y), (z) })
+    #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x) * sc, (y) * sc, (z) * sc })
     #define WV(v) W((v).x, (v).y, (v).z)
 
     if (a->downT > 0.0f) {

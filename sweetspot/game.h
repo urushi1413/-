@@ -344,6 +344,8 @@ typedef struct {
     // 見た目（選手ごと）
     float   grace;         // 優雅さ（0〜1）：フォロースルーが高く大きい
     Color   hair, shorts, headband;   // headband.a == 0 ならなし
+    Color   skin;          // 肌の色（a == 0 なら標準）
+    float   scale;         // 体の大きさ（身長 / 185cm。0 なら 1）
     int     fhStyle;       // フォアの振り方：0 = 普通（反対の肩に巻きつける）、1 = ナダル（頭の上へ振り上げる「投げ縄」）
     float   celebT;        // ポイント後のしぐさの残り時間（0 ならしていない）
     int     celebKind;     // しぐさの種類（CELEB_*）
@@ -618,7 +620,10 @@ extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
 extern bool  gWomen;
-extern float gTimingTolMul;   // タイミングの許容幅の倍率（人間 HUMAN_TIMING_TOL、AI が打つ間だけ 1）      // 女子の試合（球速・回転が少し遅い）
+extern float gTimingTolMul;
+extern float gReachAdd;       // 届く範囲の上乗せ（m）。背の高い選手ほど長い（AI が打つ間だけ）
+float PersonaHeight(int persona);   // 選手の身長（cm）。-1 は人間（男子 185、女子 175）
+#define REACH_PER_CM  0.0045f   // 身長 1cm あたりの届く範囲の違い（m）   // タイミングの許容幅の倍率（人間 HUMAN_TIMING_TOL、AI が打つ間だけ 1）      // 女子の試合（球速・回転が少し遅い）
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];

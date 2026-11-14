@@ -48,6 +48,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
     if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
     if (gCasual) reachBonus += CASUAL_REACH;
+    reachBonus += gReachAdd;   // 背の高い選手ほど遠くまで届く
     c.isReturn = ball->isServe;
     float qualityReach = reachBonus + (ball->isServe ? 0.5f * RETURN_REACH : 0.0f);   // 当たりの質（距離）に効く分：伸びた分の半分は合わせられる
     if (c.isReturn) reachBonus += RETURN_REACH;   // リターンは跳んで伸びて取る（遠いサーブでも届く）。届くだけで、伸びた分だけ当たりは悪い
