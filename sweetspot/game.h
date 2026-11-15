@@ -115,7 +115,9 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
        RIT_HAIR,        // 髪を耳にかけてから、ボールをつく（フェデラー、シフィオンテク）
        RIT_STRINGS,     // 後ろを向いてガットを直してから、ボールをつく（シャラポワ）
        CELEB_COUNT };
-#define RIT_BOUNCE_T 0.42f   // ボールを 1 回つく長さ（秒）
+#define RIT_BOUNCE_T 0.42f
+// 髪型
+enum { HS_SHORT, HS_SWEPT, HS_CURLY, HS_CURLY_SHORT, HS_NADAL, HS_FADE, HS_SPIKY, HS_PONY, HS_BUN };   // ボールを 1 回つく長さ（秒）
 float RitualStart(int kind);              // 儀式のうち、ボールをつき始めるまでの時間
 float RitualDuration(int kind, int bounces);
 // 選手の気持ちの癖：サーブ前の儀式、ポイント間のしぐさ、プレッシャーへの強さ（リサーチより）
@@ -393,7 +395,11 @@ typedef struct {
     float   celebDur;      // しぐさの長さ（秒）
     int     ritBounces;    // 儀式でボールをつく回数（0 ならつかない）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
-    bool    female;        // 女子（スカートとポニーテール）
+    bool    female;        // 女子（スカート）
+    int     hairStyle;     // 髪型（HS_*）
+    float   beard;         // ひげの濃さ（0 = なし、0.3 = 無精ひげ、0.7 = ひげ）
+    int     hat;           // かぶりもの：0 なし、1 キャップ、2 サンバイザー
+    Color   hatCol;
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     bool    serveStance;   // サーブの構え（トスの前）：横向きで、左手にボール
     bool    smash;         // 頭上の振りがスマッシュ（ラリー中）。false ならサーブ

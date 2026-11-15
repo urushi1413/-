@@ -122,11 +122,36 @@ void ApplyLook(SwingAnim *a, int persona)
     if (persona < 0) {   // 人間：紺のショーツ
         a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
+        a->hairStyle = gWomen ? HS_PONY : HS_SHORT; a->beard = 0.0f; a->hat = 0;
         return;
     }
     persona %= PERSONA_COUNT;
     a->female = PERSONAS[persona].female || (persona == 0 && gWomen);
     a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle; a->skin = SKIN[persona];
+    {   // 髪型・ひげ・かぶりもの（選手ごと）
+        static const struct { int hs; float beard; int hat; } HAIR[PERSONA_COUNT] = {
+            { HS_SHORT, 0.0f, 0 },        // 癖なし
+            { HS_SWEPT, 0.0f, 0 },        // フェデラー：横に流した髪＋ヘッドバンド
+            { HS_SHORT, 0.25f, 0 },       // ジョコビッチ：短髪、うっすら無精ひげ
+            { HS_NADAL, 0.40f, 0 },       // ナダル：バンダナからはみ出す髪、無精ひげ
+            { HS_CURLY_SHORT, 0.45f, 0 }, // マレー：短い巻き毛、無精ひげ
+            { HS_CURLY_SHORT, 0.0f, 0 },  // アルカラス：前が高い巻き毛
+            { HS_CURLY, 0.0f, 0 },        // シナー：もじゃもじゃの赤毛
+            { HS_SHORT, 0.0f, 0 },        // メドベデフ：短髪
+            { HS_FADE, 0.60f, 0 },        // キルギオス：横を刈り上げ、ひげ
+            { HS_BUN, 0.0f, 0 },          // ウィリアムズ：まとめ髪
+            { HS_PONY, 0.0f, 1 },         // シフィオンテク：キャップとポニーテール
+            { HS_PONY, 0.0f, 0 },         // サバレンカ：ポニーテール
+            { HS_BUN, 0.0f, 0 },          // ガウフ：編み込みをまとめる
+            { HS_PONY, 0.0f, 2 },         // シャラポワ：サンバイザーとポニーテール
+            { HS_PONY, 0.0f, 0 },         // バーティ：ポニーテール
+            { HS_SPIKY, 0.0f, 0 },        // 錦織：立てた短髪
+            { HS_SWEPT, 0.0f, 0 },        // ズベレフ：金髪を横に流す
+        };
+        a->hairStyle = HAIR[persona].hs; a->beard = HAIR[persona].beard; a->hat = HAIR[persona].hat;
+        if (persona == 0) a->hairStyle = gWomen ? HS_PONY : HS_SHORT;
+        a->hatCol = (Color){ 248, 248, 250, 255 };
+    }
     if (gAllWhite) {   // ウィンブルドン：服は白だけ
         a->shorts = (Color){ 245, 245, 248, 255 };
         if (a->headband.a) a->headband = (Color){ 250, 250, 250, 255 };

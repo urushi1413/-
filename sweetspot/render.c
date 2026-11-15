@@ -1366,8 +1366,81 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     if (uU.y < 0.0f) uU = Vector3Negate(uU);
     #define HP(fw, rt, upv) Vector3Add(head, Vector3Add(Vector3Scale(fF, (fw)), Vector3Add(Vector3Scale(rR, (rt)), Vector3Scale(uU, (upv)))))
     DrawSphere(WV(head), 0.105f, skin);
-    DrawSphere(WV(HP(-0.022f, 0.0f, 0.025f)), 0.103f, hair);
-    if (a->headband.a) DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.025f)), WV(HP(0.0f, 0.0f, 0.060f)), 0.110f, 0.108f, 14, a->headband);
+    {   // ---- 髪型 ----
+        Color hd = { (unsigned char)(hair.r * 0.85f), (unsigned char)(hair.g * 0.85f), (unsigned char)(hair.b * 0.85f), 255 };   // 影になる房
+        switch (a->hairStyle) {
+            case HS_SWEPT:        // 横に流した髪（フェデラー、ズベレフ）：ボリュームがあり、前髪が片側へ流れ、耳の上とえり足を覆う
+                DrawSphere(WV(HP(-0.020f, 0.0f, 0.030f)), 0.110f, hair);
+                DrawSphere(WV(HP(0.050f, 0.030f, 0.072f)), 0.064f, hair);
+                DrawSphere(WV(HP(0.040f, -0.045f, 0.078f)), 0.050f, hd);
+                for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.010f, sd * 0.086f, 0.030f)), 0.050f, hair);
+                DrawSphere(WV(HP(-0.075f, 0.0f, -0.030f)), 0.075f, hair);
+                break;
+            case HS_CURLY:        // もじゃもじゃの巻き毛（シナー）：頭より大きく、房が盛り上がる
+            case HS_CURLY_SHORT:  // 短い巻き毛（アルカラス、マレー）：前が高い
+            {
+                bool big = a->hairStyle == HS_CURLY;
+                DrawSphere(WV(HP(-0.020f, 0.0f, 0.030f)), big ? 0.112f : 0.106f, hair);
+                for (int i = 0; i < (big ? 14 : 9); i++) {
+                    float t = i * 2.39996f, rr = sqrtf((i + 0.5f) / (big ? 14.0f : 9.0f));   // 頭のてっぺんに散らす
+                    float fx = 0.065f * rr * cosf(t) + (big ? 0.0f : 0.02f), sx = 0.072f * rr * sinf(t);
+                    float up = (big ? 0.098f : 0.088f) - 0.03f * rr * rr + (!big && fx > 0.03f ? 0.012f : 0.0f);
+                    DrawSphere(WV(HP(fx - 0.01f, sx, up)), big ? 0.046f : 0.036f, (i % 3 == 0) ? hd : hair);
+                }
+                if (big) for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.005f, sd * 0.088f, 0.035f)), 0.052f, hair);   // 耳の上の房
+            } break;
+            case HS_NADAL:        // バンダナの上と、後ろ・横にはみ出す髪
+                DrawSphere(WV(HP(-0.015f, 0.0f, 0.035f)), 0.106f, hair);
+                DrawSphere(WV(HP(-0.085f, 0.0f, -0.035f)), 0.080f, hair);
+                for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.030f, sd * 0.088f, -0.010f)), 0.055f, hair);
+                break;
+            case HS_FADE:         // 横を刈り上げ（肌が透ける暗い色）、上だけ長い（キルギオス）
+            {
+                Color fade = { (unsigned char)((hair.r + skin.r) / 2), (unsigned char)((hair.g + skin.g) / 2), (unsigned char)((hair.b + skin.b) / 2), 255 };
+                DrawSphere(WV(HP(-0.012f, 0.0f, 0.012f)), 0.1065f, fade);
+                DrawSphere(WV(HP(0.005f, 0.0f, 0.072f)), 0.080f, hair);
+                DrawSphere(WV(HP(0.055f, 0.0f, 0.078f)), 0.055f, hair);
+            } break;
+            case HS_SPIKY:        // 短く立てた髪（錦織）
+                DrawSphere(WV(HP(-0.020f, 0.0f, 0.028f)), 0.106f, hair);
+                for (int i = 0; i < 9; i++) {
+                    float t = i * 2.39996f, rr = sqrtf((i + 0.5f) / 9.0f);
+                    Vector3 b = HP(0.055f * rr * cosf(t) + 0.01f, 0.065f * rr * sinf(t), 0.100f - 0.035f * rr * rr);
+                    Vector3 tip = Vector3Add(b, Vector3Scale(Vector3Normalize(Vector3Subtract(b, head)), 0.040f));
+                    DrawCylinderEx(WV(b), WV(tip), 0.020f, 0.002f, 5, hair);
+                }
+                break;
+            case HS_BUN:          // まとめ髪（ウィリアムズ、ガウフ）：頭の上の後ろにお団子
+                DrawSphere(WV(HP(-0.020f, 0.0f, 0.028f)), 0.107f, hair);
+                DrawSphere(WV(HP(-0.060f, 0.0f, 0.110f)), 0.062f, hair);
+                DrawSphere(WV(HP(-0.045f, 0.030f, 0.118f)), 0.040f, hd);
+                break;
+            case HS_PONY:         // ポニーテール（下で描く）：頭は後ろにまとめる
+                DrawSphere(WV(HP(-0.022f, 0.0f, 0.025f)), 0.106f, hair);
+                break;
+            default:              // 短髪：前髪が少しある
+                DrawSphere(WV(HP(-0.022f, 0.0f, 0.027f)), 0.106f, hair);
+                DrawSphere(WV(HP(0.045f, 0.0f, 0.070f)), 0.055f, hair);
+                break;
+        }
+    }
+    if (a->headband.a) {   // ヘッドバンド（フェデラー）・バンダナ（ナダル。後ろに結び目の端が垂れる）
+        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.025f)), WV(HP(0.0f, 0.0f, 0.062f)), 0.113f, 0.111f, 14, a->headband);
+        if (a->hairStyle == HS_NADAL) {
+            float fl = 0.03f * sinf(ph) * move;
+            DrawCylinderEx(WV(HP(-0.110f, 0.0f, 0.045f)), WV(Vector3Add(HP(-0.17f, 0.015f, -0.03f), (Vector3){ fl, 0, 0 })), 0.018f, 0.010f, 5, a->headband);
+            DrawCylinderEx(WV(HP(-0.110f, 0.0f, 0.045f)), WV(Vector3Add(HP(-0.16f, -0.020f, -0.05f), (Vector3){ fl, 0, 0 })), 0.016f, 0.008f, 5, a->headband);
+        }
+    }
+    if (a->hat == 1) {     // キャップ（シフィオンテク）：頭頂を覆い、つばが前へ
+        DrawSphere(WV(HP(-0.005f, 0.0f, 0.045f)), 0.112f, a->hatCol);
+        Vector3 bc = HP(0.135f, 0.0f, 0.040f);
+        DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.070f, 0.070f, 12, a->hatCol);
+    } else if (a->hat == 2) {   // サンバイザー（シャラポワ）：額のバンドとつば
+        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.035f)), WV(HP(0.0f, 0.0f, 0.065f)), 0.112f, 0.110f, 14, a->hatCol);
+        Vector3 bc = HP(0.130f, 0.0f, 0.040f);
+        DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.065f, 0.065f, 12, a->hatCol);
+    }
     {   // ---- 顔：耳・目・眉・鼻・口。しぐさで表情が変わる（吠える＝口を大きく開ける、怒る＝眉を寄せる、喜ぶ＝笑う） ----
         Color dark = { 35, 28, 25, 255 }, white = { 245, 245, 240, 255 };
         Color lip = { (unsigned char)(skin.r * 0.62f), (unsigned char)(skin.g * 0.38f), (unsigned char)(skin.b * 0.38f), 255 };
@@ -1399,6 +1472,21 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(WV(HP(0.096f, sd * 0.014f, inY)), WV(HP(0.090f, sd * 0.056f, outY)), 0.0060f, 0.0050f, 5, brow);
         }
         DrawCylinderEx(WV(HP(0.098f, 0.0f, 0.010f)), WV(HP(0.122f, 0.0f, -0.018f)), 0.011f, 0.014f, 6, nose);   // 鼻
+        if (a->beard > 0.0f) {   // ひげ：あごの線に沿って（無精ひげは肌に近い色、濃いほど髪の色）
+            float bk = Clamp01(a->beard);
+            Color bc = { (unsigned char)(skin.r + (hair.r - skin.r) * bk), (unsigned char)(skin.g + (hair.g - skin.g) * bk), (unsigned char)(skin.b + (hair.b - skin.b) * bk), 255 };
+            // 頭の表面のすぐ外に、小さな粒を下あご一面に薄く並べる（口のまわりは空ける）
+            float r0 = 0.014f + 0.004f * bk, dist = 0.105f - 0.62f * r0;
+            for (int iv = 0; iv < 3; iv++) for (int ip = -4; ip <= 4; ip++) {
+                float v = -0.38f - 0.20f * iv, ph2 = ip * 0.36f;
+                if (iv == 0 && abs(ip) <= 1) continue;   // 口
+                if (iv == 0 && abs(ip) == 4) continue;
+                Vector3 d = { cosf(v) * cosf(ph2), cosf(v) * sinf(ph2), sinf(v) };
+                DrawSphere(WV(HP(d.x * dist, d.y * dist, d.z * dist)), r0, bc);
+            }
+            if (bk > 0.5f) for (int sd = -1; sd <= 1; sd += 2)   // 口ひげ
+                DrawCylinderEx(WV(HP(0.100f, sd * 0.004f, -0.030f)), WV(HP(0.094f, sd * 0.026f, -0.036f)), 0.006f, 0.005f, 5, bc);
+        }
         Vector3 mc = HP(0.094f, 0.0f, -0.046f);
         if (open > 0.15f) {   // 開いた口：縦に長い暗い楕円（球を 2 つ重ねる）
             float h = 0.006f + 0.016f * open;
@@ -1409,7 +1497,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(WV(mc), WV(HP(0.090f, -0.024f, -0.046f + lift)), 0.0045f, 0.0040f, 5, lip);
         }
     }
-    if (a->female) {
+    if (a->hairStyle == HS_PONY) {
         // ポニーテール：頭の後ろから下へ。走ると左右に揺れ、振るとなびく
         float sway = 0.07f * sinf(ph) * move + (swinging ? 0.06f * sinf(a->swingT * 20.0f) : 0.0f);
         Vector3 pb = HP(-0.10f, 0.0f, 0.05f);
