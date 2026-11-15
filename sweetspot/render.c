@@ -1466,8 +1466,13 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         for (int sd = -1; sd <= 1; sd += 2) {
             DrawSphere(WV(HP(-0.005f, sd * 0.102f, 0.000f)), 0.022f, skin);                         // 耳
             Vector3 eye = HP(0.088f, sd * 0.036f, 0.018f);
-            DrawSphere(WV(eye), 0.0125f, white);                                                      // 白目
-            DrawSphere(WV(HP(0.098f, sd * 0.036f, 0.018f)), 0.0072f, dark);                          // 黒目
+            {   // 目：顔の表面に貼りつけた薄い円板（白目 → 黒目）。飛び出さない
+                Vector3 ed = Vector3Normalize(Vector3Subtract(eye, head));
+                Vector3 e0 = Vector3Add(head, Vector3Scale(ed, 0.1035f));
+                Vector3 e1 = Vector3Add(e0, Vector3Scale(ed, 0.0020f)), e2 = Vector3Add(e1, Vector3Scale(ed, 0.0012f));
+                DrawCylinderEx(WV(e0), WV(e1), 0.0115f, 0.0110f, 10, white);
+                DrawCylinderEx(WV(e1), WV(e2), 0.0062f, 0.0060f, 8, dark);
+            }
             float inY = 0.040f - 0.012f * angry + 0.006f * smile, outY = 0.046f + 0.006f * angry;  // 眉：怒ると内側が下がる
             DrawCylinderEx(WV(HP(0.096f, sd * 0.014f, inY)), WV(HP(0.090f, sd * 0.056f, outY)), 0.0060f, 0.0050f, 5, brow);
         }
