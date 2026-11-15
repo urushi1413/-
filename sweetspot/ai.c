@@ -530,6 +530,16 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
     if (sLapse) c.quality *= AI_LAPSE_Q;   // 打ち損じ：芯を外す
+    if (c.isReturn && c.miss == MISS_NONE) {
+        // 速いサーブ・体から遠いサーブは返せないことがある（反応が間に合わず、ラケットに当たらない・枠に当たる）。
+        //   弾んだ後 75km/h（打った速さ 150km/h ほど）から効き始め、115km/h で最大。体から遠い（伸びて取る）ほど起きやすい
+        static const float RM[3] = { RETURN_MISS_EASY, RETURN_MISS_NORMAL, RETURN_MISS_PRO };
+        float sp = Clamp01((c.inKmh - 75.0f) / 40.0f);   // 弾んだ後の速さ（200km/h のサーブで 100km/h 前後）
+        float far = Clamp01((c.side - IDEAL_R) / 0.9f);
+        float pm = RM[ai->level % 3] * sp * (0.45f + 0.9f * far) * (1.0f - 0.5f * Clamp01(pp->returnAggro));
+        if (RandRange(0.0f, 1.0f) < pm) c.miss = MISS_LATE;
+        else gErrMul *= 1.0f + 0.5f * sp;   // 返せても、速いほどぶれる
+    }
     c.stepIn = -meVel.z;
     if (c.miss == MISS_NONE && c.volley && !c.overhead)   // ボレーのうまい選手は、当たりの悪さを取り戻す
         c.quality += (1.0f - c.quality) * 0.5f * pp->volleySkill;
@@ -641,7 +651,9 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     float kmh;
     gLefty = pp->lefty;   // 左利きのサーブは横回転が逆
     gServeAdd = 0.0f; gServeErrMul = 1.0f;   // AI のサーブの速さとぶれは、もう目標に入っている
+    gServeSpeedK = 0.25f;
     Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
+    gServeSpeedK = 1.0f;
     ApplyHumanTraits();
     b.lastHitter = HITTER_OPP;
     // 見た目：頭上で打つ

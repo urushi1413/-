@@ -94,6 +94,10 @@ typedef struct {
 #define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）
 #define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
 #define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
+#define SERVE_SPEED_ERR  0.4f   // 速いサーブのぶれの増え方（125km/h を超えた分）
+#define RETURN_MISS_EASY   0.40f   // 速いサーブ（150km/h〜）をレシーバーが返せない（ラケットに当てられない・枠に当たる）起きやすさ：EASY
+#define RETURN_MISS_NORMAL 0.20f   //   NORMAL
+#define RETURN_MISS_PRO    0.13f   //   PRO
 #define TOUCH_READ_DELAY 0.20f  // ロブ・ドロップに AI が反応するまでの遅れ（打つ形が普通のストロークと同じで読めない）。強い AI ほど短い
 #define BACKPEDAL_SLOW   0.32f  // AI が後ろ（ネットと反対）へ走るときに遅くなる割合（向きを変えて走るので）
 #define AI_LAPSE_EASY    0.220f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
@@ -702,6 +706,7 @@ extern float gRiseSkill;
 extern int   gYouPersona;
 extern float gServeAdd;      // サーブの速さの上乗せ（km/h）。自分のサーブだけ（AI のサーブは打つ前に 0 にする）
 extern float gServeErrMul;   // サーブのぶれの倍率
+extern float gServeSpeedK;   // 速いサーブのぶれの効き（自分 1。AI は安定感とコースの厳しさを別に決めているので小さく）
 void  ApplyHumanTraits(void);        // 打球の補正値を、自分（の選手）の値にする（AI が打った後に戻すのにも使う）
 void  RestoreHumanContact(void);     // 当たりの評価に使う値（タイミング・リーチ・身長）だけ戻す
 float PlayerRunSpeed(void);          // 自分の走る速さ（m/s）

@@ -10,7 +10,7 @@
 const ServeSpec SERVES[SERVE_COUNT] = {
     [SERVE_FLAT]  = { "FLAT SERVE",  150.0f, 215.0f,  600.0f, 1200.0f,     0.0f,     0.0f,    0.0f,    0.0f, RAYWHITE },
     [SERVE_SLICE] = { "SLICE SERVE", 140.0f, 190.0f,  300.0f,  600.0f,  1800.0f,  3000.0f,    0.0f,    0.0f, (Color){ 80, 220, 255, 255 } },
-    [SERVE_KICK]  = { "KICK SERVE",  100.0f, 170.0f, 2500.0f, 3800.0f,  -400.0f,  -800.0f, 1200.0f, 2200.0f, (Color){ 255, 160, 40, 255 } },
+    [SERVE_KICK]  = { "KICK SERVE",   95.0f, 145.0f, 2800.0f, 4300.0f,  -400.0f,  -800.0f, 1200.0f, 2200.0f, (Color){ 255, 160, 40, 255 } },   // 遅いが高く弾む（安全なセカンド）
 };
 
 Vector3 SpinVector(Vector3 dirFlat, float top, float side, float gyro)
@@ -98,7 +98,9 @@ Ball HitServe(Vector3 contact, Vector3 target, ServeType type, float charge, flo
     if (gLefty) { spin.y = -spin.y; spin.z = -spin.z; }   // 左利き：横回転とジャイロが逆向き
     Vector3 dir; float pitch;
     SolveServe(contact, target, kmh / 3.6f, spin, &dir, &pitch);
-    float effort = (0.5f + 0.8f * charge) * (gCasual ? 0.55f : 1.0f) * gServeErrMul;   // 振り切るほどぶれる（簡単モードは小さく）
+    float effort = (0.5f + 0.8f * charge) * (gCasual ? 0.55f : 1.0f) * gServeErrMul;
+    // 速いサーブほどぶれる（全力のフラットは 6 割ほどしか入らない。速く打つほどリスクがある）
+    effort *= 1.0f + SERVE_SPEED_ERR * gServeSpeedK * powf(fmaxf(kmh - 125.0f, 0.0f) / 60.0f, 1.4f);   // 振り切るほどぶれる（簡単モードは小さく）
     float yawErr   = RandNormal() * (0.50f + (1.0f - q) * 2.5f) * effort * DEG2RAD;
     float pitchErr = RandNormal() * (0.20f + (1.0f - q) * 1.0f) * effort * DEG2RAD;
     dir = Vector3RotateByAxisAngle(dir, (Vector3){ 0, 1, 0 }, yawErr);
