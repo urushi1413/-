@@ -128,7 +128,7 @@ def main():
     # ---- ネットに当たった「バサッ」 ----
     write("net", fade(lp(trim(load(kenney("impactSoft_heavy")[0])), 3000)), peak=0.85)
 
-    # ---- 空振り：竹の棒の素振りから 3 回目の「ヒュン」を切り出す ----
+    # ---- 空振り：竹の棒の素振りから 1 回目の「ヒュン」を切り出す ----
     bm = load(os.path.join(SRC, "oga_bamboo.mp3"))
     env = np.convolve(np.abs(bm), np.ones(1500) / 1500, "same")
     thr, i, cuts = 0.35 * env.max(), 0, []
@@ -140,13 +140,15 @@ def main():
             i = pk + int(0.6 * SR)
         else:
             i += 200
-    write("whiff", fade(hp(cuts[2], 300), 0.002, 0.03))
+    write("whiff", fade(hp(cuts[0], 300), 0.002, 0.03))
 
     # ---- 観客 ----
     gq = os.path.join(SRC, "gq", "Gregor Quendel - Free Crowd Cheering Sounds - MP3", "Gregor Quendel - Crowd Cheering Sounds - ")
     write("crowd", loop(seg(load(gq + "10 - Ambience.mp3"), 1, 33)), peak=0.6, ogg=True)
     write("crowd_2", loop(seg(load(gq + "07 - Soft cheering and chatter.mp3"), 1, 37)), peak=0.6, ogg=True)
     # 勝利の歓声：録音は盛り上がるまで 4〜6 秒かかるので、盛り上がる直前から切り出す（1 秒以内に最高潮）
+    # ウィナー・長いラリーの後の大歓声（applause_big と交互）。録音の頭のほぼ無音の 1 秒は切る
+    write("applause_big_2", fade(seg(load(gq + "04 - Strong cheering - II - Short.mp3"), 1.0, 8.0), 0.15, 2.0), ogg=True)
     write("match_win", fade(seg(load(gq + "03 - Strong cheering - I.mp3"), 5.6, 19), 0.12, 4.0), ogg=True)
     write("match_win_2", fade(seg(load(gq + "02 - Strong cheering and soft rhythmic cheering.mp3"), 4.2, 16), 0.12, 4.0), ogg=True)
     church = load(os.path.join(SRC, "oga_applause-clapping-church-crowd-immersive.wav"))

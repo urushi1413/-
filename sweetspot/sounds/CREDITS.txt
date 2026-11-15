@@ -6,7 +6,7 @@ SWEET SPOT 効果音の出典
 
 ■ Gregor Quendel「Free Crowd Cheering Sounds」 — CC-BY 4.0
   https://opengameart.org/content/free-crowd-cheering-sounds
-  crowd, crowd_2, match_win, match_win_2
+  crowd, crowd_2, applause_big_2, match_win, match_win_2
   Sounds by Gregor Quendel (https://www.gregorquendel.com), licensed under CC BY 4.0.
 
 ■「Applause in a large hall or church」 — CC0
