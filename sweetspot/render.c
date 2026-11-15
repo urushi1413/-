@@ -1370,6 +1370,10 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         } else {
             DrawCylinderEx(W(hl.x, hl.y - 0.05f, hl.z), W(hl.x, hl.y + 0.13f, hl.z), 0.10f * bWa, 0.105f * bWa, 10, shorts);
             DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.13f, hr.z), 0.10f * bWa, 0.105f * bWa, 10, shorts);
+            // 腰まわりを 1 つのだ円の筒で包む（左右の筒だけだと前と後ろにすき間ができて、シャツの裾が見えていた）。下はふさぐ（股）
+            Vector3 hipSideS = Vector3Subtract(W(hcy, 0, -hsy), W(0, 0, 0));
+            Vector3 pb = { pelvis.x, pelvis.y - 0.075f, pelvis.z }, pt = { pelvis.x, pelvis.y + 0.125f, pelvis.z };
+            LitEllipseTube(WV(pb), WV(pt), hipSideS, hipSideS, 0.180f * bWa, 0.118f * bBu, 0.178f * bWa, 0.116f * bBu, 16, shorts, true, true);
         }
     }
     // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
