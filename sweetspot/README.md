@@ -362,6 +362,9 @@ AI には効かない（AI の強さは 1/2/3 で別に選ぶ）。友達と遊�
 - 大会名と場所を架空に（SOUTHERN OPEN / RED CLAY OPEN / GREEN LAWN CHAMPIONSHIPS / CITY LIGHTS OPEN、ハーバーシティ・オールドタウン・リバーサイド・メトロシティ）
 - 芝の大会のトロフィーは、ふたと飾りのない金色の杯（女子も大皿ではなく杯）
 - 見た目（髪型・体つき）はそのまま。ストアのページや宣伝では実在の選手名を使わないこと
+- 開発用の記録（playlog.csv・matchlog.csv）は書き出さない。選手の声のファイルは番号の名前（v01〜v16）で読む
+- `make dist`：売る版を作って dist/SweetSpot に exe・音（声のファイル名は番号に）・フォント・CREDITS.txt・遊び方（README_JA / README_EN）をまとめ、zip にする
+  （Windows は dist\SweetSpot_Windows.zip。exe は必要な部品を中に入れ、コンソールの窓を出さない）。配る文書は dist_files/、ストアの文章と販売の手順は dist_files/STORE_PAGE.md
 
 ## ネットイン・レット・コートチェンジ
 

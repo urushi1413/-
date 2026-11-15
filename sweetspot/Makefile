@@ -22,6 +22,10 @@ endif
 ifeq ($(SALE),1)
     CFLAGS += -DSALE_BUILD
     TARGET := sweetspot_sale$(suffix $(TARGET))
+    ifeq ($(OS),Windows_NT)
+        # 配る exe：必要な部品を exe に全部入れる（ほかのパソコンで DLL が見つからないと言われないように）、コンソールの窓を出さない
+        LIBS += -static -mwindows
+    endif
 endif
 
 SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c
@@ -38,3 +42,15 @@ sim: tools/ai_vs_ai.c $(SRC) game.h
 	$(CC) -std=c99 -O2 -DRAYMATH_STATIC_INLINE -I$(RAYLIB_INC) tools/ai_vs_ai.c -o ai_vs_ai -lm -Wl,--unresolved-symbols=ignore-all
 	./ai_vs_ai
 
+
+# 配る形を作る：売る版を作って、dist/SweetSpot に exe・音・フォント・クレジット・遊び方をまとめ、zip にする
+#   Windows：dist/SweetSpot_Windows.zip（PowerShell を使う）。Mac / Linux：dist/SweetSpot_<OS>.zip（zip があれば）
+dist:
+	$(MAKE) SALE=1
+ifeq ($(OS),Windows_NT)
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/make_dist.ps1
+else
+	sh tools/make_dist.sh
+endif
+
+.PHONY: dist clean sim

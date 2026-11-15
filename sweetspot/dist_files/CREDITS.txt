@@ -1,0 +1,33 @@
+SWEET SPOT — CREDITS / クレジット
+
+Made by URUSHI / 制作：URUSHI
+
+RECORDINGS / 録音
+  Ball hits, footwork, slides, applause, umpire's "fault": recorded at tournaments by the author.
+  打球音・靴の音・滑る音・拍手・主審の「フォルト」：作者が試合会場で録音。
+  Player voices, umpire and line calls, roar: the author's voice.
+  選手の声・主審と線審のコール・雄叫び：作者の声。
+
+SOUND ASSETS / 効果音素材
+  Gregor Quendel — "Free Crowd Cheering Sounds" (CC BY 4.0)
+    crowd ambience, big applause, match win cheers / 会場のざわめき・大きな拍手・勝利の歓声
+    https://www.gregorquendel.com
+    https://opengameart.org/content/free-crowd-cheering-sounds
+    License: https://creativecommons.org/licenses/by/4.0/
+  Kenney — "Impact Sounds" (CC0)  https://kenney.nl
+    bounces, net / バウンド・ネット
+  OpenGameArt (CC0)
+    "Applause in a large hall or church" — applause / 拍手
+    "Swish - bamboo stick weapon swhoshes" — whiff / 空振り
+  Boos, crowd "ooh", racket smash: synthesized by the author.
+  ブーイング・「おお〜」・ラケットを叩きつける音：作者が合成。
+
+FONT / フォント
+  IPA Font (IPAPGothic) — IPA Font License Agreement v1.0 (see fonts/)
+
+LIBRARY / ライブラリ
+  raylib — zlib/libpng license  https://www.raylib.com
+
+NOTE / おことわり
+  All players, tournaments and trophies in this game are fictional.
+  登場する選手・大会・トロフィーはすべて架空のものです。

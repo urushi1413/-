@@ -804,7 +804,8 @@ int main(void)
                     DrawText(buf, bx0 + 14, by + 14 + k * 36, bfs, k == 0 ? SKYBLUE : ORANGE);
                 }
                 if (menuPage == 3) {
-                    const char *ev = slamSel == SLAM_COUNT ? TR("4 slams in a row: Australian (hard), French (clay), Wimbledon (grass), US (hard)", "4 大会を続けて：全豪（ハード）・全仏（クレー）・ウィンブルドン（芝）・全米（ハード）")
+                    const char *ev = slamSel == SLAM_COUNT ? PN(TR("4 slams in a row: Australian (hard), French (clay), Wimbledon (grass), US (hard)", "4 大会を続けて：全豪（ハード）・全仏（クレー）・ウィンブルドン（芝）・全米（ハード）"),
+                                                              TR("4 slams in a row: hard, clay, grass, hard", "4 大会を続けて：ハード・クレー・芝・ハード"))
                                                            : TextFormat(TR("%s  -  %s court  -  16 players, 4 rounds", "%s  -  %s コート  -  16 人、4 回勝てば優勝"), TourName(slamSel), SurfNameUI(TourSlamSurface(slamSel)));
                     DrawText(ev, bx0 + 14, by + 50, 18, RAYWHITE);
                     DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
@@ -2683,7 +2684,7 @@ int main(void)
             DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.85f));
             int ty = by + 16;
             #define LINE(...) do { DrawText(TextFormat(__VA_ARGS__), bx + 20, ty, 20, RAYWHITE); ty += 26; } while (0)
-            DrawText(TR("SESSION STATS  (Tab to close)   saved to playlog.csv", "今回の成績（Tab で閉じる）  playlog.csv に保存"), bx + 20, ty, 22, YELLOW); ty += 36;
+            DrawText(PN(TR("SESSION STATS  (Tab to close)   saved to playlog.csv", "今回の成績（Tab で閉じる）  playlog.csv に保存"), TR("SESSION STATS  (Tab to close)", "今回の成績（Tab で閉じる）")), bx + 20, ty, 22, YELLOW); ty += 36;
             int sw = plog.swings > 0 ? plog.swings : 1;
             LINE(TR("Swings %d:  hit %d (%d%%)   whiff %d (%d%%)", "振った %d：当たった %d（%d%%）  空振り %d（%d%%）"), plog.swings, plog.hits, plog.hits * 100 / sw, plog.whiffs, plog.whiffs * 100 / sw);
             LINE(TR("  whiffs: early %d  late %d  far %d  high %d  low %d", "  空振り：早い %d  遅い %d  遠い %d  高い %d  低い %d"),

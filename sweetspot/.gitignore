@@ -8,3 +8,4 @@ matchlog_old_*.csv
 sweetspot_settings.txt
 sweetspot_sale
 sweetspot_sale.exe
+dist/

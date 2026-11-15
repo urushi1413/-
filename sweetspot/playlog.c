@@ -23,6 +23,7 @@ const char *LogStamp(void)
 
 void LogOpen(PlayLog *L)
 {
+    if (SALE_ONLY) { L->f = NULL; return; }   // 売る版は開発用の記録を書き出さない
     // 列が違う古い記録は、別の名前にして残す（混ざると集計できないので）
     FILE *old = fopen("playlog.csv", "r");
     if (old) {

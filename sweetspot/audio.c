@@ -43,22 +43,22 @@ static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRAT
 typedef struct { const char *file; float pitch, vol, chance; } VoiceProfile;
 static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "ai",       1.00f, 0.90f, 0.60f },
-    { "federerr", 1.06f, 0.55f, 0.05f },   // ほぼ声を出さない（息を吐く音くらい）。出しても小さい
-    { "djokovik", 1.10f, 0.90f, 0.65f },   // 短く鋭い
-    { "nadar",    0.86f, 1.00f, 0.92f },   // ほぼ毎回、低く長く大きい
-    { "murraye",  0.95f, 0.85f, 0.60f },
-    { "alcarazz", 1.00f, 0.95f, 0.80f },   // ストロークの約 8 割、サーブは毎回（Betting.com の調べ）
-    { "sinnerr",  1.05f, 0.80f, 0.15f },   // 静か。強く打ったときにたまに短く
-    { "medvedeb", 0.95f, 0.70f, 0.35f },
-    { "kirgios",  1.00f, 0.95f, 0.50f },   // 2 球に 1 球ほど、大きな声
-    { "williamz", 1.30f, 1.00f, 0.85f },   // 女子：声が高い
-    { "swiontek", 1.40f, 0.85f, 0.60f },
-    { "sabalenco",1.28f, 1.00f, 0.95f },   // 大きな声。ストロークの約 95%、サーブは毎回（Betting.com の調べ）
-    { "gauph",    1.42f, 0.80f, 0.55f },
-    { "sharapowa",1.45f, 1.00f, 1.00f },   // 一番大きい声（毎回）
-    { "bartie",   1.38f, 0.70f, 0.35f },
-    { "nishikoli",1.05f, 0.80f, 0.50f },
-    { "zverew",   0.95f, 0.90f, 0.60f },
+    { PN("federerr", "v01"), 1.06f, 0.55f, 0.05f },   // ほぼ声を出さない（息を吐く音くらい）。出しても小さい
+    { PN("djokovik", "v02"), 1.10f, 0.90f, 0.65f },   // 短く鋭い
+    { PN("nadar", "v03"),    0.86f, 1.00f, 0.92f },   // ほぼ毎回、低く長く大きい
+    { PN("murraye", "v04"),  0.95f, 0.85f, 0.60f },
+    { PN("alcarazz", "v05"), 1.00f, 0.95f, 0.80f },   // ストロークの約 8 割、サーブは毎回（Betting.com の調べ）
+    { PN("sinnerr", "v06"),  1.05f, 0.80f, 0.15f },   // 静か。強く打ったときにたまに短く
+    { PN("medvedeb", "v07"), 0.95f, 0.70f, 0.35f },
+    { PN("kirgios", "v08"),  1.00f, 0.95f, 0.50f },   // 2 球に 1 球ほど、大きな声
+    { PN("williamz", "v09"), 1.30f, 1.00f, 0.85f },   // 女子：声が高い
+    { PN("swiontek", "v10"), 1.40f, 0.85f, 0.60f },
+    { PN("sabalenco", "v11"),1.28f, 1.00f, 0.95f },   // 大きな声。ストロークの約 95%、サーブは毎回（Betting.com の調べ）
+    { PN("gauph", "v12"),    1.42f, 0.80f, 0.55f },
+    { PN("sharapowa", "v13"),1.45f, 1.00f, 1.00f },   // 一番大きい声（毎回）
+    { PN("bartie", "v14"),   1.38f, 0.70f, 0.35f },
+    { PN("nishikoli", "v15"),1.05f, 0.80f, 0.50f },
+    { PN("zverew", "v16"),   0.95f, 0.90f, 0.60f },
 };
 static const VoiceProfile VOICE_HUMAN = { "you", 1.00f, 0.90f, 0.60f };
 static const VoiceProfile VOICE_HUMAN_W = { "you", 1.35f, 0.90f, 0.60f };   // 女子の試合：自分と癖なしの AI は声を高く

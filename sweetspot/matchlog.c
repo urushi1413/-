@@ -16,6 +16,7 @@ static bool  gPending = false;
 
 void MLogOpen(void)
 {
+    if (SALE_ONLY) return;   // 売る版は開発用の記録を書き出さない
     FILE *old = fopen("matchlog.csv", "r");
     if (old) {
         char line[1024] = { 0 };
