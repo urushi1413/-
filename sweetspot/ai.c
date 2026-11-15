@@ -458,8 +458,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
-    gTimingTolMul = HUMAN_TIMING_TOL; gReachAdd = 0.0f; gHeightDelta = 0.0f;
-    if (c.miss != MISS_NONE) { gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f; return false; }
+    RestoreHumanContact();   // 当たりの評価の値は自分の値に戻す（回転やミスは打ち終わってから）
+    if (c.miss != MISS_NONE) { ApplyHumanTraits(); return false; }
     {   // よろめき
         float sg = StaggerAmount(&c, fabsf(ai->vel.x));
         ai->staggerTotal = ai->staggerT = sg > 0.0f ? STAGGER_T0 + STAGGER_T1 * sg : 0.0f;
@@ -471,7 +471,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
 
     float kmh;
     Ball out = PlayerShot(&c, b.pos, target, t, charge, &kmh, NULL, NULL);
-    gLefty = false; gSpinMul = 1.0f; gSliceEdge = 0.0f; gErrMul = 1.0f; gRiseSkill = 0.0f;
+    ApplyHumanTraits();   // 自分の値に戻す
     ai->lastTargetX = target.x;
     // 前に出るか：甘い球をベースラインの内側で攻めたら、強気なほど前に出る。ネットにいれば残る。
     // ロブで下がらされたら（サービスラインより 3m 以上後ろ）、ネットはあきらめる
@@ -528,8 +528,9 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     Vector3 target = { tx, 0.0f, -depth };
     float kmh;
     gLefty = pp->lefty;   // 左利きのサーブは横回転が逆
+    gServeAdd = 0.0f; gServeErrMul = 1.0f;   // AI のサーブの速さとぶれは、もう目標に入っている
     Ball b = HitServe(contact, target, t, Clamp01(charge), q, x0, x1, &kmh);
-    gLefty = false;
+    ApplyHumanTraits();
     b.lastHitter = HITTER_OPP;
     // 見た目：頭上で打つ
     ai->anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = q };

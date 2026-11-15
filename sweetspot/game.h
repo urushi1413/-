@@ -589,7 +589,7 @@ typedef struct {
 extern bool gAllWhite;       // ウィンブルドン：みんな白い服
 Color PersonaShirt(int persona);   // シャツの色（ウィンブルドンは白）
 // リプレイ：1 フレーム分の記録
-typedef struct { float dt; Vector3 ball; bool ballOn; Vector3 pPos, aPos; SwingAnim pA, aA; Color aShirt; } RFrame;
+typedef struct { float dt; Vector3 ball; bool ballOn; Vector3 pPos, aPos; SwingAnim pA, aA; Color aShirt, pShirt; } RFrame;
 void RecReset(void);
 void RecPush(const RFrame *f);
 long RecTotal(void);
@@ -638,6 +638,14 @@ extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
+// 自分が使う選手（0 = 自分＝癖なし）。選手の癖（足、回転、ミス、サーブ、身長、利き手、声、見た目）が自分にも効く
+extern int   gYouPersona;
+extern float gServeAdd;      // サーブの速さの上乗せ（km/h）。自分のサーブだけ（AI のサーブは打つ前に 0 にする）
+extern float gServeErrMul;   // サーブのぶれの倍率
+void  ApplyHumanTraits(void);        // 打球の補正値を、自分（の選手）の値にする（AI が打った後に戻すのにも使う）
+void  RestoreHumanContact(void);     // 当たりの評価に使う値（タイミング・リーチ・身長）だけ戻す
+float PlayerRunSpeed(void);          // 自分の走る速さ（m/s）
+float HumanServeHeightK(void);       // 自分のサーブの打点の高さの倍率（背が高いほど高い）
 extern bool  gWomen;
 extern float gTimingTolMul;
 extern float gReachAdd;       // 届く範囲の上乗せ（m）。背の高い選手ほど長い（AI が打つ間だけ）

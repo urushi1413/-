@@ -31,7 +31,7 @@ const char *TourRoundName(int round)
 const char *TourEntrantName(const Tournament *t, int e)
 {
     if (e < 0) return "";
-    if (t->slot[e] < 0) return "YOU";
+    if (t->slot[e] < 0) return gYouPersona ? TextFormat("YOU (%s)", PERSONAS[gYouPersona].shortName) : "YOU";
     if (t->slot[e] == 0) return t->women ? QUAL_WOMEN[t->qual[e]] : QUAL_MEN[t->qual[e]];
     return PERSONAS[t->slot[e]].name;
 }
@@ -54,7 +54,8 @@ void TourStart(Tournament *t, bool women, int slam, int setsToWin)
     t->active = true; t->women = women; t->slam = slam; t->surface = TourSlamSurface(slam); t->setsToWin = setsToWin;
     // 出る選手：そのツアーの選手を全員（強い順に並べる）
     int pool[TOUR_SIZE], np = 0;
-    for (int i = 0; i < TourPersonaCount(women) && np < TOUR_SIZE - 1; i++) pool[np++] = TourPersonaAt(women, i);
+    for (int i = 0; i < TourPersonaCount(women) && np < TOUR_SIZE - 1; i++)
+        if (TourPersonaAt(women, i) != gYouPersona) pool[np++] = TourPersonaAt(women, i);   // 自分が使う選手は出ない
     for (int i = 0; i < np; i++) for (int j = i + 1; j < np; j++) if (RankStr(pool[j]) > RankStr(pool[i])) { int x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
     // シードの位置：1 は一番上、2 は一番下、3・4 は 5 番目と 12 番目（くじ）、5〜8 は 4・8・9・13 番目（くじ）
     for (int i = 0; i < TOUR_SIZE; i++) t->slot[i] = -2;   // まだ空き

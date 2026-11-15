@@ -91,14 +91,14 @@ Ball HitServe(Vector3 contact, Vector3 target, ServeType type, float charge, flo
                      float x0, float x1, float *outKmh)
 {
     const ServeSpec *sp = &SERVES[type];
-    float kmh = Lerp(sp->minKmh, sp->maxKmh, charge) * (0.80f + 0.20f * q) * (gWomen ? WOMEN_SERVE_K : 1.0f);
+    float kmh = (Lerp(sp->minKmh, sp->maxKmh, charge) + gServeAdd * (0.5f + 0.5f * charge)) * (0.80f + 0.20f * q) * (gWomen ? WOMEN_SERVE_K : 1.0f);
     float sk = (0.70f + 0.30f * q) * (gWomen ? WOMEN_SPIN_K : 1.0f);
     Vector3 spin = { Lerp(sp->top0, sp->top1, charge) * sk, Lerp(sp->side0, sp->side1, charge) * sk,
                      Lerp(sp->gyro0, sp->gyro1, charge) * sk };
     if (gLefty) { spin.y = -spin.y; spin.z = -spin.z; }   // 左利き：横回転とジャイロが逆向き
     Vector3 dir; float pitch;
     SolveServe(contact, target, kmh / 3.6f, spin, &dir, &pitch);
-    float effort = (0.5f + 0.8f * charge) * (gCasual ? 0.55f : 1.0f);   // 振り切るほどぶれる（簡単モードは小さく）
+    float effort = (0.5f + 0.8f * charge) * (gCasual ? 0.55f : 1.0f) * gServeErrMul;   // 振り切るほどぶれる（簡単モードは小さく）
     float yawErr   = RandNormal() * (0.50f + (1.0f - q) * 2.5f) * effort * DEG2RAD;
     float pitchErr = RandNormal() * (0.20f + (1.0f - q) * 1.0f) * effort * DEG2RAD;
     dir = Vector3RotateByAxisAngle(dir, (Vector3){ 0, 1, 0 }, yawErr);

@@ -94,7 +94,7 @@ void DrawReplayFrame(const RFrame *f, Camera3D cam)
 {
     DrawCourt();
     DrawStadium(cam.position, f->ball, 0.0f, (float)GetTime(), (Vector3){ 0 }, 0.0f);
-    DrawFigure(f->pPos, true, (Color){ 240, 240, 245, 255 }, &f->pA, 0.0f);
+    DrawFigure(f->pPos, true, f->pShirt, &f->pA, 0.0f);
     DrawFigure(f->aPos, false, f->aShirt, &f->aA, 0.0f);
     if (f->ballOn) {
         float d = Vector3Distance(cam.position, f->ball);

@@ -74,6 +74,39 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
     return c->dive || c->side > OFFBALANCE_R;
 }
 
+// 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; } Settings;
+static const char *SETTINGS_FILE = "sweetspot_settings.txt";
+static void SaveSettingsFile(const Settings *s)
+{
+    FILE *f = fopen(SETTINGS_FILE, "w");
+    if (!f) return;
+    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\n",
+            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol);
+    fclose(f);
+}
+static bool LoadSettingsFile(Settings *s)
+{
+    FILE *f = fopen(SETTINGS_FILE, "r");
+    if (!f) return false;
+    char line[128];
+    while (fgets(line, sizeof(line), f)) {
+        char key[64]; float v;
+        if (sscanf(line, "%63[^=]=%f", key, &v) != 2) continue;
+        int iv = (int)v;
+        if (!strcmp(key, "sets")) s->sets = iv;           else if (!strcmp(key, "women")) s->women = iv;
+        else if (!strcmp(key, "play_as")) s->you = iv;    else if (!strcmp(key, "opponent")) s->opp = iv;
+        else if (!strcmp(key, "ai_level")) s->level = iv; else if (!strcmp(key, "style")) s->style = iv;
+        else if (!strcmp(key, "court")) s->court = iv;    else if (!strcmp(key, "assist")) s->assist = iv;
+        else if (!strcmp(key, "pro_feed")) s->feed = iv; else if (!strcmp(key, "aim_lanes")) s->lanes = iv;
+        else if (!strcmp(key, "camera")) s->cam = iv;     else if (!strcmp(key, "screen_info")) s->hud = iv;
+        else if (!strcmp(key, "guides")) s->guides = iv;  else if (!strcmp(key, "sensitivity")) s->sens = v;
+        else if (!strcmp(key, "volume")) s->vol = v;
+    }
+    fclose(f);
+    return true;
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -184,6 +217,12 @@ int main(void)
     static char oppShort[24] = "";       // 大会の予選上がりの名前（試合中の表示用）
 #define OPP_SHORT ((ai.persona == 0 && tour.active && oppShort[0]) ? oppShort : PERSONAS[ai.persona].shortName)
     int slamSel = 0;                     // メニューで選んだグランドスラム（4 = シーズン）
+    // 画面の表示：0 FULL（全部）1 CLEAN（操作説明と状態の行を消す）2 MINIMAL（スコアと溜めのゲージだけ）3 OFF（中継のようにスコアだけ）
+    int hudLevel = 0;
+    // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
+    int guideLevel = 0;
+    static const char *HUD_NAMES[4] = { "FULL", "CLEAN (no help lines)", "MINIMAL (score + gauge)", "OFF (TV style)" };
+    static const char *GUIDE_NAMES[3] = { "ALL", "AIM ONLY", "OFF" };
     // リプレイ・ハイライト
     long pointStart = 0;                 // 今のポイントが始まったフレーム（記録の通し番号）
     bool hlPending = false;              // 前のポイントをハイライトに取っておく
@@ -196,6 +235,22 @@ int main(void)
     bool  quitGame = false;
     bool  skipMouseDelta = false;
     int   menuFrames = 0;              // メニューを開いてからのフレーム数
+    // 設定：前回の設定を読む（なければ今の初期値）
+#define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume() }; SaveSettingsFile(&s_); } while (0)
+    {
+        Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume() };
+        if (LoadSettingsFile(&s)) {
+            setsToWin = Clamp(s.sets, 1, 3); gWomen = s.women != 0;
+            gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
+            ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
+            ai.level = Clamp(s.level, 0, 2); style = (PlayStyle)Clamp(s.style, 0, STYLE_COUNT - 1); gSurface = (SurfaceType)Clamp(s.court, 0, SURF_COUNT - 1);
+            assistLevel = Clamp(s.assist, 0, 2); proFeed = s.feed != 0; aimLanes = s.lanes != 0; camMode = Clamp(s.cam, 0, 2);
+            hudLevel = Clamp(s.hud, 0, 3); guideLevel = Clamp(s.guides, 0, 2);
+            aimSens = Clamp(s.sens, 0.25f, 3.0f); SfxSetVolume(Clamp(s.vol, 0.0f, 1.0f));
+        }
+    }
 
     // 直前のフレームの物理ステップごとのボールの状態。
     // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
@@ -224,6 +279,7 @@ int main(void)
         if (ai.anim.splitT > 0.0f)  ai.anim.splitT  -= simDt;
 
         gAllWhite = tour.active && tour.slam == 2;   // ウィンブルドンは白い服
+        ApplyHumanTraits();                          // 自分が使う選手の癖（足、回転、ミス、サーブ、身長、利き手）
         // ================= 大会の組み合わせ表 =================
         if (app == APP_BRACKET) {
             SfxCrowd(false, 0.0f);
@@ -254,12 +310,12 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_RESTART, MI_TITLE, MI_QUIT };
-            int items[20], n = 0;
+            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_RESTART, MI_TITLE, MI_QUIT };
+            int items[24], n = 0;
             items[n++] = MI_PLAY;
             if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
-            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA;
+            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA; items[n++] = MI_HUD; items[n++] = MI_GUIDES;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
             static const char *assistNames[3] = { "OFF", "TIMING", "TIMING + SPOT" };
@@ -267,8 +323,8 @@ int main(void)
 
             int W = GetScreenWidth(), H = GetScreenHeight();
             // 行が多いときは、画面に収まるように行を詰める
-            int pw = 640, rowH = Clamp((GetScreenHeight() - 270) / n, 28, 40), ph = 150 + n * rowH + 110;
-            int fs = rowH >= 36 ? 24 : 20;
+            int pw = 680, rowH = Clamp((GetScreenHeight() - 210) / n, 21, 40), ph = 110 + n * rowH + 86;
+            int fs = rowH >= 36 ? 24 : rowH >= 28 ? 20 : 18;
             int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
             int rowY0 = py + 110;
 
@@ -295,7 +351,16 @@ int main(void)
                 switch (it) {
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
-                    case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); forceRestart = true; break;
+                    case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); gYouPersona = 0; forceRestart = true; break;
+                    case MI_PLAYER: {   // 自分が使う選手：癖なし（0）→ そのツアーの選手
+                        int cnt = TourPersonaCount(gWomen) + 1;
+                        int k = gYouPersona ? TourPersonaIndex(gWomen, gYouPersona) + 1 : 0;
+                        k = (k + cnt + change) % cnt;
+                        gYouPersona = k ? TourPersonaAt(gWomen, k - 1) : 0;
+                        forceRestart = true;
+                    } break;
+                    case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
+                    case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
@@ -309,6 +374,7 @@ int main(void)
                     case MI_SOUND:  SfxSetVolume(roundf(Clamp(SfxGetVolume() + 0.1f * change, 0.0f, 1.0f) * 10.0f) / 10.0f); break;
                     default: break;
                 }
+                if (it != MI_TOURNAMENT) SaveSettings();
             }
             if (activate) {
                 if (it == MI_PLAY || it == MI_RESTART) {
@@ -349,7 +415,10 @@ int main(void)
                     case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
                     case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
                     case MI_TOUR:    label = "Tour";            value = gWomen ? "WOMEN" : "MEN"; break;
+                    case MI_PLAYER:  label = "Play as";         value = gYouPersona ? PERSONAS[gYouPersona].name : "YOU (no traits)"; break;
                     case MI_OPP:     label = "Opponent";        value = PERSONAS[ai.persona].name; break;
+                    case MI_HUD:     label = "Screen info (F1)"; value = HUD_NAMES[hudLevel]; break;
+                    case MI_GUIDES:  label = "Guides (F2)";     value = GUIDE_NAMES[guideLevel]; break;
                     case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
                     case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
                     case MI_COURT:   label = "Court";           value = gSurface == SURF_CLAY ? "CLAY (slow, high)"
@@ -382,6 +451,8 @@ int main(void)
         }
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
+        if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), "SCREEN INFO: %s  (F1)", HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
+        if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), "GUIDES: %s  (F2)", GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
             if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "SOUND OFF  (M)"); }
             else {
@@ -606,7 +677,7 @@ int main(void)
             P.vel = (Vector3){ 0 };
         } else {
             // 溜めている間は少し遅くなる（構えながら動く）
-            float spd = PLAYER_SPEED * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f)
+            float spd = PlayerRunSpeed() * (P.chargingShot >= 0 ? CHARGE_MOVE : 1.0f) * (in.crouch ? CROUCH_SPEED : 1.0f)
                       * fminf(P.recoverT > 0.0f ? STRETCH_MOVE : 1.0f, StaggerSpeedMul(P.staggerT, P.staggerTotal));   // 体勢が崩れている間は遅い
             Vector3 want = (Vector3Length(move) > 0.0f) ? Vector3Scale(Vector3Normalize(move), spd) : (Vector3){ 0 };
             // 足の自動調整：溜めている間、球がこの先 0.45 秒で一番近くを通る点を見て、その点を打ちやすい位置（体の横 0.94m）へ小刻みに寄せる。
@@ -631,7 +702,7 @@ int main(void)
                     if (d > 0.04f && d < FOOT_ASSIST_R) {
                         want = Vector3Add(want, Vector3Scale(to, fminf(d * 6.0f, FOOT_ASSIST_SPEED) / d));
                         float wl = Vector3Length(want);
-                        if (wl > PLAYER_SPEED) want = Vector3Scale(want, PLAYER_SPEED / wl);
+                        if (wl > PlayerRunSpeed()) want = Vector3Scale(want, PlayerRunSpeed() / wl);
                     }
                 }
             }
@@ -703,7 +774,8 @@ int main(void)
         P.aimDepth = Clamp(P.aimDepth, -(HALF_LEN - 0.3f), -1.2f);
 
         // ---- サーブ（自分）----
-        Vector3 tossIdeal = { P.pos.x + 0.25f, SERVE_IDEAL_H, P.pos.z - 0.35f };   // 理想の打点（これ以上の高さ）
+        Vector3 tossIdeal = { P.pos.x + (gLefty ? -0.25f : 0.25f), SERVE_IDEAL_H * HumanServeHeightK(), P.pos.z - 0.35f };   // 理想の打点（これ以上の高さ）。背が高いほど高い。左利きは左
+        float handS = gLefty ? -1.0f : 1.0f;   // 利き手の側（右利き +1）
         if (playerServing) {
             if (P.sv == SV_READY) {
                 // サーブの狙いはサービスボックスの中
@@ -723,7 +795,7 @@ int main(void)
                     playerGrunt = false; playerGruntTried = false;
                     P.tossOffset = (Vector2){ RandNormal() * TOSS_SPREAD, RandNormal() * TOSS_SPREAD };
                     ball = (Ball){ 0 };
-                    ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f, tossIdeal.z + P.tossOffset.y };
+                    ball.pos = (Vector3){ tossIdeal.x + P.tossOffset.x, 1.9f * HumanServeHeightK(), tossIdeal.z + P.tossOffset.y };
                     ball.vel = (Vector3){ 0.0f, TOSS_SPEED, 0.0f };
                     ball.active = true;
                     ball.netClearance = -99.0f;
@@ -735,7 +807,7 @@ int main(void)
             } else if (P.sv == SV_TOSS) {
                 P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 P.serveT += simDt;
-                if (!playerGruntTried && P.serveT >= 0.50f - GRUNT_LEAD) { playerGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos)); playerGruntTried = true; }
+                if (!playerGruntTried && P.serveT >= 0.50f - GRUNT_LEAD) { playerGrunt = SfxGruntPreBy(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos)); playerGruntTried = true; }
                 P.anim.windup = 0.3f + 0.7f * P.charge;
                 P.anim.windStroke = 2;
                 bool serveReleased = in.released[P.chargeSrc];
@@ -772,7 +844,7 @@ int main(void)
                         if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
                     } else {
                         Ball hb = history[best];
-                        float qH = Clamp01(1.0f - fmaxf(SERVE_IDEAL_H - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
+                        float qH = Clamp01(1.0f - fmaxf(tossIdeal.y - hb.pos.y, 0.0f) / SERVE_TOL_H);   // 高い分には減点しない
                         float qT = Clamp01(1.0f - Vector2Length(P.tossOffset) / TOSS_TOL);
                         float q = qH * qT;
                         // コース：左右はマウスの印（サービスボックスの中）、深さはトスから離すまでの時間
@@ -910,7 +982,7 @@ int main(void)
                     Assist ga = ComputeAssist(P.pos, P.vel, &ball, (ShotType)P.chargingShot, P.charge);
                     gCasual = false;
                     if (ga.timingValid && !ga.overhead && ga.tBest <= GRUNT_LEAD && ga.qBest > 0.2f) {
-                        playerGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos));
+                        playerGrunt = SfxGruntPreBy(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
                         playerGruntTried = true;
                     }
                 }
@@ -920,7 +992,7 @@ int main(void)
                 P.anim.slice = IsSliceShot((ShotType)P.chargingShot);
                 if (ball.active && ball.lastHitter == HITTER_OPP)
                     P.anim.windStroke = ball.pos.y > OVERHEAD_MIN_H && Vector3Distance(ball.pos, P.pos) < 6.0f ? 2
-                                          : (ball.pos.x >= P.pos.x ? 0 : 1);
+                                          : ((gLefty ? ball.pos.x <= P.pos.x : ball.pos.x >= P.pos.x) ? 0 : 1);   // 左利きは体の左がフォア
                 P.anim.smash = P.anim.windStroke == 2;
                 bool released = in.released[P.chargeSrc];
                 if (released) {
@@ -1011,8 +1083,8 @@ int main(void)
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
                     P.anim.swingT = 0.0f;
                     P.anim.smash = c.overhead;
-                    if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
-                    else P.lastIdealPos = (Vector3){ P.pos.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE),
+                    if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE * handS, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
+                    else P.lastIdealPos = (Vector3){ P.pos.x + (c.forehand ? IDEAL_SIDE : -IDEAL_SIDE) * handS,
                                                    SHOTS[type].idealHeight, P.pos.z - IDEAL_FWD };
                     P.lastContactPos = sb;
                     if (c.miss == MISS_NONE && c.dive) { P.downT = DIVE_DOWN_TIME; P.vel = (Vector3){ 0 }; }
@@ -1066,6 +1138,7 @@ int main(void)
 
                     if (c.miss != MISS_NONE && c.miss != MISS_NO_BALL) SfxWhiff();
                     if (c.miss == MISS_NONE) {
+                        if (c.volley) c.quality += (1.0f - c.quality) * 0.25f * PERSONAS[gYouPersona].volleySkill;   // ボレーのうまい選手は当たりの悪さを少し取り戻す
                         gHumanShot = true;
                         ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
@@ -1521,12 +1594,15 @@ int main(void)
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
 
             // プレイヤー（-z 向き）と AI（+z 向き）
-            ApplyLook(&P.anim, -1); ApplyLook(&bot.anim, -1);
+            ApplyLook(&P.anim, gYouPersona ? gYouPersona : -1); ApplyLook(&bot.anim, gYouPersona ? gYouPersona : -1);   // 自分が使う選手の見た目
+            P.anim.lefty = bot.anim.lefty = PERSONAS[gYouPersona].lefty;
+            P.anim.oneHanded = bot.anim.oneHanded = PERSONAS[gYouPersona].oneHanded;
+            Color youShirt = gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
             // サーブの構え（トスの前）：横向きに立ち、左手にボール
             P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY;
             bot.anim.serveStance = bot.anim.holdBall = false;
             ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over;
-            DrawFigure(P.pos, true, (Color){ 240, 240, 245, 255 }, botControls ? &bot.anim : &P.anim,
+            DrawFigure(P.pos, true, youShirt, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
             {
@@ -1540,7 +1616,7 @@ int main(void)
                 DrawFigure(ai.pos, false, PersonaShirt(ai.persona), &ai.anim, Vector3Length(ai.vel));
             }
 
-            if (playerServing) {
+            if (playerServing && guideLevel <= 1) {
                 // 狙うサービスボックスを薄く塗る
                 float x0, x1;
                 ServiceBox(P.pos.x, -1, &x0, &x1);
@@ -1548,7 +1624,7 @@ int main(void)
                          Fade(YELLOW, 0.15f));
                 // 理想の打点
                 DrawSphereWires(tossIdeal, 0.12f, 6, 8, Fade(RAYWHITE, 0.8f));
-            } else if (mode != MODE_SERVE && !botControls) {
+            } else if (!playerServing && mode != MODE_SERVE && !botControls && guideLevel == 0) {
                 // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
                 DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
                 {   // 届く限界：溜めている球種（スライスは広い）、スライド、簡単モードで広がる
@@ -1560,7 +1636,7 @@ int main(void)
                 ShotType t = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 Color zc = Fade(SHOTS[t].color, 0.8f);
                 if (P.chargingShot >= 0 && P.anim.windStroke == 2) {
-                    DrawSphereWires((Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }, 0.15f, 6, 8, zc);
+                    DrawSphereWires((Vector3){ P.pos.x + OVERHEAD_SIDE * handS, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }, 0.15f, 6, 8, zc);
                 } else {
                     float h = SHOTS[t].idealHeight;
                     DrawSphereWires((Vector3){ P.pos.x + IDEAL_SIDE, h, P.pos.z - IDEAL_FWD }, 0.15f, 6, 8, zc);
@@ -1640,8 +1716,8 @@ int main(void)
                     }
                 }
                 if (as.timingValid && as.tBest < 1.2f) {
-                    Vector3 ip = as.overhead ? (Vector3){ P.pos.x + OVERHEAD_SIDE, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }
-                                             : (Vector3){ P.pos.x + (as.fore ? IDEAL_SIDE : -IDEAL_SIDE), SHOTS[at].idealHeight,
+                    Vector3 ip = as.overhead ? (Vector3){ P.pos.x + OVERHEAD_SIDE * handS, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD }
+                                             : (Vector3){ P.pos.x + (as.fore ? IDEAL_SIDE : -IDEAL_SIDE) * handS, SHOTS[at].idealHeight,
                                                           P.pos.z - IDEAL_FWD };
                     float rr = 0.16f + 1.4f * as.tBest;
                     Color rc = QualityColor(as.qBest);
@@ -1651,7 +1727,7 @@ int main(void)
             }
 
             // 狙い：相手コートに印（溜めている間は球種の色、それ以外は白）
-            if (!botControls && (playerServing || (mode != MODE_SERVE && (P.chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
+            if (!botControls && guideLevel <= 1 && (playerServing || (mode != MODE_SERVE && (P.chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
                 // 左右はマウス、深さは押している長さ。押していない間は、浅い〜深いの範囲を線で出す
                 ShotType mt = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;
                 bool pressing = P.chargingShot >= 0 || P.chargingServe >= 0;
@@ -1691,7 +1767,7 @@ int main(void)
             }
 
             // 軌跡：新しいところほど濃く。相手の球は明るい色で
-            {
+            if (guideLevel == 0) {
                 bool incoming = ball.lastHitter == HITTER_OPP;
                 Color tc = incoming ? (Color){ 255, 255, 170, 255 } : trailColor;
                 for (int i = 1; i < trailCount; i++) {
@@ -1708,7 +1784,7 @@ int main(void)
                 DrawCylinder((Vector3){ bouncePos.x, 0.0015f, bouncePos.z + 0.06f }, 0.045f, 0.045f, 0.001f, 12, mk);
             }
             // 自分の打球：狙った場所と落ちた場所を線で結ぶ（1m 以内は緑、2.5m 以内は黄、それ以上は赤）
-            if (bounceByPlayer && bounceT < 1.8f) {
+            if (bounceByPlayer && bounceT < 1.8f && guideLevel == 0) {
                 Vector3 at = { P.lastAimTarget.x, 0.02f, P.lastAimTarget.z };
                 Vector3 lp = { bouncePos.x, 0.02f, bouncePos.z };
                 float miss = Vector3Distance(at, lp);
@@ -1751,10 +1827,10 @@ int main(void)
         EndMode3D();
 
         // ポイントの後：リプレイの案内
-        if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls)
+        if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)
             DrawText("R: replay", GetScreenWidth() / 2 - MeasureText("R: replay", 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
-        if (tour.active && mode == MODE_MATCH) {
+        if (tour.active && mode == MODE_MATCH && hudLevel <= 2) {
             const char *tl = TextFormat("%s  -  %s", TourName(tour.slam), TourRoundName(tour.round));
             DrawText(tl, (int)fmaxf(520.0f, GetScreenWidth() / 2 - MeasureText(tl, 18) / 2), 8, 18, Fade(YELLOW, 0.85f));
         }
@@ -1784,8 +1860,9 @@ int main(void)
 
         // ---- HUD ----
         // 左上のパネルは小さく薄く（相手コートの奥を隠さないように）
-        DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         int y = 20;
+        if (hudLevel <= 1) {   // 左上：当たりの分析（MINIMAL と OFF では出さない）
+        DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         bool showServeInfo = (mode == MODE_SERVE) || (playerServing && mode == MODE_MATCH);
         if (showServeInfo) {
             DrawText(TextFormat("%s serve  -  %s court", serveNo == 1 ? "1st" : "2nd", deuceSide ? "deuce" : "ad"),
@@ -1852,7 +1929,9 @@ int main(void)
         } else {
             DrawText("Move to the ball. Hold longer = deeper. Release to swing", 20, y, 18, RAYWHITE);
         }
-        // 下：成績と操作説明（コートの奥を隠さない場所）
+        }   // 左上のパネル
+        // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ
+        if (hudLevel == 0) {
         y = GetScreenHeight() - 98;
         if (mode == MODE_SERVE)
             DrawText(TextFormat("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d",
@@ -1869,6 +1948,7 @@ int main(void)
         else
             DrawText(TextFormat("G mode: %s   V feed: %s   F feed  C cam  T slow", MODE_NAMES[mode], proFeed ? "PRO" : "CLUB"),
                      20, y, 16, LIGHTGRAY);
+        }
 
         // スコア（試合）
         if (mode == MODE_MATCH) {
@@ -1903,7 +1983,7 @@ int main(void)
                 DrawRectangle(gx, gy, 18, 18, gc);
                 if (score.gameWinner[g] != score.gameServer[g]) DrawText("B", gx + 5, gy + 2, 14, RED);
             }
-            if (ai.lastKmh > 0.0f) {
+            if (ai.lastKmh > 0.0f && hudLevel <= 1) {
                 int ly = sy + (score.nGames ? 126 : 102);
                 DrawRectangle(sx, ly - 3, sbw, 22, Fade((Color){ 10, 20, 40, 255 }, 0.6f));
                 DrawText(TextFormat("AI last: %s %.0f km/h", ai.lastServe ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
@@ -1981,7 +2061,7 @@ int main(void)
 
         // 溜めゲージ
         int gw = 300, gx = GetScreenWidth() / 2 - gw / 2, gy = GetScreenHeight() - 140;   // 下の操作説明と重ならない高さ
-        if (P.chargingShot >= 0) {
+        if (P.chargingShot >= 0 && hudLevel <= 2) {
             const ShotSpec *sp = &SHOTS[P.chargingShot];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
             // 押している長さ＝深さ。白い線が一番深いところ、その先（赤）はアウト
@@ -1997,7 +2077,7 @@ int main(void)
                 DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, pw), dz,
                                     dz > HALF_LEN ? "  LONG" : ""), gx, gy - 24, 20, dz > HALF_LEN ? RED : RAYWHITE);
         }
-        if (P.chargingServe >= 0) {
+        if (P.chargingServe >= 0 && hudLevel <= 2) {
             const ServeSpec *sp = &SERVES[P.chargingServe];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
             DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
@@ -2012,13 +2092,13 @@ int main(void)
             DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
         }
         if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
-        {
+        if (hudLevel == 0) {
             static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
             DrawText(TextFormat("Camera: %s (C)", camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
         }
         if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
-        DrawText("Tab: stats", GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
-        {
+        if (hudLevel == 0) DrawText("Tab: stats", GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
+        if (hudLevel == 0) {
             static const char *an[3] = { "OFF", "TIMING", "TIMING+SPOT" };
             DrawText(TextFormat("H assist: %s", an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
             DrawText(TextFormat("N style: %s", STYLE_NAMES[style]), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);
@@ -2036,7 +2116,7 @@ int main(void)
         EndDrawing();
         // リプレイ用に記録（試合中だけ。描いたままの姿勢で）
         if (mode == MODE_MATCH && app == APP_PLAY) {
-            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PersonaShirt(ai.persona) };
+            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PersonaShirt(ai.persona), gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 } };
             RecPush(&f);
         }
     }
