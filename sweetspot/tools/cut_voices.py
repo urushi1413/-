@@ -29,6 +29,7 @@ CUTS = [
     # djokovic_shot_voice.m4a は alcaraz.m4a と同じ音だったので使わない
 ]
 HIT_PEAK = 0.89   # 打った後の声の大きさ（いまの hit_voice と同じ）
+PRE_LOUD = 10 ** (-20 / 20)   # 打つ前の声の聞こえる大きさ（300Hz〜4kHz の大きさ）。共通の声（4 倍にしたもの）が約 -19dB
 HIT_MIX = 3.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の 3 分の 1 ほど（遠くの声）
 
 
@@ -63,6 +64,10 @@ def make_pair(x, s, c, e, seed, amt, ball_idx):
     pre, hit = seg[:cc].copy(), seg[cc:].copy()
     g = HIT_PEAK / max(np.max(np.abs(hit)), 1e-6)       # 打つ前と同じ倍率
     pre, hit = pre * g, hit * g
+    # 打つ前の声は、共通の声と同じくらい聞こえるように上げる（元の録音の比のままだと小さすぎる）。上げすぎると雑音が目立つので 10 倍まで
+    pl = np.sqrt(np.mean(lp(hp(pre, 300), 4000) ** 2)) + 1e-9
+    pre = pre * min(10.0, max(1.0, PRE_LOUD / pl))
+    pre = np.tanh(pre / 0.95) * 0.95                   # 大きくしすぎた山を丸める
     n = int(0.01 * SR)
     pre[:n] *= np.linspace(0, 1, n)                     # 鳴り始めをなめらかに（つなぎ目は切らない）
     f = int(0.06 * SR)

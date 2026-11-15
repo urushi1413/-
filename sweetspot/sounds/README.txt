@@ -54,7 +54,7 @@ SWEET SPOT の効果音フォルダ
   例：nadar_grunt_pre.wav, nadar_hit_voice.wav, nadar_celebrate.wav（バモス！）, murraye_angry.wav
   <名前>_serve_pre / <名前>_serve_voice   サーブの声（なければその選手のストロークの声）
   選手本人の録音では、打つ前の声（_pre）の長さだけ前から鳴らし始める（録音ごとに長さを変えてよい）。
-  _pre と _voice は同じ録音の前半と後半で、同じ倍率で大きさをそろえて切る（打つ前の声を後から大きくしない）。
+  _pre と _voice は同じ録音の前半と後半。打つ前の声（_pre）は共通の声と同じくらい聞こえるように上げる（10 倍まで。ゲームでは上げない）。
   _2, _3 … を置いたときは、打つ前と打った後を必ず同じ番号の組で鳴らす。
   切り分けは python3 tools/cut_voices.py <録音フォルダ>（打った瞬間の秒数は tools/cut_voices.py の表に書く）
   近くで録った声（打球音なし）は、cut_voices.py が遠くに聞こえるように加工し（低い音を削る・コートの響き）、
