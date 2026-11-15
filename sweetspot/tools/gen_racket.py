@@ -4,14 +4,15 @@
 #     ・2〜6ms で消える鋭い「パキッ」（カーボンのフレームがコートに当たる、広い帯域の音）
 #     ・800〜900Hz あたりのフレームの響き（約 20ms で消える）と、少し高い倍音
 #     ・約 24ms おきに 2〜3 回、跳ね返りの小さな当たりが続く
-#     ・コートに当たる低い「ドッ」
+#     ・コートに当たる低い「ドン」（150〜400Hz が強い）、約 30ms 後にほぼ同じ強さの 2 回目の当たり
+#     ・会場の響き（ピークより 15〜20dB 小さい音が長く残る）
 #   使い方: python3 tools/gen_racket.py   → sounds/racket_smash*.wav, sounds/racket_land*.wav
 #   必要: numpy, scipy, soundfile
 import os
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, sosfilt, fftconvolve
 
 SR = 44100
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "sounds")
@@ -59,30 +60,52 @@ def contact(rng, amp, bright, ring_tau, n):
     return y * amp
 
 
+def arena_ir(rng, length=1.6):
+    """会場の響き：少し遅れて届く跳ね返り（客席・壁）と、長く残る響き"""
+    n = int(length * SR)
+    ir = np.zeros(n)
+    ir[0] = 1.0
+    for d in rng.uniform(0.012, 0.09, 10):                      # 近くの壁・客席からの跳ね返り
+        ir[int(d * SR)] += rng.uniform(0.04, 0.12) * rng.choice([-1, 1])
+    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.32 * SR))   # 長い響き（約 1 秒で消える）
+    tail[: int(0.02 * SR)] = 0
+    ir += lp(tail, 5000) * 0.022
+    return ir
+
+
 def smash(seed, bright=1.0, dull=0.0):
-    """叩きつけ 1 回分。bright：最初の一撃の高い「パキッ」、dull：曲がったラケットのにぶさ"""
+    """叩きつけ 1 回分。実際の音に合わせて：
+         ・低い「ドン」（150〜400Hz）がいちばん強い帯域と同じくらい大きい
+         ・約 30ms 後にラケットのもう一方（ヘッドかグリップ）がほぼ同じ強さで当たる（「バ・キン」）
+         ・会場に響いて、ピークより 15〜20dB 小さい音が長く残る"""
     rng = np.random.default_rng(seed)
-    n = int(0.45 * SR)
-    y = np.zeros(n)
-    ring = 0.020 * (1 - 0.4 * dull)
-    y += contact(rng, 1.0, bright * (1 - dull), ring, n)
-    # 跳ね返り：約 24ms おきに 2〜3 回、だんだん小さく
-    t = 0.0
-    for k in range(rng.integers(2, 4)):
-        t += rng.uniform(0.020, 0.030)
-        s = int(t * SR)
-        y[s:] += contact(rng, rng.uniform(0.25, 0.55) * (0.75 ** k), 0.3 * bright, ring * 0.8, n - s)
-    # ラケットが転がって止まるカタカタ（小さく）
-    t += rng.uniform(0.06, 0.1)
-    for k in range(rng.integers(2, 5)):
-        s = int(t * SR)
+    n = int(0.5 * SR)
+    t = np.arange(n) / SR
+    ring = 0.035 * (1 - 0.3 * dull)
+
+    def body(amp, br):
+        y = contact(rng, amp, br, ring, n)
+        # 低い「ドン」：コートとラケットの胴の響き（ノイズを 150〜400Hz に絞ったもの＋低い共鳴）
+        m = int(0.12 * SR)
+        thump = band(rng.normal(0, 1, m), 150, 420) * decay(m, 0.03) * 2.4
+        thump += 1.0 * np.sin(2 * np.pi * rng.uniform(170, 260) * t[:m]) * decay(m, 0.04)
+        y[:m] += thump * amp
+        return y
+
+    y = body(1.0, bright * (1 - dull))
+    s2 = int(rng.uniform(0.024, 0.036) * SR)                     # 2 回目の当たり
+    y[s2:] += body(rng.uniform(0.7, 0.95), 0.7 * bright)[: n - s2]
+    tt = s2 / SR
+    for k in range(rng.integers(2, 4)):                          # 跳ねて転がるカタカタ
+        tt += rng.uniform(0.05, 0.09)
+        s = int(tt * SR)
         if s >= n:
             break
-        y[s:] += contact(rng, 0.12 * (0.7 ** k), 0.0, 0.008, n - s)
-        t += rng.uniform(0.035, 0.06)
+        y[s:] += contact(rng, 0.25 * (0.7 ** k), 0.3, 0.012, n - s)
     if dull > 0:
-        y = lp(y, 6000 - 3500 * dull)
-    return y
+        y = lp(y, 7000 - 3000 * dull)
+    wet = fftconvolve(y, arena_ir(rng))
+    return wet
 
 
 def land(seed):
@@ -103,7 +126,7 @@ def land(seed):
 
 
 def finish(y, drive=1.0):
-    y = hp(y, 220)
+    y = hp(y, 90)
     f = int(0.03 * SR)
     y[-f:] *= np.linspace(1, 0, f)
     y = y / np.max(np.abs(y))
@@ -116,9 +139,9 @@ if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     # 聞き比べで選んだ「最初の一撃」（鋭く高いパキッ）の作り方で 5 種類。叩くたびに順に鳴らす
     files = {
-        "racket_smash": (smash(1, 1.0), 3.0), "racket_smash_2": (smash(2, 1.0, 0.05), 3.0),
-        "racket_smash_3": (smash(3, 1.0, 0.1), 3.0), "racket_smash_4": (smash(4, 0.95, 0.12), 3.0),
-        "racket_smash_5": (smash(7, 0.9, 0.15), 3.0),
+        "racket_smash": (smash(1, 1.0), 1.4), "racket_smash_2": (smash(2, 1.0, 0.05), 1.4),
+        "racket_smash_3": (smash(3, 1.0, 0.1), 1.4), "racket_smash_4": (smash(4, 0.95, 0.12), 1.4),
+        "racket_smash_5": (smash(7, 0.9, 0.15), 1.4),
     }
     # 投げたラケットが落ちる音（land）は聞き比べで外した
     for name, (y, drive) in files.items():
