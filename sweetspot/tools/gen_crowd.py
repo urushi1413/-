@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # SWEET SPOT — 観客のブーイングと「おお〜」を合成する（録音素材が見つからなかったため）
 #   大勢の声（声の高さ・長さ・始まりを少しずつ変えた「ウー」「オー」）を重ね、会場の響きを足す
-#   使い方: python3 tools/gen_crowd.py   → sounds/ooh*.ogg
+#   使い方: python3 tools/gen_crowd.py   → sounds/boo*.ogg, sounds/ooh*.ogg
 #   必要: numpy, scipy, soundfile
 import os
 import numpy as np
-from scipy.signal import lfilter, fftconvolve
+from scipy.signal import lfilter, fftconvolve, butter, sosfilt
 import soundfile as sf
 
 SR = 44100
@@ -21,7 +21,7 @@ def resonator(x, f, bw):
     return lfilter(b, a, x)
 
 
-def voice(rng, dur, f0, f0_curve, formants, breath=0.15):
+def voice(rng, dur, f0, f0_curve, formants, breath=0.15, pole=0.92):
     """1 人分の声。f0_curve(t) は 0〜1 の時間に対する声の高さの倍率"""
     n = int(dur * SR)
     t = np.arange(n) / SR
@@ -31,7 +31,7 @@ def voice(rng, dur, f0, f0_curve, formants, breath=0.15):
     f = f0 * f0_curve(u) * vib * drift
     ph = np.cumsum(f) / SR
     saw = 2 * (ph % 1.0) - 1                    # のどの振動（のこぎり波）
-    src = lfilter([1.0], [1.0, -0.92], saw) * 0.1  # 高い音を弱めて柔らかく
+    src = lfilter([1.0], [1.0, -pole], saw) * 0.1  # 高い音を弱めて柔らかく
     src += rng.normal(0, breath, n) * 0.25          # 息の音
     y = np.zeros(n)
     for (ff, bw, g) in formants:
@@ -93,6 +93,31 @@ def boo(seed, total=3.2, n=70):
     return crowd(seed, total, n, make)
 
 
+# 叫ぶようなブーイング（実際のブーイングの特徴に合わせた：中心は 600〜900Hz、1.3kHz と 2.2kHz にも山）
+B_ = [(620, 140, 0.8), (950, 160, 1.0), (1350, 200, 0.8), (2250, 240, 0.9)]
+
+
+def boo_loud(seed, total=5.0, n=90):
+    """観客が大声で「ブー」：高めの声で長く、ゆっくり大きくなったり小さくなったりする"""
+    def make(rng, i):
+        female = rng.random() < 0.3
+        f0 = rng.uniform(230, 330) if female else rng.uniform(140, 220)
+        fk = 1.12 if female else 1.0
+        start = rng.uniform(0, 1.2)
+        dur = min(rng.uniform(2.0, 4.4), total - start - 0.05)
+        curve = lambda u: 1.0 + 0.05 * np.sin(np.pi * u) - 0.05 * u
+        y = voice(rng, dur, f0, curve, shift(B_, fk * rng.uniform(0.93, 1.07)), breath=0.35, pole=0.55)
+        return y, start
+    rng = np.random.default_rng(seed + 1000)
+    y = crowd(seed, total, n, make)
+    t = np.arange(len(y)) / SR
+    y *= 0.75 + 0.25 * np.sin(2 * np.pi * rng.uniform(0.3, 0.45) * t + rng.uniform(0, 6.3))   # うねり
+    y = sosfilt(butter(4, 480, "high", fs=SR, output="sos"), y)     # 遠くの客席から：低い音は届きにくい
+    # 叫び声の明るさ（1.1〜2.5kHz を持ち上げる）
+    y = y + 2.2 * sosfilt(butter(2, [1100, 2500], "band", fs=SR, output="sos"), y) + 0.8 * sosfilt(butter(2, [2500, 4500], "band", fs=SR, output="sos"), y)
+    return y / np.max(np.abs(y)) * 0.85
+
+
 def ooh(seed, total=2.0, n=60, rise=False):
     """惜しい！の「おお〜」：一斉に高めに出て下がる（rise は驚きの「おおっ」で一度上がる）"""
     def make(rng, i):
@@ -114,7 +139,7 @@ def ooh(seed, total=2.0, n=60, rise=False):
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     files = {
-        # ブーイング（boo）は聞き比べで外した。作り直すときは boo(11) などを足す
+        "boo": boo_loud(11), "boo_2": boo_loud(23, 5.5, 100), "boo_3": boo_loud(37, 4.0, 80),
         "ooh": ooh(5), "ooh_2": ooh(19, rise=True), "ooh_3": ooh(41, 1.8, 50),
     }
     for name, y in files.items():
