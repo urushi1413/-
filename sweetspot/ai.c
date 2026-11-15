@@ -21,9 +21,10 @@ Ball RotBall(Ball b)
 const AiLevel AI_LEVELS[3] = {
     //          走る  反応   タイミング 位置   強気   見極め  1st     2nd     サーブの安定感
     //                                                                                コースの厳しさ 深さ
-    { "EASY",   5.0f, 0.35f, 22.0f, 0.35f, 0.25f, 0.40f, 155.0f, 105.0f, 0.56f, 0.60f, 5.7f },
+    // EASY は初心者の友達くらい：足が遅く、反応が遅れ、当たりがぶれ、サーブは遅くて真ん中へ
+    { "EASY",   4.3f, 0.45f, 34.0f, 0.55f, 0.12f, 0.60f, 130.0f,  95.0f, 0.45f, 0.95f, 5.2f },
     { "NORMAL", 5.6f, 0.28f, 12.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f, 0.42f, 5.8f },
-    { "PRO",    6.2f, 0.22f,  7.0f, 0.10f, 0.75f, 0.08f, 200.0f, 130.0f, 0.84f, 0.30f, 5.95f },
+    { "PRO",    6.4f, 0.20f,  6.0f, 0.08f, 0.80f, 0.06f, 205.0f, 135.0f, 0.86f, 0.28f, 6.0f },
 };
 
 // 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
@@ -141,7 +142,7 @@ AiLevel EffLevel(const Opponent *ai)
     AiLevel L = AI_LEVELS[ai->level];
     const Persona *p = &PERSONAS[ai->persona % PERSONA_COUNT];
     // 選手の上乗せは難易度で変える（EASY は 4 割、NORMAL と PRO は全部）
-    static const float LEVEL_BOOST[3] = { 0.4f, 1.0f, 1.0f };
+    static const float LEVEL_BOOST[3] = { 0.25f, 1.0f, 1.0f };
     float f = LEVEL_BOOST[ai->level % 3];
     #define BOOSTMUL(m) (1.0f - (1.0f - (m)) * f)
     // コートの得意・不得意：走る速さに加えて、タイミングの安定にも効く（ミスの少なさは AiSwing で）
@@ -499,7 +500,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
-    static const float LEVEL_ERR[3] = { 1.5f, 1.0f, 0.8f };   // 難易度でミスの量が変わる
+    static const float LEVEL_ERR[3] = { 2.4f, 1.0f, 0.72f };   // 難易度でミスの量が変わる（EASY はかなりぶれる）
     gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
