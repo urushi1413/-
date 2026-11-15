@@ -36,12 +36,12 @@ static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRAT
 typedef struct { const char *file; float pitch, vol, chance; } VoiceProfile;
 static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "ai",       1.00f, 0.90f, 0.60f },
-    { "federerr", 1.06f, 0.55f, 0.20f },   // ほとんど声を出さない。出しても小さい
+    { "federerr", 1.06f, 0.55f, 0.05f },   // ほぼ声を出さない（息を吐く音くらい）。出しても小さい
     { "djokovik", 1.10f, 0.90f, 0.65f },   // 短く鋭い
     { "nadar",    0.86f, 1.00f, 0.92f },   // ほぼ毎回、低く長く大きい
     { "murraye",  0.95f, 0.85f, 0.60f },
     { "alcarazz", 1.00f, 0.95f, 0.80f },   // ストロークの約 8 割、サーブは毎回（Betting.com の調べ）
-    { "sinnerr",  1.05f, 0.80f, 0.55f },
+    { "sinnerr",  1.05f, 0.80f, 0.15f },   // 静か。強く打ったときにたまに短く
     { "medvedeb", 0.95f, 0.70f, 0.35f },
     { "kirgios",  1.00f, 0.95f, 0.50f },   // 2 球に 1 球ほど、大きな声
     { "williamz", 1.30f, 1.00f, 0.85f },   // 女子：声が高い
@@ -259,6 +259,8 @@ static float LeadFor(int who, bool serve)
 float SfxGruntLead(int who) { return LeadFor(who, false); }
 float SfxServeLead(int who) { return LeadFor(who, true); }
 float SfxGruntChance(int who) { return Prof(who)->chance; }
+// サーブはストロークより声が出やすい（声の多い選手はほぼ毎回、静かな選手は静かなまま）
+float SfxServeChance(int who) { return fminf(1.0f, Prof(who)->chance * 1.25f + 0.05f); }
 
 // 遠いほど小さく（カメラからの距離）
 static float DistVol(float dist) { return Clamp01(1.3f / (1.0f + dist / 14.0f)); }

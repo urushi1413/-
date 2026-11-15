@@ -935,6 +935,7 @@ float SfxGruntLead(int who);
 float SfxServeLead(int who);                     // サーブの声を打つ何秒前から鳴らすか（選手の録音の長さ）
 bool  SfxServePreBy(int who, float dist);        // サーブの打つ前の声
 float SfxGruntChance(int who);
+float SfxServeChance(int who);
 void  SfxCelebrate(int who, float dist);
 void  SfxAngry(int who, float dist);
 void  SfxStopApplause(void);
