@@ -1047,7 +1047,7 @@ int main(void)
             } else if (P.sv == SV_TOSS) {
                 P.charge = fminf(P.charge + simDt / SERVE_CHARGE_TIME, 1.0f);   // トスと同じ時間の進みで溜める（スローでも同じ）
                 P.serveT += simDt;
-                if (!playerGruntTried && P.serveT >= 0.50f - GRUNT_LEAD) { playerGrunt = SfxGruntPreBy(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos)); playerGruntTried = true; }
+                if (!playerGruntTried && P.serveT >= 0.50f - SfxServeLead(gYouPersona ? gYouPersona : -1)) { playerGrunt = SfxServePreBy(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos)); playerGruntTried = true; }
                 P.anim.windup = 0.3f + 0.7f * P.charge;
                 P.anim.windStroke = 2;
                 bool serveReleased = in.released[P.chargeSrc];
@@ -1190,10 +1190,10 @@ int main(void)
                 }
             } else {
                 aiTossT += simDt;
-                float lead = SfxGruntLead(ai.persona);
+                float lead = SfxServeLead(ai.persona);
                 if (aiTossT - simDt < AI_TOSS_HIT_T - lead && aiTossT >= AI_TOSS_HIT_T - lead &&
                     RandRange(0.0f, 1.0f) < fminf(1.0f, SfxGruntChance(ai.persona) + 0.3f))   // サーブは声が出やすい
-                    aiGrunt = SfxGruntPreBy(ai.persona, Vector3Distance(cam.position, ai.pos));
+                    aiGrunt = SfxServePreBy(ai.persona, Vector3Distance(cam.position, ai.pos));
                 ai.anim.windStroke = 2;
                 ai.anim.windup = 0.3f + 0.7f * Clamp01(aiTossT / SERVE_CHARGE_TIME);
             }
@@ -1232,7 +1232,7 @@ int main(void)
                     gCasual = (style == STYLE_CASUAL);
                     Assist ga = ComputeAssist(P.pos, P.vel, &ball, (ShotType)P.chargingShot, P.charge);
                     gCasual = false;
-                    if (ga.timingValid && !ga.overhead && ga.tBest <= GRUNT_LEAD && ga.qBest > 0.2f) {
+                    if (ga.timingValid && !ga.overhead && ga.tBest <= SfxGruntLead(gYouPersona ? gYouPersona : -1) && ga.qBest > 0.2f) {
                         playerGrunt = SfxGruntPreBy(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
                         playerGruntTried = true;
                     }

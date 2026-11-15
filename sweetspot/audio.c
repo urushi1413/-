@@ -29,9 +29,10 @@ static const char *SFX_NAMES[S_COUNT] = {
 
 // ---- 選手ごとの声 ----
 // 選手の録音（<名前>_grunt_pre など）があればそれを使う。なければ共通の声を、選手ごとの高さ・大きさで鳴らす
-enum { V_GRUNT_PRE, V_HIT_VOICE, V_CELEBRATE, V_ANGRY, V_COUNT };
-static const char *VOICE_NAMES[V_COUNT] = { "grunt_pre", "hit_voice", "celebrate", "angry" };
-static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRATE, S_ANGRY };
+//   サーブは <名前>_serve_pre / <名前>_serve_voice（なければその選手のストロークの声）
+enum { V_GRUNT_PRE, V_HIT_VOICE, V_CELEBRATE, V_ANGRY, V_SERVE_PRE, V_SERVE_VOICE, V_COUNT };
+static const char *VOICE_NAMES[V_COUNT] = { "grunt_pre", "hit_voice", "celebrate", "angry", "serve_pre", "serve_voice" };
+static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRATE, S_ANGRY, S_GRUNT_PRE, S_HIT_VOICE };
 typedef struct { const char *file; float pitch, vol, chance; } VoiceProfile;
 static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "ai",       1.00f, 0.90f, 0.60f },
@@ -219,11 +220,44 @@ static bool PlayVoice(int who, int vi, float vol)
     PlaySlot(&gSlot[g], vol * Prof(who)->vol, Prof(who)->pitch);
     return true;
 }
-// 声の高さを変えると長さも変わるので、打つ前の声を鳴らし始める時間も変わる
-float SfxGruntLead(int who)
+// ---- 打つ前の声と、打った後の声の組（同じ録音の前半と後半） ----
+//   選手本人の録音（サーブはサーブの録音）があればそれを、なければ共通の声を選手ごとの高さで。
+//   本人の録音は打つ前と打った後を同じ大きさの比で切ってあるので、打つ前の声を大きくしない（共通の声だけ 4 倍）
+typedef struct { SfxSlot *pre, *hit; float pitch, vol, preGain; bool own; } VoicePair;
+static VoicePair Pair(int who, bool serve)
 {
-    return PSlot(who, V_GRUNT_PRE)->nVar ? GRUNT_LEAD : GRUNT_LEAD / Prof(who)->pitch;
+    SfxSlot *sp = PSlot(who, V_SERVE_PRE), *sh = PSlot(who, V_SERVE_VOICE);
+    if (serve && sp->nVar && sh->nVar) return (VoicePair){ sp, sh, 1.0f, 1.0f, 1.0f, true };
+    SfxSlot *gp = PSlot(who, V_GRUNT_PRE), *gh = PSlot(who, V_HIT_VOICE);
+    if (gp->nVar && gh->nVar) return (VoicePair){ gp, gh, 1.0f, 1.0f, 1.0f, true };
+    return (VoicePair){ &gSlot[S_GRUNT_PRE], &gSlot[S_HIT_VOICE], Prof(who)->pitch, Prof(who)->vol, GRUNT_PRE_GAIN, false };
 }
+static float VarLen(const SfxSlot *s, int v)
+{
+    if (!s->nVar) return 0.0f;
+    Sound snd = s->s[v % s->nVar][0];
+    return snd.stream.sampleRate ? (float)snd.frameCount / (float)snd.stream.sampleRate : 0.0f;
+}
+static void PlaySlotVar(SfxSlot *s, int v, float vol, float pitch)
+{
+    if (!gAudioOk || s->nVar == 0 || vol <= 0.001f || gVolume <= 0.0f) return;
+    Sound *snd = &s->s[v % s->nVar][s->next];
+    s->next = (s->next + 1) % POOL;
+    SetSoundVolume(*snd, Clamp(vol, 0.0f, 6.0f) * gVolume);
+    SetSoundPitch(*snd, pitch);
+    PlaySound(*snd);
+}
+static int gNextVar[PERSONA_COUNT + 1][2];   // 次に鳴らす録音（選手ごと、ストローク / サーブ）。鳴らす前に長さが分かるように先に決めておく
+static int WhoIdx(int who) { return (who < 0 || who >= PERSONA_COUNT) ? PERSONA_COUNT : who; }
+// 打つ何秒前に声を鳴らし始めるか：本人の録音は打つ前の声の長さ（録音ごとに違う）、共通の声は GRUNT_LEAD（高さを変えた分だけ長さも変わる）
+static float LeadFor(int who, bool serve)
+{
+    VoicePair P = Pair(who, serve);
+    if (P.own) return VarLen(P.pre, gNextVar[WhoIdx(who)][serve]);
+    return GRUNT_LEAD / P.pitch;
+}
+float SfxGruntLead(int who) { return LeadFor(who, false); }
+float SfxServeLead(int who) { return LeadFor(who, true); }
 float SfxGruntChance(int who) { return Prof(who)->chance; }
 
 // 遠いほど小さく（カメラからの距離）
@@ -237,10 +271,15 @@ static int First3(int a, int b, int c) { return gSlot[a].nVar ? a : gSlot[b].nVa
 //   （途中で声が切れたり、始まりのない声の続きだけが鳴ったりしないように）
 //   defensive：体勢が崩れて取った球（飛びついた・ぎりぎり）。ラケットでぎりぎり取って地面に当たる音と控えめな声
 static double gVoiceUntil = 0.0;
+static bool   gVoiceServe = false;   // 今の声はサーブの声か
+static int    gVoiceVar = 0;         // 今の声の録音（打った後の声も同じ録音から）
 void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float dist)
 {
     float vol = (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * DistVol(dist);
-    if (voice && PlayVoice(gVoiceWho, V_HIT_VOICE, (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * VoiceDistVol(dist))) return;   // 声から続く（同じ人の声で）
+    if (voice) {   // 声から続く（同じ人の、同じ録音の後半）
+        VoicePair P = Pair(gVoiceWho, gVoiceServe);
+        if (P.hit->nVar) { PlaySlotVar(P.hit, gVoiceVar, (0.5f + 0.5f * Clamp01(kmh / 150.0f)) * VoiceDistVol(dist) * VOICE_GAIN * P.vol, P.pitch); return; }
+    }
     if (defensive && !slice && gSlot[S_HIT_VOICE_SOFT].nVar && GetTime() >= gVoiceUntil) {
         gVoiceUntil = GetTime() + 0.45;   // 声は一度に 1 人
         PlaySlot(&gSlot[S_HIT_VOICE_SOFT], vol * VOICE_GAIN, 1.0f);   // 声なので大きめに
@@ -291,20 +330,25 @@ void SfxTest(void)
     if (gAudioOk && gBeepOk) { SetSoundVolume(gBeep, gVolume); PlaySound(gBeep); }   // ファイルがないときは「ピッ」
 }
 
-// 打つ前の声：打つ GRUNT_LEAD 秒前に鳴らし始める（溜めの間に声が出て、そのまま打球音と声の続きにつながる）
+// 打つ前の声：打つ SfxGruntLead（サーブは SfxServeLead）秒前に鳴らし始める（溜めの間に声が出て、そのまま打球音と声の続きにつながる）
 //   声は一度に 1 人だけ：前の声（打つ前＋続き）が鳴り終わるまでは始めない。始めたら true
-bool SfxGruntPreBy(int who, float dist)
+static bool StartPre(int who, bool serve, float dist)
 {
     if (!gAudioOk || gVolume <= 0.0f) return false;
-    bool own = PSlot(who, V_GRUNT_PRE)->nVar && PSlot(who, V_HIT_VOICE)->nVar;
-    if (!own && (gSlot[S_GRUNT_PRE].nVar == 0 || gSlot[S_HIT_VOICE].nVar == 0)) return false;
+    VoicePair P = Pair(who, serve);
+    if (P.pre->nVar == 0 || P.hit->nVar == 0) return false;
     double now = GetTime();
     if (now < gVoiceUntil) return false;
-    gVoiceUntil = now + SfxGruntLead(who) + 0.45 / Prof(who)->pitch;
-    gVoiceWho = who;
-    PlayVoice(who, V_GRUNT_PRE, 0.9f * VoiceDistVol(dist));
+    int *nv = &gNextVar[WhoIdx(who)][serve];
+    int v = *nv % P.pre->nVar;
+    gVoiceUntil = now + LeadFor(who, serve) + (P.own ? VarLen(P.hit, v) : 0.45f / P.pitch);
+    gVoiceWho = who; gVoiceServe = serve; gVoiceVar = v;
+    PlaySlotVar(P.pre, v, 0.9f * VoiceDistVol(dist) * VOICE_GAIN * P.preGain * P.vol, P.pitch);
+    *nv = GetRandomValue(0, 99);   // 次の録音を決めておく（鳴らす前に長さが分かるように）
     return true;
 }
+bool SfxGruntPreBy(int who, float dist) { return StartPre(who, false, dist); }
+bool SfxServePreBy(int who, float dist) { return StartPre(who, true, dist); }
 bool SfxGruntPre(float dist) { return SfxGruntPreBy(-1, dist); }
 
 // 喜びの声（カモン！バモス！）と、怒りの声

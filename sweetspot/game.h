@@ -920,6 +920,8 @@ void  SfxCallOut(void);
 void  SfxRacketSmash(float dist, int k);   // k：何回目の叩きつけか（0 から。音を順に変える）
 bool  SfxGruntPreBy(int who, float dist);   // who：選手の番号（-1 は人間）
 float SfxGruntLead(int who);
+float SfxServeLead(int who);                     // サーブの声を打つ何秒前から鳴らすか（選手の録音の長さ）
+bool  SfxServePreBy(int who, float dist);        // サーブの打つ前の声
 float SfxGruntChance(int who);
 void  SfxCelebrate(int who, float dist);
 void  SfxAngry(int who, float dist);

@@ -52,7 +52,13 @@ SWEET SPOT の効果音フォルダ
   <名前>_grunt_pre / <名前>_hit_voice / <名前>_celebrate / <名前>_angry   （_2〜_6 も）
   名前：federerr, djokovik, nadar, murraye, you（自分）
   例：nadar_grunt_pre.wav, nadar_hit_voice.wav, nadar_celebrate.wav（バモス！）, murraye_angry.wav
-  grunt_pre は今までと同じく、打つ 0.235 秒前から始まる長さで切る（hit_voice につながる）
+  <名前>_serve_pre / <名前>_serve_voice   サーブの声（なければその選手のストロークの声）
+  選手本人の録音では、打つ前の声（_pre）の長さだけ前から鳴らし始める（録音ごとに長さを変えてよい）。
+  _pre と _voice は同じ録音の前半と後半で、同じ倍率で大きさをそろえて切る（打つ前の声を後から大きくしない）。
+  _2, _3 … を置いたときは、打つ前と打った後を必ず同じ番号の組で鳴らす。
+  切り分けは python3 tools/cut_voices.py <録音フォルダ>（打った瞬間の秒数は tools/cut_voices.py の表に書く）
+  今入っている選手の声：alcarazz（ストローク 2 種類・サーブ）、zverew（ストローク 2 種類・サーブ）、djokovik（サーブ）
+  共通の声（grunt_pre / hit_voice）はアルカラスの録音。本人の声がない選手は、これを選手ごとの高さで鳴らす
 
 共通の声を使うときの選手ごとの違い（声の高さ・大きさ・声を出す割合）：
   federerr  少し高い・小さい・2 割（ほとんど声を出さない）
