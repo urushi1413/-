@@ -25,6 +25,8 @@ CUTS = [
     ("zverev2.m4a",        "zverew_grunt",   1.040, 0.40),
     ("zverev_serve.m4a",   "zverew_serve",   2.237, 0.48),
     ("djokovic_serve.m4a", "djokovik_serve", 2.221, 0.40),
+    ("djokovic_shot_voice2.m4a", "djokovik_grunt", 0.990, 0.40),
+    # djokovic_shot_voice.m4a は alcaraz.m4a と同じ音だったので使わない
 ]
 HIT_PEAK = 0.89   # 打った後の声の大きさ（いまの hit_voice と同じ）
 HIT_MIX = 3.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の 3 分の 1 ほど（遠くの声）

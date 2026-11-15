@@ -59,7 +59,8 @@ SWEET SPOT の効果音フォルダ
   切り分けは python3 tools/cut_voices.py <録音フォルダ>（打った瞬間の秒数は tools/cut_voices.py の表に書く）
   近くで録った声（打球音なし）は、cut_voices.py が遠くに聞こえるように加工し（低い音を削る・コートの響き）、
   打った瞬間に打球音（hit_good）を重ねる。声は打球音の 3 分の 1 ほどの大きさ。アルカラスの新しい声はさらに遠く（cut_voices.py の FAR）。今までの共通の声は元のまま
-  今入っている選手の声：alcarazz（ストローク 2 種類・サーブ）、zverew（ストローク 2 種類・サーブ）、djokovik（サーブ）
+  今入っている選手の声：alcarazz（ストローク 2 種類・サーブ）、zverew（ストローク 2 種類・サーブ）、djokovik（ストローク・サーブ・雄叫び）
+  djokovik_celebrate（_2）はジョコビッチの雄叫びを測った数値だけで合成したもの（python3 tools/gen_roar.py）。録音は使っていない
   共通の声（grunt_pre / hit_voice）はアルカラスの録音。本人の声がない選手は、これを選手ごとの高さで鳴らす
 
 共通の声を使うときの選手ごとの違い（声の高さ・大きさ・声を出す割合）：
