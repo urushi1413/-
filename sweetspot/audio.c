@@ -40,13 +40,13 @@ static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "djokovik", 1.10f, 0.90f, 0.65f },   // 短く鋭い
     { "nadar",    0.86f, 1.00f, 0.92f },   // ほぼ毎回、低く長く大きい
     { "murraye",  0.95f, 0.85f, 0.60f },
-    { "alcarazz", 1.00f, 0.95f, 0.70f },
+    { "alcarazz", 1.00f, 0.95f, 0.80f },   // ストロークの約 8 割、サーブは毎回（Betting.com の調べ）
     { "sinnerr",  1.05f, 0.80f, 0.55f },
     { "medvedeb", 0.95f, 0.70f, 0.35f },
-    { "kirgios",  1.00f, 0.95f, 0.60f },
+    { "kirgios",  1.00f, 0.95f, 0.50f },   // 2 球に 1 球ほど、大きな声
     { "williamz", 1.30f, 1.00f, 0.85f },   // 女子：声が高い
     { "swiontek", 1.40f, 0.85f, 0.60f },
-    { "sabalenco",1.28f, 1.00f, 0.95f },   // 大きな声
+    { "sabalenco",1.28f, 1.00f, 0.95f },   // 大きな声。ストロークの約 95%、サーブは毎回（Betting.com の調べ）
     { "gauph",    1.42f, 0.80f, 0.55f },
     { "sharapowa",1.45f, 1.00f, 1.00f },   // 一番大きい声（毎回）
     { "bartie",   1.38f, 0.70f, 0.35f },
