@@ -112,6 +112,8 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
        CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART,
        CELEB_EAR,       // 耳に手を当てて観客をあおる（ジョコビッチ、アルカラス）
        CELEB_SHRUG,     // 両手を小さく広げるだけ（メドベデフ：喜ばない）
+       CELEB_THROW,     // 怒ってラケットを前の地面へ投げつける
+       CELEB_SWAT,      // 怒って、ポイントが終わった球を観客席へかっ飛ばす
        RIT_BOUNCE,      // サーブ前：ボールをつく（回数は ritBounces）
        RIT_NADAL,       // ナダルの儀式：パンツを引っぱり、肩・鼻・耳を触ってから、ボールをつく
        RIT_HAIR,        // 髪を耳にかけてから、ボールをつく（フェデラー、シフィオンテク）
@@ -720,7 +722,7 @@ extern const Persona PERSONAS[PERSONA_COUNT];
 extern const float RAGE_SMASH[PERSONA_COUNT];
 // ポイント後のしぐさ：取ったとき（大事なポイント・長いラリー）と、落としたとき
 //   big：大事なポイント・長いラリー・ウィナー、set：セットを取った、match：試合に勝った、lose：落とした。0 はなし。毎回この中から選ぶ
-typedef struct { int big[3], set[2], match[2], lose[2]; float winChance, loseChance; } CelebStyle;
+typedef struct { int big[3], set[2], match[2], lose[4]; float winChance, loseChance; } CelebStyle;
 float CelebDuration(int kind);
 extern const CelebStyle CELEB_STYLE[PERSONA_COUNT];   // 追い込まれたときにラケットを叩きつける確率
 AiLevel EffLevel(const Opponent *ai);   // 自分の打球を評価している間だけ、しゃがんでいれば true

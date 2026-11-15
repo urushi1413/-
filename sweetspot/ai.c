@@ -35,21 +35,21 @@ const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
     // big                                                      set                                   match                              lose                                  win    lose
     { { CELEB_FIST, CELEB_RACKET_UP, 0 },                       { CELEB_ARMS_UP, CELEB_RACKET_UP },   { CELEB_ARMS_UP, CELEB_RACKET_UP }, { 0, 0 },                             0.30f, 0.00f },   // AI
     { { CELEB_FIST, CELEB_FIST, CELEB_RACKET_POINT },           { CELEB_RACKET_UP, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.55f, 0.00f },   // フェデラー
-    { { CELEB_ROAR, CELEB_EAR, CELEB_RACKET_UP },               { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_HEART, CELEB_ROAR },        { 0, 0 },                             0.75f, 0.00f },   // ジョコビッチ
+    { { CELEB_ROAR, CELEB_EAR, CELEB_RACKET_UP },               { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_HEART, CELEB_ROAR },        { CELEB_SWAT, CELEB_RANT },           0.75f, 0.15f },   // ジョコビッチ：たまに球をかっ飛ばす
     { { CELEB_VAMOS, CELEB_VAMOS, CELEB_JUMP_FIST },            { CELEB_JUMP_FIST, CELEB_VAMOS },     { CELEB_KNEES, CELEB_JUMP_FIST },   { 0, 0 },                             0.90f, 0.00f },   // ナダル
-    { { CELEB_COMEON, CELEB_COMEON, CELEB_JUMP_FIST },          { CELEB_COMEON, CELEB_ARMS_UP },      { CELEB_ARMS_UP, CELEB_KNEES },     { CELEB_RANT, CELEB_HANDS_HEAD },     0.85f, 0.55f },   // マレー
+    { { CELEB_COMEON, CELEB_COMEON, CELEB_JUMP_FIST },          { CELEB_COMEON, CELEB_ARMS_UP },      { CELEB_ARMS_UP, CELEB_KNEES },     { CELEB_RANT, CELEB_HANDS_HEAD, CELEB_THROW },     0.85f, 0.55f },   // マレー
     { { CELEB_JUMP_FIST, CELEB_EAR, CELEB_RACKET_POINT },       { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.85f, 0.00f },   // アルカラス：跳んで拳、観客をあおる
     { { CELEB_FIST, CELEB_FIST, 0 },                           { CELEB_FIST, CELEB_RACKET_UP },      { CELEB_ARMS_UP, CELEB_RACKET_UP }, { 0, 0 },                             0.40f, 0.00f },   // シナー：静か
-    { { CELEB_SHRUG, CELEB_SHRUG, CELEB_FIST },                 { CELEB_SHRUG, CELEB_RACKET_UP },     { CELEB_SHRUG, CELEB_SHRUG },       { CELEB_HANDS_HEAD, CELEB_RANT },     0.25f, 0.35f },   // メドベデフ：喜ばない（勝っても手を少し広げるだけ）
-    { { CELEB_RACKET_POINT, CELEB_ROAR, CELEB_JUMP_FIST },      { CELEB_ROAR, CELEB_RACKET_POINT },   { CELEB_ROAR, CELEB_ARMS_UP },      { CELEB_RANT, CELEB_HANDS_HEAD },     0.70f, 0.60f },   // キルギオス：観客をあおる、すぐ怒る
+    { { CELEB_SHRUG, CELEB_SHRUG, CELEB_FIST },                 { CELEB_SHRUG, CELEB_RACKET_UP },     { CELEB_SHRUG, CELEB_SHRUG },       { CELEB_HANDS_HEAD, CELEB_RANT, CELEB_SWAT },     0.25f, 0.35f },   // メドベデフ：喜ばない（勝っても手を少し広げるだけ）
+    { { CELEB_RACKET_POINT, CELEB_ROAR, CELEB_JUMP_FIST },      { CELEB_ROAR, CELEB_RACKET_POINT },   { CELEB_ROAR, CELEB_ARMS_UP },      { CELEB_RANT, CELEB_HANDS_HEAD, CELEB_THROW, CELEB_SWAT },     0.70f, 0.60f },   // キルギオス：観客をあおる、すぐ怒る
     { { CELEB_COMEON, CELEB_ROAR, CELEB_FIST },                { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_KNEES },     { 0, 0 },                             0.85f, 0.00f },   // ウィリアムズ：カモン！と吠える
     { { CELEB_FIST, CELEB_FIST, CELEB_JUMP_FIST },             { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.60f, 0.00f },   // シフィオンテク
-    { { CELEB_ROAR, CELEB_COMEON, 0 },                         { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_ROAR },      { CELEB_HANDS_HEAD, 0 },              0.75f, 0.25f },   // サバレンカ：吠える
+    { { CELEB_ROAR, CELEB_COMEON, 0 },                         { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_ROAR },      { CELEB_HANDS_HEAD, CELEB_SWAT },              0.75f, 0.25f },   // サバレンカ：吠える
     { { CELEB_FIST, CELEB_JUMP_FIST, 0 },                      { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.60f, 0.00f },   // ガウフ
     { { CELEB_FIST, CELEB_COMEON, 0 },                         { CELEB_FIST, CELEB_ARMS_UP },        { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.75f, 0.00f },   // シャラポワ：拳を握って背を向ける
     { { CELEB_FIST, CELEB_RACKET_POINT, 0 },                   { CELEB_RACKET_UP, CELEB_ARMS_UP },   { CELEB_HANDS_HEAD, CELEB_ARMS_UP },{ 0, 0 },                             0.45f, 0.00f },   // バーティ：控えめ
     { { CELEB_FIST, CELEB_FIST, CELEB_RACKET_POINT },           { CELEB_FIST, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_KNEES },     { 0, 0 },                             0.55f, 0.00f },   // 錦織：小さく「カモン」
-    { { CELEB_ROAR, CELEB_FIST, CELEB_RACKET_UP },              { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_KNEES, CELEB_ARMS_UP },     { CELEB_RANT, 0 },                    0.65f, 0.25f },   // ズベレフ：吠える、ときどき怒る
+    { { CELEB_ROAR, CELEB_FIST, CELEB_RACKET_UP },              { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_KNEES, CELEB_ARMS_UP },     { CELEB_RANT, CELEB_THROW },                    0.65f, 0.25f },   // ズベレフ：吠える、ときどき怒る
 };
 
 // しぐさの長さ
@@ -104,6 +104,8 @@ float CelebDuration(int kind)
         case CELEB_HEART: return 2.6f;
         case CELEB_RANT:  return 1.9f;
         case CELEB_EAR:   return 1.8f;
+        case CELEB_THROW: return 2.4f;
+        case CELEB_SWAT:  return 2.1f;
         case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_RACKET_POINT: case CELEB_HANDS_HEAD: return 1.9f;
         default: return CELEB_TIME;
     }

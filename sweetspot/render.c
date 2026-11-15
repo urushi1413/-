@@ -773,7 +773,8 @@ static int VolleyKeys(Vector3 cl, float sgn, RKey *k)
 // ---- ポイント後のしぐさ ----
 // 両手（ラケットを持つ手とその向き、もう片方の手）と体（沈み込み・前傾・跳ぶ・膝上げ・膝つき・顔の向き）を時間で決める。
 // 手の高さは立っているとき（腰 0.88m）の値。体が沈んだ分は描くときに下げる
-typedef struct { Vector3 rh, rd, lh; float hipDrop, lean, jump, liftL, liftR, kneel, headUp, headShake, k, e; float turn; bool ballOn; Vector3 ball; } CelebOut;
+typedef struct { Vector3 rh, rd, lh; float hipDrop, lean, jump, liftL, liftR, kneel, headUp, headShake, k, e; float turn; bool ballOn; Vector3 ball;
+                 bool racketGone; Vector3 rkPos, rkDir, rkNrm; } CelebOut;   // racketGone：ラケットを投げた（手から離れて rkPos に）
 static float Pulse(float e, float c, float w) { float x = (e - c) / w; return (x > -1.0f && x < 1.0f) ? 0.5f + 0.5f * cosf(x * PI) : 0.0f; }
 float Smooth01(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
 // ボールをつく：左手を腰の前で上下させ、球は手と地面を往復する。つき終わったら手に持つ
@@ -880,6 +881,47 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
         case RIT_BOUNCE:
             BounceBall(e - RitualStart(RIT_BOUNCE), a->ritBounces, &lh, &rh, &rd, &t);
             break;
+        case CELEB_THROW: {      // ラケットを頭の上へ振りかぶり、前の地面へ投げつける → 手を腰に当ててうつむく
+            const float REL = 0.42f;
+            if (e < 0.30f) {      // 振りかぶる
+                float u = Smooth01(e / 0.30f);
+                rh = Vector3Lerp(rh0, V3(0.22f, 2.00f, -0.18f), u); rd = Vector3Lerp(rd0, V3(0.0f, 0.35f, -0.94f), u);
+                lh = V3(-0.30f, 1.20f, 0.20f); t.lean = -0.08f * u;
+            } else if (e < REL) { // 投げる
+                float u = Smooth01((e - 0.30f) / (REL - 0.30f));
+                rh = Vector3Lerp(V3(0.22f, 2.00f, -0.18f), V3(0.32f, 1.30f, 0.55f), u); rd = Vector3Lerp(V3(0.0f, 0.35f, -0.94f), V3(0.0f, -0.4f, 0.92f), u);
+                lh = V3(-0.30f, 1.10f, 0.10f); t.lean = 0.20f * u;
+            } else {              // 手を腰に、うつむく
+                float u = Smooth01((e - REL) / 0.35f);
+                rh = Vector3Lerp(V3(0.32f, 1.30f, 0.55f), V3(0.24f, 0.98f, -0.02f), u); rd = rd0;
+                lh = Vector3Lerp(V3(-0.30f, 1.10f, 0.10f), V3(-0.24f, 0.98f, -0.02f), u);
+                t.lean = 0.20f - 0.08f * u; t.headUp = -0.6f * u; t.headShake = 0.4f * u;
+                // 飛んでいくラケット：前へ弧を描いて、回りながら地面へ。落ちたらそのまま
+                float tf = e - REL, T = 0.55f, f = Clamp01(tf / T);
+                Vector3 p0 = V3(0.32f, 1.30f, 0.60f), p1 = V3(0.55f, 0.03f, 2.70f);
+                t.racketGone = true;
+                t.rkPos = Vector3Lerp(p0, p1, f); t.rkPos.y = Lerp(p0.y, p1.y, f) + 0.9f * sinf(PI * f) * 0.6f;
+                float spin = f < 1.0f ? tf * 16.0f : T * 16.0f;
+                t.rkDir = f < 1.0f ? V3(0.0f, sinf(spin), cosf(spin)) : V3(0.35f, 0.0f, 0.94f);
+                t.rkNrm = f < 1.0f ? V3(1.0f, 0.0f, 0.0f) : V3(0.0f, 1.0f, 0.0f);   // 落ちたら面を上に寝かせる
+            }
+        } break;
+        case CELEB_SWAT: {       // 左手の球を落として、思い切りフォアで観客席へかっ飛ばす
+            const float HIT = 0.68f;
+            Vector3 back = V3(0.50f, 1.00f, -0.30f), cont = V3(0.55f, 1.00f, 0.38f), fin = V3(-0.25f, 1.55f, 0.30f);
+            if (e < 0.50f) { rh = back; rd = V3(0.35f, 0.25f, -0.90f); lh = V3(0.20f, 1.25f, 0.42f); }
+            else if (e < HIT) { float u = Smooth01((e - 0.50f) / (HIT - 0.50f)); rh = Vector3Lerp(back, cont, u); rd = Vector3Lerp(V3(0.35f, 0.25f, -0.90f), V3(0.35f, 0.25f, 0.90f), u); lh = V3(-0.25f, 1.15f, 0.30f); }
+            else { float u = Smooth01((e - HIT) / 0.20f); rh = Vector3Lerp(cont, fin, u); rd = Vector3Lerp(V3(0.35f, 0.25f, 0.90f), V3(-0.6f, 0.6f, -0.3f), u); lh = V3(-0.30f, 1.05f, 0.10f); }
+            t.turn = e < HIT ? 0.6f * Smooth01(e / 0.4f) : 0.6f * (1.0f - Smooth01((e - HIT) / 0.3f));
+            t.ballOn = true;
+            if (e < 0.50f) t.ball = V3(lh.x, lh.y - 0.04f, lh.z + 0.03f);                     // 左手に持つ
+            else if (e < HIT) { float d = e - 0.50f; t.ball = V3(0.40f, 1.21f - 4.9f * d * d, 0.42f); }   // 落とす
+            else {                                                                           // かっ飛ばす（前上へ）
+                float d = e - HIT;
+                t.ball = V3(0.55f - 3.0f * d, 1.00f + 11.0f * d - 4.9f * d * d, 0.38f + 26.0f * d);
+                if (t.ball.y < -1.0f) t.ballOn = false;
+            }
+        } break;
         case RIT_NADAL: {        // パンツを引っぱる → 肩 → 反対の肩 → 鼻 → 耳 → 鼻 → 反対の耳 → ボールをつく
             static const Vector3 P[6] = { { -0.19f, 1.44f, 0.08f }, { 0.17f, 1.44f, 0.10f }, { 0.0f, 1.60f, 0.15f },
                                           { -0.10f, 1.62f, 0.02f }, { 0.0f, 1.60f, 0.15f }, { 0.10f, 1.62f, 0.02f } };
@@ -920,6 +962,7 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
         default: return false;
     }
     o->turn = t.turn * k; o->ballOn = t.ballOn; o->ball = t.ball;
+    o->racketGone = t.racketGone; o->rkPos = t.rkPos; o->rkDir = Vector3Normalize(t.rkDir); o->rkNrm = Vector3Normalize(t.rkNrm);
     o->rh = Vector3Lerp(rh0, rh, k); o->rd = Vector3Normalize(Vector3Lerp(rd0, rd, k)); o->lh = Vector3Lerp(lh0, lh, k);
     if (o->turn != 0.0f) {   // 体ごと回す：手・ラケット・ボールも肩と同じだけ回す
         float c = cosf(o->turn), s = sinf(o->turn);
@@ -1599,6 +1642,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             case CELEB_VAMOS: case CELEB_JUMP_FIST: open = 0.8f; angry = 0.3f; break;
             case CELEB_FIST: open = 0.5f + 0.4f * sinf(co.e * 9.0f); angry = 0.3f; break;
             case CELEB_RANT: open = 0.35f + 0.35f * fabsf(sinf(co.e * 11.0f)); angry = 1.0f; break;
+            case CELEB_THROW: case CELEB_SWAT: open = 0.55f; angry = 1.0f; break;
             case CELEB_HANDS_HEAD: open = 0.4f; angry = 0.6f; break;
             case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_KNEES: open = 0.5f; smile = 1.0f; break;
             case CELEB_HEART: case CELEB_EAR: case CELEB_RACKET_POINT: smile = 1.0f; break;
@@ -1809,7 +1853,10 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     }
     Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
     Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));
-    DrawRacketBent(WV(hand), dW, nW, frame, a->broken);
+    if (celeb && co.racketGone) {   // 投げたラケット：飛んでいる・地面に落ちている
+        Vector3 rp = co.rkPos;
+        DrawRacketBent(WV(rp), Vector3Subtract(WV(co.rkDir), W(0, 0, 0)), Vector3Subtract(WV(co.rkNrm), W(0, 0, 0)), frame, a->broken);
+    } else DrawRacketBent(WV(hand), dW, nW, frame, a->broken);
     if (celeb && co.ballOn) DrawSphere(W(co.ball.x, co.ball.y, co.ball.z), BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });   // 儀式：ボールをつく
     if (a->holdBall) DrawSphere(W(otherHand.x, otherHand.y + 0.02f, otherHand.z + 0.03f), BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });   // サーブ前：左手にボール
     #undef W

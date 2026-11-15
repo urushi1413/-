@@ -153,7 +153,9 @@ int main(void)
     float feedTimer = 1.0f;          // 0 になったら次の球を出す
     Vector3 feederPos = { 0.0f, 0.0f, -HALF_LEN - 0.6f };   // 練習で球を出す相手の立ち位置
     bool  feedSwing = false; Ball feedNext = { 0 };          // 球出しの振り：振り始めたら、当たる瞬間に球を出す
-    float winFx = -1.0f;             // 試合に勝った演出の経過時間（-1 = なし）
+    float winFx = -1.0f;
+    float sweetT = 9.0f; Vector3 sweetPos = { 0 }; float sweetQ = 0.0f;   // いい当たりの演出（経過時間・位置・強さ）
+#define SWEET_Q 0.80f   // これ以上の当たりで演出を出す             // 試合に勝った演出の経過時間（-1 = なし）
     Vector3 trail[TRAIL_N];
     int trailCount = 0;
     float trailTimer = 0.0f;
@@ -923,6 +925,7 @@ int main(void)
                         plog.pendingLaunch = atan2f(ball.vel.y, sqrtf(ball.vel.x * ball.vel.x + ball.vel.z * ball.vel.z)) * RAD2DEG;
                         plog.pendingApex = ball.pos.y;
                         trailColor = SERVES[type].color;
+                        if (q >= SWEET_Q + 0.08f) { sweetT = 0.0f; sweetPos = hb.pos; sweetQ = q; trailColor = (Color){ 255, 210, 60, 255 }; }   // いい当たりのサーブ
                         trailCount = 0;
                         serveAce = false;
                         P.sv = SV_FLIGHT;
@@ -1218,6 +1221,7 @@ int main(void)
                             plog.pendingVy = c.vyBall; plog.hasVy = !c.volley;
                         }
                         trailColor = SHOTS[type].color;
+                        if (c.quality >= SWEET_Q) { sweetT = 0.0f; sweetPos = ball.pos; sweetQ = c.quality; trailColor = (Color){ 255, 210, 60, 255 }; }   // いい当たり：金色の軌跡と光
                         trailCount = 0;
                         stats[type][0]++;
                         scoredLast = false;
@@ -1513,7 +1517,7 @@ int main(void)
                         if (kind != CELEB_NONE) SfxCelebrate(ai.persona, Vector3Distance(cam.position, ai.pos));
                     } else if (cs->lose[0] != CELEB_NONE && !score.over) {
                         float ch = cs->loseChance * (big ? 1.0f : ((endKind == 3 && hitter == 1) ? 0.5f : 0.15f));
-                        if (RandRange(0.0f, 1.0f) < ch) { kind = PICK(cs->lose); SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
+                        if (RandRange(0.0f, 1.0f) < ch) { { int nz = 0, ids[4]; for (int q = 0; q < 4; q++) if (cs->lose[q]) ids[nz++] = cs->lose[q]; kind = nz ? ids[GetRandomValue(0, nz - 1)] : CELEB_NONE; } SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
                     }
                     #undef PICK
                     if (score.over && winner == 0) {   // 自分の勝ち：相手はがっかり（喜ばない）
@@ -1605,6 +1609,12 @@ int main(void)
             if (bot.anim.celebT > 0.0f) bot.anim.celebT = fmaxf(bot.anim.celebT - simDt, 0.0f);
             if (ai.anim.smashT <= 0.0f && ai.anim.celebT > 0.0f) {
                 // 喜ぶ・怒る間はその場で
+                {   // 怒りのしぐさの音：投げたラケットが地面に当たる、球をかっ飛ばす
+                    float e0 = ai.anim.celebDur - ai.anim.celebT, e1 = e0 + simDt;
+                    float dist = Vector3Distance(cam.position, ai.pos);
+                    if (ai.anim.celebKind == CELEB_THROW && e0 < 0.97f && e1 >= 0.97f) SfxRacketSmash(dist);
+                    if (ai.anim.celebKind == CELEB_SWAT && e0 < 0.68f && e1 >= 0.68f) SfxHit(0.95f, 150.0f, false, false, false, dist);
+                }
                 ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
@@ -1874,6 +1884,25 @@ int main(void)
                 DrawLine3D((Vector3){ am.x, 0.015f, am.z - 0.5f }, (Vector3){ am.x, 0.015f, am.z + 0.5f }, ac);
             }
 
+            // ---- いい当たり：打った点から金色の光が放射状に飛び、輪が広がる ----
+            if (sweetT < 0.45f) {
+                float k = sweetT / 0.45f, al = 1.0f - k;
+                Color gold = { 255, 215, 70, 255 };
+                Vector3 vd = Vector3Normalize(Vector3Subtract(cam.position, sweetPos));   // カメラの方を向く輪
+                Vector3 ax = Vector3CrossProduct((Vector3){ 0, 0, 1 }, vd);
+                float ang = acosf(Clamp(vd.z, -1.0f, 1.0f)) * RAD2DEG;
+                if (Vector3Length(ax) < 1e-4f) ax = (Vector3){ 0, 1, 0 };
+                ax = Vector3Normalize(ax);
+                for (int r = 0; r < 3; r++) DrawCircle3D(sweetPos, 0.15f + 0.9f * k + 0.03f * r, ax, ang, Fade(gold, al * (1.0f - 0.25f * r)));
+                Vector3 ux = Vector3Normalize(Vector3CrossProduct(vd, (Vector3){ 0, 1, 0 })), uy = Vector3CrossProduct(ux, vd);
+                for (int i = 0; i < 12; i++) {   // 光の筋
+                    float a2 = i * (2.0f * PI / 12.0f) + 0.3f;
+                    Vector3 dir = Vector3Add(Vector3Scale(ux, cosf(a2)), Vector3Scale(uy, sinf(a2)));
+                    float r0 = 0.10f + 0.55f * k, r1 = r0 + 0.25f * (1.0f - k) + 0.05f;
+                    DrawLine3D(Vector3Add(sweetPos, Vector3Scale(dir, r0)), Vector3Add(sweetPos, Vector3Scale(dir, r1)), Fade(i % 2 ? RAYWHITE : gold, al));
+                }
+                DrawSphere(sweetPos, 0.06f + 0.10f * (1.0f - k), Fade((Color){ 255, 245, 200, 255 }, al * 0.8f));
+            }
             // 軌跡：新しいところほど濃く。相手の球は明るい色で
             if (guideLevel == 0) {
                 bool incoming = ball.lastHitter == HITTER_OPP;
@@ -2215,6 +2244,15 @@ int main(void)
             DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, GetScreenHeight() - 210, tw + 32, 44, Fade(BLACK, 0.75f));
             DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
         }
+        // ---- いい当たり：画面の縁が一瞬金色に光る ----
+        if (sweetT < 0.25f) {
+            float al = (0.25f + 0.5f * Clamp01((sweetQ - SWEET_Q) / 0.2f)) * (1.0f - sweetT / 0.25f);
+            int W = GetScreenWidth(), H = GetScreenHeight(), b = 26;
+            Color g = Fade((Color){ 255, 215, 70, 255 }, al), z = Fade((Color){ 255, 215, 70, 255 }, 0.0f);
+            DrawRectangleGradientV(0, 0, W, b, g, z); DrawRectangleGradientV(0, H - b, W, b, z, g);
+            DrawRectangleGradientH(0, 0, b, H, g, z); DrawRectangleGradientH(W - b, 0, b, H, z, g);
+        }
+        sweetT += frameDt;
         if (slowMo) DrawText(TR("SLOW x0.25", "スロー x0.25"), GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
         if (botControls) DrawText(TR("AUTOPILOT (B)", "自動操作（B）"), GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
         if (hudLevel == 0) DrawText(TR("Tab: stats", "Tab：成績"), GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
