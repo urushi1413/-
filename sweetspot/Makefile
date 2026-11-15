@@ -18,13 +18,19 @@ else
     endif
 endif
 
+# 売る版：make SALE=1（実在の選手・大会に似せた名前・身長の表示・ルーティン・決まったしぐさ・大会名を架空のものに）
+ifeq ($(SALE),1)
+    CFLAGS += -DSALE_BUILD
+    TARGET := sweetspot_sale$(suffix $(TARGET))
+endif
+
 SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c
 
 $(TARGET): $(SRC) game.h ja_glyphs.h
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
 
 clean:
-	rm -f sweetspot sweetspot.exe ai_vs_ai
+	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include

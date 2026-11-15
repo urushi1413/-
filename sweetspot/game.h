@@ -122,6 +122,14 @@ typedef struct {
 #define KNEE_LOAD        0.07f   // ストロークで引いたときにさらに沈む量（打つときに脚で押し上げる）
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
+// 売る版（make SALE=1）：実在の選手・大会に似せたものを架空のものにする。PN(自分用, 売る版)
+#ifdef SALE_BUILD
+#define PN(real, sale) sale
+#define SALE_ONLY 1
+#else
+#define PN(real, sale) real
+#define SALE_ONLY 0
+#endif
 enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT,
        CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART,
        CELEB_EAR,       // 耳に手を当てて観客をあおる（ジョコビッチ、アルカラス）
@@ -706,6 +714,7 @@ void TourDraw(const Tournament *t, int W, int H, float time);
 const char *TourEndMessage(const Tournament *t);   // 大会が終わったときの案内（優勝・負け・次の大会）
 void DrawTrophy3D(int slam, bool women, Vector3 base, float spin);   // 実在のトロフィーを参考にした形（base は一番下）
 float TrophyHeight(int slam, bool women);
+bool  TrophyIsDish(int slam, bool women);
 void TourBeginReveal(const Tournament *t, int fromRound);   // ほかの試合の結果を 1 試合ずつ見せ始める
 bool TourRevealActive(void);
 void TourRevealSkip(void);

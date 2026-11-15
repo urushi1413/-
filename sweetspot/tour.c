@@ -13,10 +13,13 @@ static const float TOUR_STR[PERSONA_COUNT][3] = {
 };
 
 
-static const char *SLAM_NAME[SLAM_COUNT]  = { "AUSTRALIAN OPENN", "ROLAND GARROZ", "WIMBLEDONN", "US OPENN" };
+static const char *SLAM_NAME[SLAM_COUNT]  = { PN("AUSTRALIAN OPENN", "SOUTHERN OPEN"), PN("ROLAND GARROZ", "RED CLAY OPEN"),
+                                              PN("WIMBLEDONN", "GREEN LAWN CHAMPIONSHIPS"), PN("US OPENN", "CITY LIGHTS OPEN") };   // 売る版は架空の大会
 static const int   SLAM_SURF[SLAM_COUNT]  = { SURF_HARD, SURF_CLAY, SURF_GRASS, SURF_HARD };
-static const char *SLAM_PLACE_EN[SLAM_COUNT] = { "MELBOURNE  -  JANUARY", "PARIS  -  MAY", "LONDON  -  JULY", "NEW YORK  -  AUGUST" };
-static const char *SLAM_PLACE_JA[SLAM_COUNT] = { "メルボルン  -  1 月", "パリ  -  5 月", "ロンドン  -  7 月", "ニューヨーク  -  8 月" };
+static const char *SLAM_PLACE_EN[SLAM_COUNT] = { PN("MELBOURNE  -  JANUARY", "HARBOUR CITY  -  JANUARY"), PN("PARIS  -  MAY", "OLD TOWN  -  MAY"),
+                                                 PN("LONDON  -  JULY", "RIVERSIDE  -  JULY"), PN("NEW YORK  -  AUGUST", "METRO CITY  -  AUGUST") };
+static const char *SLAM_PLACE_JA[SLAM_COUNT] = { PN("メルボルン  -  1 月", "ハーバーシティ  -  1 月"), PN("パリ  -  5 月", "オールドタウン  -  5 月"),
+                                                 PN("ロンドン  -  7 月", "リバーサイド  -  7 月"), PN("ニューヨーク  -  8 月", "メトロシティ  -  8 月") };
 #define SLAM_PLACE (gLang == LANG_JA ? SLAM_PLACE_JA : SLAM_PLACE_EN)
 // 予選上がりの名前（架空）
 static const char *QUAL_MEN[] = { "Lukas Brandtner", "Mateo Varga", "Tomas Ruzicka", "Hugo Lefevre", "Diego Arrieta", "Kenta Moriyama",

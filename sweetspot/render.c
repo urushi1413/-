@@ -2192,9 +2192,11 @@ static void Handle(Vector3 o, float spin, float side, float x0, float y0, float 
         prev = p;
     }
 }
+// 大皿か（売る版は芝の女子も杯）
+bool TrophyIsDish(int slam, bool women) { return !SALE_ONLY && ((slam % 4) + 4) % 4 == 2 && women; }
 float TrophyHeight(int slam, bool women)
 {
-    if (slam == 2 && women) return 0.48f;   // 大皿は直径
+    if (TrophyIsDish(slam, women)) return 0.48f;   // 大皿は直径
     static const float H[4] = { 0.62f, 0.58f, 0.50f, 0.56f };
     return H[((slam % 4) + 4) % 4] * (women && slam != 3 ? 0.88f : 1.0f);
 }
@@ -2222,7 +2224,14 @@ void DrawTrophy3D(int slam, bool women, Vector3 o, float spin)
         Lathe(o, r, y, 2, spin, black); Lathe(o, r + 1, y + 1, 9, spin, silver);
         for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.15f * k, 0.55f * k, 0.07f * k, 0.30f * k, 0.12f * k, 0.017f, silver);
     } else if (slam == 2) {
-        if (!women) {   // ウィンブルドン・男子：金色の杯、ふたと頂上のパイナップル飾り、取っ手 2 つ
+        if (SALE_ONLY) {   // 売る版：芝の大会は金色の杯（ふたと飾りなし）。女子は少し小さい
+            float k = women ? 0.88f : 1.0f;
+            float r[] = { 0.08f, 0.075f, 0.035f, 0.025f, 0.06f, 0.11f, 0.13f, 0.135f };
+            float y[] = { 0.00f, 0.03f,  0.06f,  0.14f,  0.20f, 0.30f, 0.40f, 0.46f };
+            for (int i = 0; i < 8; i++) { r[i] *= k; y[i] *= k; }
+            Lathe(o, r, y, 8, spin, gold);
+            for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.13f * k, 0.42f * k, 0.07f * k, 0.20f * k, 0.09f * k, 0.016f, gold);
+        } else if (!women) {   // ウィンブルドン・男子：金色の杯、ふたと頂上のパイナップル飾り、取っ手 2 つ
             const float r[] = { 0.075f, 0.07f, 0.03f, 0.025f, 0.06f, 0.10f, 0.105f, 0.10f, 0.105f, 0.09f, 0.05f, 0.02f };
             const float y[] = { 0.00f,  0.02f, 0.05f, 0.12f,  0.17f, 0.24f, 0.31f,  0.35f, 0.37f,  0.40f, 0.43f, 0.45f };
             Lathe(o, r, y, 12, spin, gold);

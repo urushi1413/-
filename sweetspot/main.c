@@ -142,41 +142,41 @@ static const char *PersonaBlurb(int p)
 {
     static const char *EN[PERSONA_COUNT] = {
         "No special traits. A solid all-round player.",
-        "Elegant all-court genius. One-handed backhand, great slice and volleys. Loves grass.",
-        "The best defender and returner. Rubber-band sliding, ice cold on big points.",
-        "Left-handed. Huge topspin forehand. King of clay, never gives up.",
-        "Tireless counter-puncher. Great lobs and returns. Talks to himself a lot.",
-        "Explosive speed and power. Drop shots, net play, loves the big stage.",
-        "Hits early and flat. Fewest errors, the best returner of the new generation.",
-        "Plays far behind the baseline. Flat, low balls and almost no errors on hard courts.",
-        "Huge serve and wild shot-making. Underarm serves, easily frustrated.",
-        "Fast feet, takes the ball very early. Great returner, strong in deciding sets.",
-        "Big serve and solid two-handed backhand. 198cm. Clay and hard.",
-        "The most powerful serve in the women's game. Fierce and clutch.",
-        "Heavy topspin and fast feet. Dominant on clay.",
-        "Big hitter with a fast serve. Very aggressive.",
-        "Fastest legs on tour. Great defence.",
-        "Flat and aggressive. Turns away to fix her strings. Strong on clay.",
-        "Slice backhand and volleys. Varied and clever. Loves grass.",
+        PN("Elegant all-court genius. One-handed backhand, great slice and volleys. Loves grass.", "All-court player. One-handed backhand, good slice and volleys. Likes fast courts."),
+        PN("The best defender and returner. Rubber-band sliding, ice cold on big points.", "Strong defender and returner. Slides well and stays calm on big points."),
+        PN("Left-handed. Huge topspin forehand. King of clay, never gives up.", "Left-handed. Heavy topspin forehand. Strong on clay and never gives up."),
+        PN("Tireless counter-puncher. Great lobs and returns. Talks to himself a lot.", "Tireless counter-puncher. Good lobs and returns."),
+        PN("Explosive speed and power. Drop shots, net play, loves the big stage.", "Fast and powerful. Uses drop shots and comes to the net."),
+        PN("Hits early and flat. Fewest errors, the best returner of the new generation.", "Hits early and flat. Few errors and a good returner."),
+        PN("Plays far behind the baseline. Flat, low balls and almost no errors on hard courts.", "Stands far behind the baseline. Flat, low balls and few errors. Likes hard courts."),
+        PN("Huge serve and wild shot-making. Underarm serves, easily frustrated.", "Big serve and creative shots. Moody and easily frustrated."),
+        PN("Fast feet, takes the ball very early. Great returner, strong in deciding sets.", "Quick feet and takes the ball early. Good returner, strong in deciding sets."),
+        PN("Big serve and solid two-handed backhand. 198cm. Clay and hard.", "Big serve and a solid two-handed backhand. Tall."),
+        PN("The most powerful serve in the women's game. Fierce and clutch.", "Very powerful serve. Fierce and clutch."),
+        PN("Heavy topspin and fast feet. Dominant on clay.", "Heavy topspin and fast feet. Strong on clay."),
+        PN("Big hitter with a fast serve. Very aggressive.", "Big hitter with a fast serve. Very aggressive."),
+        PN("Fastest legs on tour. Great defence.", "Very fast legs. Great defence."),
+        PN("Flat and aggressive. Turns away to fix her strings. Strong on clay.", "Flat and aggressive. Loud on every shot."),
+        PN("Slice backhand and volleys. Varied and clever. Loves grass.", "Slice backhand and volleys. Varied and clever. Likes fast courts."),
     };
     static const char *JA[PERSONA_COUNT] = {
         "癖のない、バランスのいい選手。",
-        "優雅なオールラウンダー。片手バック、キレのあるスライスとボレー。芝が得意。",
-        "守備とリターンが一番。よく滑って拾い、大事なポイントに一番強い。",
-        "左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。",
-        "粘り強い守備の名手。ロブとリターンがうまい。独り言が多い。",
-        "爆発的な足と強打。ドロップとネットプレー。大舞台に強い。",
-        "早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。",
-        "ベースラインのずっと後ろで構え、低いフラットでミスをしない。ハードが得意。",
-        "とても速いサーブと気まぐれな天才肌。アンダーサーブも。すぐ怒る。",
-        "足が速く、上がり際を早く打つ。リターンがうまく、最終セットに強い。",
-        "速いサーブと堅い両手バック。198cm。クレーとハードが得意。",
-        "女子で一番速いサーブ。強気で、勝負どころに強い。",
-        "回転の強いトップスピンと速い足。クレーで圧倒的。",
-        "強打と速いサーブ。とても攻撃的。",
-        "ツアーで一番の俊足。守備がうまい。",
-        "フラットで強気。後ろを向いてガットを直す。クレーにも強い。",
-        "スライスとボレー。多彩で頭がいい。芝が得意。",
+        PN("優雅なオールラウンダー。片手バック、キレのあるスライスとボレー。芝が得意。", "オールラウンダー。片手バック、スライスとボレーがうまい。速いコートが得意。"),
+        PN("守備とリターンが一番。よく滑って拾い、大事なポイントに一番強い。", "守備とリターンがうまい。よく滑って拾い、大事なポイントで落ち着いている。"),
+        PN("左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。", "左利き。回転の強いフォア。クレーに強く、最後まであきらめない。"),
+        PN("粘り強い守備の名手。ロブとリターンがうまい。独り言が多い。", "粘り強い守備型。ロブとリターンがうまい。"),
+        PN("爆発的な足と強打。ドロップとネットプレー。大舞台に強い。", "速い足と強打。ドロップとネットプレーも使う。"),
+        PN("早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。", "早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。"),
+        PN("ベースラインのずっと後ろで構え、低いフラットでミスをしない。ハードが得意。", "ベースラインのずっと後ろで構え、低いフラットでミスをしない。ハードが得意。"),
+        PN("とても速いサーブと気まぐれな天才肌。アンダーサーブも。すぐ怒る。", "速いサーブと型にはまらないショット。気分屋で、すぐ怒る。"),
+        PN("足が速く、上がり際を早く打つ。リターンがうまく、最終セットに強い。", "足が速く、上がり際を早く打つ。リターンがうまく、最終セットに強い。"),
+        PN("速いサーブと堅い両手バック。198cm。クレーとハードが得意。", "速いサーブと堅い両手バック。背が高い。"),
+        PN("女子で一番速いサーブ。強気で、勝負どころに強い。", "とても速いサーブ。強気で、勝負どころに強い。"),
+        PN("回転の強いトップスピンと速い足。クレーで圧倒的。", "回転の強いトップスピンと速い足。クレーに強い。"),
+        PN("強打と速いサーブ。とても攻撃的。", "強打と速いサーブ。とても攻撃的。"),
+        PN("ツアーで一番の俊足。守備がうまい。", "とても足が速い。守備がうまい。"),
+        PN("フラットで強気。後ろを向いてガットを直す。クレーにも強い。", "フラットで強気。毎球、大きな声を出す。"),
+        PN("スライスとボレー。多彩で頭がいい。芝が得意。", "スライスとボレー。多彩で頭がいい。速いコートが得意。"),
     };
     // 表は 0〜8 が男子（癖なし＋8 人）、9〜14 が女子、15・16 が錦織・ズベレフ。上の並びに合わせる
     static const int ORDER[PERSONA_COUNT] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 9, 10 };
@@ -236,7 +236,7 @@ static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm
     float e = tm + 2.0f, hy = (2.02f + 0.06f * sinf(e * 1.6f)) * sc;
     float th = TrophyHeight(t->slam, t->women);
     Vector3 base = { pos.x, hy + 0.03f - 0.30f * th, pos.z - 0.06f * sc };
-    if (t->slam == 2 && t->women) base.y = hy - 0.5f * th;   // 大皿は真ん中を持つ
+    if (TrophyIsDish(t->slam, t->women)) base.y = hy - 0.5f * th;   // 大皿は真ん中を持つ
     DrawTrophy3D(t->slam, t->women, base, tm * 0.6f);
     EndMode3D();
     AtmosOverlay(cam);
@@ -789,7 +789,9 @@ int main(void)
                     DrawRectangle(bx, cy - 6, bw, 62, Fade(BLACK, 0.55f));
                     DrawText(tag, bx + 10, cy, 16, k == 0 ? SKYBLUE : ORANGE);
                     DrawText(nm, bx + 10, cy + 20, 22, RAYWHITE);
+#ifndef SALE_BUILD   // 売る版は身長を出さない（実在の選手と結びつかないように）
                     DrawText(TextFormat("%.0f cm", PersonaHeight(pp)), bx + bw - 10 - MeasureText(TextFormat("%.0f cm", PersonaHeight(pp)), 16), cy, 16, LIGHTGRAY);
+#endif
                 }
                 // 紹介文（下に 2 人分）
                 int by = H - 150, bx0 = pw + 60, bw0 = W - bx0 - 20;
@@ -993,6 +995,9 @@ int main(void)
                     int nb = GetRandomValue(mm->bMin, mm->bMax) + (gPointImportance >= 0.5f ? mm->bBig : 0);
                     if (serveNo == 2 && mm->serveRit != RIT_BOUNCE) nb = GetRandomValue(1, 3);   // セカンドは短く
                     int kind = serveNo == 2 && mm->serveRit == RIT_STRINGS ? RIT_BOUNCE : mm->serveRit;
+#ifdef SALE_BUILD
+                    kind = RIT_BOUNCE;   // 売る版：決まったルーティン（儀式・髪・ガット）はなく、ボールをつくだけ
+#endif
                     ai.anim.celebKind = kind; ai.anim.ritBounces = nb;
                     ai.anim.celebDur = RitualDuration(kind, nb); ai.anim.celebT = ai.anim.celebDur;
                     ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
@@ -1928,13 +1933,15 @@ int main(void)
                         if (winner == 0 && (gPointImportance >= 1.0f || setEnded2)) ai.tilt = fminf(1.0f, ai.tilt + mm->tilt);
                         if (mm->tank > 0.0f && score.sets[0] > score.sets[1]) ai.tilt = fmaxf(ai.tilt, mm->tank);
                         // ポイントの間のしぐさ（ナダルの儀式、シャラポワは後ろを向いてガットを直す、髪を耳にかける）
-                        if (kind == CELEB_NONE && mm->betweenRit && !score.over && RandRange(0.0f, 1.0f) < mm->betweenChance) {
+                        if (kind == CELEB_NONE && mm->betweenRit && !score.over && !SALE_ONLY && RandRange(0.0f, 1.0f) < mm->betweenChance) {
                             ai.anim.celebKind = mm->betweenRit; ai.anim.ritBounces = 0;
                             ai.anim.celebDur = RitualDuration(mm->betweenRit, 0); ai.anim.celebT = ai.anim.celebDur;
                             ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
                         }
                     }
                     if (kind != CELEB_NONE) {
+                        if (SALE_ONLY && kind == CELEB_EAR) kind = CELEB_FIST;        // 売る版：特定の選手を思わせるしぐさは、ふつうの喜び方に
+                        if (SALE_ONLY && kind == CELEB_HEART) kind = CELEB_ARMS_UP;
                         ai.anim.celebKind = kind; ai.anim.celebDur = CelebDuration(kind); ai.anim.celebT = ai.anim.celebDur;
                         ai.anim.walkT = 0.0f; ai.anim.faceYaw = 0.0f;
                         if (kind == CELEB_RANT) {   // 抗議：審判台の前まで歩いていき、審判の方を向いて文句を言う
