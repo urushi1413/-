@@ -134,7 +134,7 @@ void ApplyLook(SwingAnim *a, int persona)
             { HS_SHORT, 0.0f, 0 },        // 癖なし
             { HS_SWEPT, 0.0f, 0 },        // フェデラー：横に流した髪＋ヘッドバンド
             { HS_SHORT, 0.25f, 0 },       // ジョコビッチ：短髪、うっすら無精ひげ
-            { HS_NADAL, 0.40f, 0 },       // ナダル：バンダナからはみ出す髪、無精ひげ
+            { HS_NADAL, 0.0f, 0 },        // ナダル：バンダナからはみ出す髪（ひげなし）
             { HS_CURLY_SHORT, 0.45f, 0 }, // マレー：短い巻き毛、無精ひげ
             { HS_CURLY_SHORT, 0.0f, 0 },  // アルカラス：前が高い巻き毛
             { HS_CURLY, 0.0f, 0 },        // シナー：もじゃもじゃの赤毛
