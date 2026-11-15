@@ -117,6 +117,39 @@ def main():
         for nm, y in zip(names, (pre, hit)):
             sf.write(os.path.join(OUT, nm + ".wav"), np.clip(y, -1, 1).astype(np.float32), SR, subtype="PCM_16")
         print(f"{names[0]:26s} {len(pre) / SR:.2f}s   {names[1]:26s} {len(hit) / SR:.2f}s   (x{g:.1f})")
+    make_roar(src)
+
+
+def make_roar(src):
+    """雄叫び（決まったと確信したショットで、打った瞬間から叫ぶ）：
+         共通の声の頭（打球音と「ふっ」）のあとに、いただいた叫び声（「えええええ」）を続ける。
+         叫び声は近くで録った声なので遠くにして、最後は響きを長く残して消える（拍手の中へ）"""
+    path = glob.glob(os.path.join(src, "*djokovic_roar.m4a"))
+    if not path:
+        return
+    head, _ = sf.read(os.path.join(OUT, "hit_voice.wav"))
+    head = head[: int(0.17 * SR)].copy()                      # 打球音と「ふっ」
+    x = load(path[0])
+    w = int(0.02 * SR)
+    env = np.array([np.sqrt(np.mean(x[i:i + w] ** 2)) for i in range(0, len(x) - w, w)])
+    e = (np.nonzero(env > 0.05 * env.max())[0][-1] + 2) * w   # 叫び終わるところまで全部（約 2.3 秒）
+    x = np.concatenate([x[:e], np.zeros(int(1.2 * SR))])      # 響きが残る分
+    y = far_away(x, 77, 1.0)
+    y = y / np.max(np.abs(y)) * 0.62                          # 叫び声は打球音より少し小さく（遠く）
+    n = len(head) + len(y) - int(0.03 * SR)
+    out = np.zeros(n)
+    out[: len(head)] += head * np.r_[np.ones(len(head) - int(0.03 * SR)), np.linspace(1, 0, int(0.03 * SR))]
+    s0 = len(head) - int(0.03 * SR)
+    ramp = np.r_[np.linspace(0, 1, int(0.03 * SR)), np.ones(len(y) - int(0.03 * SR))]
+    out[s0:s0 + len(y)] += y * ramp
+    f = int(0.25 * SR)                                        # 叫び終わりは少しずつ弱め、あとは響きが残って消える（拍手の中へ）
+    s1 = s0 + e - f
+    out[s1:s0 + e] *= np.linspace(1, 0.55, f)
+    out[s0 + e:] *= 0.55
+    g = int(0.4 * SR)
+    out[-g:] *= np.linspace(1, 0, g)
+    sf.write(os.path.join(OUT, "djokovik_roar.wav"), np.clip(out, -1, 1).astype(np.float32), SR, subtype="PCM_16")
+    print(f"djokovik_roar              {len(out) / SR:.2f}s   (共通の声の頭＋いただいた叫び声)")
 
 
 if __name__ == "__main__":

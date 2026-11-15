@@ -936,6 +936,8 @@ float SfxServeLead(int who);                     // サーブの声を打つ何�
 bool  SfxServePreBy(int who, float dist);        // サーブの打つ前の声
 float SfxGruntChance(int who);
 float SfxServeChance(int who);
+bool  SfxHasRoar(int who);                       // 雄叫びの録音がある選手か
+void  SfxHitRoar(int who, float dist);           // 雄叫び（打球音入り）を打った瞬間から
 void  SfxCelebrate(int who, float dist);
 void  SfxAngry(int who, float dist);
 void  SfxStopApplause(void);

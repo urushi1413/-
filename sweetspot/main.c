@@ -72,6 +72,24 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
 
 // 体勢が崩れて取った球か（ラケットでぎりぎり取って地面に当たる音を鳴らす）：飛びついた、または手が届くぎりぎり。
 //   スライス・ボレー・ネット前（distFromNet が VOICE_NET_Z より近い）は除く
+// 打った直後の球が、もう決まったか（相手がどうやっても届かない）：球の飛び方を先まで計算する。
+//   相手は今の位置から、反応 0.25 秒のあと毎秒 5.7m で走り、2.0m まで手が届くとする。入らない球は決まりではない
+//   （AI どうしの試し：NORMAL は決まりと見た球の 85% が本当に決まった。決まった球のうち 13〜17% を拾う）
+static bool ClearWinner(const Ball *ball, Vector3 opp)
+{
+    Ball b = *ball;
+    float t = 0.0f;
+    for (int i = 0; i < 240 * 6 && b.active && b.bounces < 2; i++) {
+        StepBall(&b, PHYS_DT);
+        t += PHYS_DT;
+        if (b.bounces >= 1 && b.result != RESULT_IN) return false;
+        if (b.pos.y > 2.6f) continue;   // 高すぎる球は打てない（スマッシュは考えない）
+        float d = sqrtf((b.pos.x - opp.x) * (b.pos.x - opp.x) + (b.pos.z - opp.z) * (b.pos.z - opp.z));
+        if (d - 2.0f <= 5.7f * fmaxf(t - 0.25f, 0.0f)) return false;   // 間に合う瞬間がある
+    }
+    return b.bounces >= 1;
+}
+
 static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, float hold)
 {
     (void)hold;
@@ -1434,6 +1452,9 @@ int main(void)
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
                         ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, SHOTS[type].name, P.lastKmh, c.quality, false, false, c.volley, c.isReturn, P.pos, c.height, ai.pos, Vector3Length(ai.vel));
+                        if (mode == MODE_MATCH && gYouPersona && SfxHasRoar(gYouPersona) && ClearWinner(&ball, ai.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)
+                            SfxHitRoar(gYouPersona, Vector3Distance(cam.position, P.pos));   // 自分がジョコビッチを使っているときも
+                        else
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
                         playerGrunt = false;
@@ -1512,6 +1533,10 @@ int main(void)
                     MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
                     youMinDist = 99.0f;
                     P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // 相手が打った：スプリットステップ
+                    // 決まったと確信したショット：雄叫び（ジョコビッチ）。いつもではなく、大事なポイントほど
+                    if (mode == MODE_MATCH && SfxHasRoar(ai.persona) && ClearWinner(&ball, P.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)
+                        SfxHitRoar(ai.persona, Vector3Distance(cam.position, ai.pos));
+                    else
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
                            DefensiveVoice(&ai.anim.lastContact, ai.lastType, -ai.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
                     aiGrunt = false;

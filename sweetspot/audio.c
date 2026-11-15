@@ -30,9 +30,10 @@ static const char *SFX_NAMES[S_COUNT] = {
 // ---- 選手ごとの声 ----
 // 選手の録音（<名前>_grunt_pre など）があればそれを使う。なければ共通の声を、選手ごとの高さ・大きさで鳴らす
 //   サーブは <名前>_serve_pre / <名前>_serve_voice（なければその選手のストロークの声）
-enum { V_GRUNT_PRE, V_HIT_VOICE, V_CELEBRATE, V_ANGRY, V_SERVE_PRE, V_SERVE_VOICE, V_COUNT };
-static const char *VOICE_NAMES[V_COUNT] = { "grunt_pre", "hit_voice", "celebrate", "angry", "serve_pre", "serve_voice" };
-static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRATE, S_ANGRY, S_GRUNT_PRE, S_HIT_VOICE };
+//   雄叫びは <名前>_roar（決まったと確信したショットで、打った瞬間から叫ぶ。打球音入り）。本人の録音がある選手だけ
+enum { V_GRUNT_PRE, V_HIT_VOICE, V_CELEBRATE, V_ANGRY, V_SERVE_PRE, V_SERVE_VOICE, V_ROAR, V_COUNT };
+static const char *VOICE_NAMES[V_COUNT] = { "grunt_pre", "hit_voice", "celebrate", "angry", "serve_pre", "serve_voice", "roar" };
+static const int VOICE_GENERIC[V_COUNT] = { S_GRUNT_PRE, S_HIT_VOICE, S_CELEBRATE, S_ANGRY, S_GRUNT_PRE, S_HIT_VOICE, S_HIT_VOICE };
 typedef struct { const char *file; float pitch, vol, chance; } VoiceProfile;
 static const VoiceProfile VOICE[PERSONA_COUNT] = {
     { "ai",       1.00f, 0.90f, 0.60f },
@@ -350,6 +351,16 @@ static bool StartPre(int who, bool serve, float dist)
     return true;
 }
 bool SfxGruntPreBy(int who, float dist) { return StartPre(who, false, dist); }
+// 雄叫び：決まったと確信したショットで、打った瞬間から叫ぶ（打球音も入っている）。最後は拍手の中へ消える
+bool SfxHasRoar(int who) { return gAudioOk && PSlot(who, V_ROAR)->nVar > 0; }
+void SfxHitRoar(int who, float dist)
+{
+    SfxSlot *s = PSlot(who, V_ROAR);
+    if (!gAudioOk || !s->nVar) return;
+    int v = GetRandomValue(0, s->nVar - 1);
+    PlaySlotVar(s, v, 1.1f * VoiceDistVol(dist) * VOICE_GAIN, 1.0f);
+    gVoiceUntil = GetTime() + VarLen(s, v);   // 叫んでいる間は、ほかの声を出さない
+}
 bool SfxServePreBy(int who, float dist) { return StartPre(who, true, dist); }
 bool SfxGruntPre(float dist) { return SfxGruntPreBy(-1, dist); }
 
