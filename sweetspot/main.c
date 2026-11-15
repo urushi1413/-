@@ -1147,7 +1147,7 @@ int main(void)
                     // アンダーサーブ（キルギオス）：相手がベースラインのずっと後ろにいるときに、トスを上げずに下から
                     aiUnderarm = true; aiTossing = true; aiTossT = AI_TOSS_HIT_T;
                     ai.anim.celebT = 0.0f;
-                    snprintf(toast, sizeof(toast), "%s", TR("UNDERARM SERVE!", "アンダーサーブ！")); toastT = 2.0f;
+                    snprintf(toast, sizeof(toast), "%s", TL("UNDERARM SERVE!", "アンダーサーブ！")); toastT = 2.0f;
                 } else if (phaseTimer <= 0.0f) {
                     aiTossing = true; aiTossT = 0.0f;
                     ai.anim.celebT = 0.0f;
@@ -1564,8 +1564,8 @@ int main(void)
                     retPending = true; retServer = hitter;
                 } else if (serveNo == 1) {
                     serveNo = 2;
-                    pointMsg = (ball.result == RESULT_NET) ? TR("Fault (net)", "フォルト（ネット）") : TR("Fault", "フォルト");
-                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), TR("Fault (OUT %.0fcm)", "フォルト（アウト %.0fcm）"), fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg;
+                    pointMsg = (ball.result == RESULT_NET) ? TL("Fault (net)", "フォルト（ネット）") : TL("Fault", "フォルト");
+                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), TL("Fault (OUT %.0fcm)", "フォルト（アウト %.0fcm）"), fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg;
                                                      lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
@@ -1573,7 +1573,7 @@ int main(void)
                     phaseTimer = 1.5f;
                 } else {
                     winner = 1 - hitter;
-                    pointMsg = TR("Double fault", "ダブルフォールト");
+                    pointMsg = TL("Double fault", "ダブルフォールト");
                     if (ball.result == RESULT_OUT) { lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     endKind = 4;
@@ -1583,18 +1583,18 @@ int main(void)
                     winner = 1 - hitter;
                     endKind = 3;
                     if (ball.result == RESULT_OUT) { SfxCallOut(); lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
-                    pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? TR("Your error (net)", "自分のミス（ネット）") : TR("AI error (net)", "相手のミス（ネット）"))
-                                                           : (hitter == 0 ? TR("Your error (out)", "自分のミス（アウト）") : TR("AI error (out)", "相手のミス（アウト）"));
+                    pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? TL("Your error (net)", "自分のミス（ネット）") : TL("AI error (net)", "相手のミス（ネット）"))
+                                                           : (hitter == 0 ? TL("Your error (out)", "自分のミス（アウト）") : TL("AI error (out)", "相手のミス（アウト）"));
                     if (ball.result == RESULT_OUT) {   // どれだけ外れたか
-                        snprintf(outMsg, sizeof(outMsg), TR("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), hitter == 0 ? TR("Your", "自分") : TR("AI", "相手"), fmaxf(ball.outBy * 100.0f, 1.0f));
+                        snprintf(outMsg, sizeof(outMsg), TL("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), hitter == 0 ? TL("Your", "自分") : TL("AI", "相手"), fmaxf(ball.outBy * 100.0f, 1.0f));
                         pointMsg = outMsg;
                     }
                 } else if (ball.bounces >= 2) {
                     winner = hitter;
                     endKind = ball.isServe ? 1 : 2;
-                    if (ball.isServe) { pointMsg = (hitter == 0) ? TR("Your ace / unreturned serve", "自分のサービスエース") : TR("AI ace / unreturned serve", "相手のサービスエース");
+                    if (ball.isServe) { pointMsg = (hitter == 0) ? TL("Your ace / unreturned serve", "自分のサービスエース") : TL("AI ace / unreturned serve", "相手のサービスエース");
                                         mst[hitter][4]++; retPending = false; }
-                    else              pointMsg = (hitter == 0) ? TR("Your winner", "自分のウィナー") : TR("AI winner", "相手のウィナー");
+                    else              pointMsg = (hitter == 0) ? TL("Your winner", "自分のウィナー") : TL("AI winner", "相手のウィナー");
                 }
             }
             if (winner >= 0) {
@@ -1633,12 +1633,12 @@ int main(void)
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
-                    snprintf(scoreCall, sizeof(scoreCall), TR("GAME, SET%s  %s   (%d - %d)", "ゲーム、セット%s  %s   (%d - %d)"), score.over ? TR(" AND MATCH", "アンドマッチ") : "",
-                             winner == 0 ? TR("YOU", "自分") : OPP_SHORT, g[0], g[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), TL("GAME, SET%s  %s   (%d - %d)", "ゲーム、セット%s  %s   (%d - %d)"), score.over ? TL(" AND MATCH", "アンドマッチ") : "",
+                             winner == 0 ? TL("YOU", "自分") : OPP_SHORT, g[0], g[1]);
                     if (!score.over) { setBreak = true; summaryT = 0.0f; }
                 }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
-                    snprintf(scoreCall, sizeof(scoreCall), TR("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? TR("YOU", "自分") : OPP_SHORT, score.games[0], score.games[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? TL("YOU", "自分") : OPP_SHORT, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
@@ -1659,11 +1659,11 @@ int main(void)
                         phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.6f);
                         const char *nm = OPP_SHORT;
                         if (ai.smashes == 1) {
-                            snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告、%s 選手"), nm, nm);
+                            snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告、%s 選手"), nm, nm);
                         } else {
                             // 2 回目からはポイントペナルティ（ゲームの始まりなので、これでゲームが終わることはない）
                             AwardPoint(&score, 0);
-                            snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ、%s 選手"), nm, nm);
+                            snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ、%s 選手"), nm, nm);
                         }
                         rageMsgT = SMASH_TIME + 2.5f;
                         SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos));
@@ -1748,14 +1748,14 @@ int main(void)
                 }
                 // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
                 {
-                    const char *who = winner == 0 ? TR("YOU", "自分") : OPP_SHORT;
-                    const char *big = gPointImportance >= 1.0f ? TR("BIG POINT  -  ", "大事なポイント  -  ") : "";
-                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), TR("%s SMASHES THE RACKET", "%s がラケットを叩きつける"), OPP_SHORT);
-                    else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), TR("%sACE  %s  %.0f km/h", "%sエース  %s  %.0f km/h"), big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
-                    else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? TR("%s%s WINNER  (%d-shot rally)", "%s%s のウィナー（%d 本のラリー）") : TR("%s%s WINNER", "%s%s のウィナー"), big, who, rallyHits);
-                    else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), TR("%s%d-SHOT RALLY  -  point %s", "%s%d 本のラリー  -  %s のポイント"), big, rallyHits, who);
-                    else                        snprintf(hlCap, sizeof(hlCap), TR("%sPOINT %s", "%s%s のポイント"), big, who);
-                    if (score.over) snprintf(hlCap, sizeof(hlCap), TR("MATCH POINT  -  %s WINS", "マッチポイント  -  %s の勝ち"), who);
+                    const char *who = winner == 0 ? TL("YOU", "自分") : OPP_SHORT;
+                    const char *big = gPointImportance >= 1.0f ? TL("BIG POINT  -  ", "大事なポイント  -  ") : "";
+                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), TL("%s SMASHES THE RACKET", "%s がラケットを叩きつける"), OPP_SHORT);
+                    else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), TL("%sACE  %s  %.0f km/h", "%sエース  %s  %.0f km/h"), big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
+                    else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? TL("%s%s WINNER  (%d-shot rally)", "%s%s のウィナー（%d 本のラリー）") : TL("%s%s WINNER", "%s%s のウィナー"), big, who, rallyHits);
+                    else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), TL("%s%d-SHOT RALLY  -  point %s", "%s%d 本のラリー  -  %s のポイント"), big, rallyHits, who);
+                    else                        snprintf(hlCap, sizeof(hlCap), TL("%sPOINT %s", "%s%s のポイント"), big, who);
+                    if (score.over) snprintf(hlCap, sizeof(hlCap), TL("MATCH POINT  -  %s WINS", "マッチポイント  -  %s の勝ち"), who);
                     hlScore = 0.5f * rallyHits + (endKind == 2 ? 3.0f : 0.0f) + (endKind == 1 ? 2.0f : 0.0f) + 4.0f * gPointImportance
                             + (ai.anim.celebT > 0.0f ? 1.5f : 0.0f) + (ai.anim.smashT > 0.0f ? 6.0f : 0.0f) + (score.over ? 8.0f : 0.0f)
                             + RandRange(0.0f, 0.5f);
@@ -1792,10 +1792,10 @@ int main(void)
                 phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.2f);
                 const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : TR("YOU", "自分");
                 if (youSmashes == 1) {
-                    snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES THE RACKET!\nCode violation, racket abuse. Warning.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告"), nm);
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES THE RACKET!\nCode violation, racket abuse. Warning.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告"), nm);
                 } else {
                     AwardPoint(&score, 1);   // ポイントペナルティ：相手のポイント
-                    snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES THE RACKET!\nCode violation, racket abuse. Point penalty.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ"), nm);
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES THE RACKET!\nCode violation, racket abuse. Point penalty.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ"), nm);
                 }
                 rageMsgT = SMASH_TIME + 2.5f;
                 SfxAngry(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
@@ -2184,7 +2184,9 @@ int main(void)
             DrawText(TR("R: replay", "R：リプレイ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay", "R：リプレイ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
         if (tour.active && mode == MODE_MATCH && hudLevel <= 2) {
+            int lgk = gLang; gLang = LANG_EN;   // 試合中のテロップは英語
             const char *tl = TextFormat("%s  -  %s", TourName(tour.slam), TourRoundName(tour.round));
+            gLang = lgk;
             DrawText(tl, (int)fmaxf(520.0f, GetScreenWidth() / 2 - MeasureText(tl, 18) / 2), 8, 18, Fade(YELLOW, 0.85f));
         }
         // ---- 際どい判定の拡大図（上から見たライン際。1cm = 6 ピクセル）----
@@ -2204,10 +2206,10 @@ int main(void)
             DrawCircleLines((int)cx, (int)cy, BALL_R * S, Fade(YELLOW, al));
             bool in = hawk.result == RESULT_IN;
             float gap = (hawk.lineDist - BALL_R) * 100.0f;   // 球の端とラインの外側の縁の距離（cm）
-            const char *verdict = in ? (hawk.lineDist > 0.0f ? TextFormat(TR("IN  (on the line %.1fcm)", "イン（ラインに %.1fcm かかった）"), fabsf(gap)) : TR("IN", "イン"))
-                                     : TextFormat(TR("OUT  %.1fcm", "アウト  %.1fcm"), gap);
+            const char *verdict = in ? (hawk.lineDist > 0.0f ? TextFormat(TL("IN  (on the line %.1fcm)", "イン（ラインに %.1fcm かかった）"), fabsf(gap)) : TL("IN", "イン"))
+                                     : TextFormat(TL("OUT  %.1fcm", "アウト  %.1fcm"), gap);
             DrawRectangle(px, py, pw, 26, Fade(BLACK, 0.6f * al));
-            DrawText(TR("BALL MARK  (close call)", "ボールの跡（際どい判定）"), px + 8, py + 5, 16, Fade(RAYWHITE, al));
+            DrawText(TL("BALL MARK  (close call)", "ボールの跡（際どい判定）"), px + 8, py + 5, 16, Fade(RAYWHITE, al));
             DrawText(verdict, px + 10, py + ph - 30, 22, Fade(in ? (Color){ 120, 255, 120, 255 } : (Color){ 255, 110, 90, 255 }, al));
         }
 

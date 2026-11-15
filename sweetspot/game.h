@@ -17,6 +17,7 @@
 enum { LANG_EN, LANG_JA };
 extern int gLang;
 #define TR(en, ja) (gLang == LANG_JA ? (ja) : (en))
+#define TL(en, ja) (en)   // 試合中のテロップ（コール・判定・警告）は英語のまま（いずれ音声のコールにする）
 void UiFontInit(void);
 bool UiJapaneseOk(void);
 void UiDrawText(const char *t, int x, int y, int size, Color c);

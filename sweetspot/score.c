@@ -60,11 +60,11 @@ const char *PointLabel(const Score *s, int k)
 const char *ScoreText(const Score *s)
 {
     int sv = CurrentServer(s), rv = 1 - sv;
-    if (s->tiebreak) return TextFormat(TR("Tiebreak %d - %d", "タイブレーク %d - %d"), s->points[sv], s->points[rv]);
+    if (s->tiebreak) return TextFormat(TL("Tiebreak %d - %d", "タイブレーク %d - %d"), s->points[sv], s->points[rv]);
     int a = s->points[0], b = s->points[1];
     if (a >= 3 && b >= 3) {
-        if (a == b) return TR("Deuce", "デュース");
-        return (a > b) ? TR("Advantage You", "アドバンテージ 自分") : TR("Advantage AI", "アドバンテージ 相手");
+        if (a == b) return TL("Deuce", "デュース");
+        return (a > b) ? TL("Advantage You", "アドバンテージ 自分") : TL("Advantage AI", "アドバンテージ 相手");
     }
     return TextFormat("%s - %s", PointName(s->points[sv]), PointName(s->points[rv]));
 }
