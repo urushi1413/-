@@ -87,13 +87,11 @@ def main():
     src = sys.argv[1]
     # いまの共通の声（grunt_pre / hit_voice）はアルカラスの録音なので、アルカラスの 1 つ目にする。
     #   共通の打つ前の声は録音が小さく、ゲームで 4 倍にしていた。選手本人の声は倍率なしで鳴らすので、ここで 4 倍にしておく
-    #   打球音も入った録音なので、全体を遠くにしてから、はっきりした打球音を重ね直す
+    #   この録音は元のまま使う（遠くする加工はしない）
     pre, _ = sf.read(os.path.join(OUT, "grunt_pre.wav"))
     hit, _ = sf.read(os.path.join(OUT, "hit_voice.wav"))
-    x = np.concatenate([pre * 4.0, hit])
-    pre, hit = make_pair(x, 0, len(pre), len(x), 1, FAR["alcarazz"], 1)
-    sf.write(os.path.join(OUT, "alcarazz_grunt_pre.wav"), np.clip(pre, -1, 1).astype(np.float32), SR, subtype="PCM_16")
-    sf.write(os.path.join(OUT, "alcarazz_hit_voice.wav"), np.clip(hit, -1, 1).astype(np.float32), SR, subtype="PCM_16")
+    sf.write(os.path.join(OUT, "alcarazz_grunt_pre.wav"), np.clip(pre * 4.0, -1, 1).astype(np.float32), SR, subtype="PCM_16")
+    sf.write(os.path.join(OUT, "alcarazz_hit_voice.wav"), hit.astype(np.float32), SR, subtype="PCM_16")
     print(f"alcarazz_grunt_pre         {len(pre) / SR:.2f}s   alcarazz_hit_voice         {len(hit) / SR:.2f}s   (いまの共通の声)")
     count = {"alcarazz_grunt": 1}
     for suffix, base, contact, lead in CUTS:
