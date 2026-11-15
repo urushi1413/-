@@ -113,6 +113,80 @@ static bool LoadSettingsFile(Settings *s)
     return true;
 }
 
+// 選手の紹介（選手選択の画面に出す）
+static const char *PersonaBlurb(int p)
+{
+    static const char *EN[PERSONA_COUNT] = {
+        "No special traits. A solid all-round player.",
+        "Elegant all-court genius. One-handed backhand, great slice and volleys. Loves grass.",
+        "The best defender and returner. Rubber-band sliding, ice cold on big points.",
+        "Left-handed. Huge topspin forehand. King of clay, never gives up.",
+        "Tireless counter-puncher. Great lobs and returns. Talks to himself a lot.",
+        "Explosive speed and power. Drop shots, net play, loves the big stage.",
+        "Hits early and flat. Fewest errors, the best returner of the new generation.",
+        "Plays far behind the baseline. Flat, low balls and almost no errors on hard courts.",
+        "Huge serve and wild shot-making. Underarm serves, easily frustrated.",
+        "Fast feet, takes the ball very early. Great returner, strong in deciding sets.",
+        "Big serve and solid two-handed backhand. 198cm. Clay and hard.",
+        "The most powerful serve in the women's game. Fierce and clutch.",
+        "Heavy topspin and fast feet. Dominant on clay.",
+        "Big hitter with a fast serve. Very aggressive.",
+        "Fastest legs on tour. Great defence.",
+        "Flat and aggressive. Turns away to fix her strings. Strong on clay.",
+        "Slice backhand and volleys. Varied and clever. Loves grass.",
+    };
+    static const char *JA[PERSONA_COUNT] = {
+        "癖のない、バランスのいい選手。",
+        "優雅なオールラウンダー。片手バック、キレのあるスライスとボレー。芝が得意。",
+        "守備とリターンが一番。よく滑って拾い、大事なポイントに一番強い。",
+        "左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。",
+        "粘り強い守備の名手。ロブとリターンがうまい。独り言が多い。",
+        "爆発的な足と強打。ドロップとネットプレー。大舞台に強い。",
+        "早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。",
+        "ベースラインのずっと後ろで構え、低いフラットでミスをしない。ハードが得意。",
+        "とても速いサーブと気まぐれな天才肌。アンダーサーブも。すぐ怒る。",
+        "足が速く、上がり際を早く打つ。リターンがうまく、最終セットに強い。",
+        "速いサーブと堅い両手バック。198cm。クレーとハードが得意。",
+        "女子で一番速いサーブ。強気で、勝負どころに強い。",
+        "回転の強いトップスピンと速い足。クレーで圧倒的。",
+        "強打と速いサーブ。とても攻撃的。",
+        "ツアーで一番の俊足。守備がうまい。",
+        "フラットで強気。後ろを向いてガットを直す。クレーにも強い。",
+        "スライスとボレー。多彩で頭がいい。芝が得意。",
+    };
+    // 表は 0〜8 が男子（癖なし＋8 人）、9〜14 が女子、15・16 が錦織・ズベレフ。上の並びに合わせる
+    static const int ORDER[PERSONA_COUNT] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 11, 12, 13, 14, 15, 16, 9, 10 };
+    int i = ORDER[((p % PERSONA_COUNT) + PERSONA_COUNT) % PERSONA_COUNT];
+    return gLang == LANG_JA ? JA[i] : EN[i];
+}
+
+// タイトル・選手選択の背景：コートの上に自分と相手が並んで立つ（ボールをつく）。カメラはゆっくり揺れる
+static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float lookX, Vector2 *youScr, Vector2 *oppScr)
+{
+    Camera3D cam = { 0 };
+    cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 38.0f; cam.projection = CAMERA_PERSPECTIVE;
+    cam.position = (Vector3){ lookX + 0.5f * sinf(t * 0.25f), 1.75f, -HALF_LEN + 3.4f };
+    cam.target   = (Vector3){ lookX, 1.05f, -HALF_LEN + 9.0f };
+    ClearBackground((Color){ 150, 190, 230, 255 });   // 奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
+    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 70, 120, 200, 255 }, (Color){ 190, 215, 240, 255 });
+    BeginMode3D(cam);
+    DrawCourt();
+    for (int k = 0; k < 2; k++) {
+        SwingAnim a = { 0 }; a.swingT = -1.0f;
+        int p = k == 0 ? youP : oppP;
+        ApplyLook(&a, k == 0 ? (p ? p : -1) : p);
+        a.lefty = PERSONAS[p].lefty; a.oneHanded = PERSONAS[p].oneHanded;
+        a.celebKind = RIT_BOUNCE; a.ritBounces = 4; a.celebDur = RitualDuration(RIT_BOUNCE, 4) + 0.8f;
+        a.celebT = a.celebDur - fmodf(t + k * 1.3f, a.celebDur);
+        Vector3 pos = { k == 0 ? 0.85f : -0.85f, 0.0f, -HALF_LEN + 9.0f };   // カメラから見て左が自分、右が相手
+        DrawFigure(pos, true, k == 0 ? youShirt : PersonaShirt(p), &a, 0.0f);
+        Vector2 s = GetWorldToScreen((Vector3){ pos.x, 2.15f, pos.z }, cam);
+        if (k == 0 && youScr) *youScr = s;
+        if (k == 1 && oppScr) *oppScr = s;
+    }
+    EndMode3D();
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -328,25 +402,39 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT };
+            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK };
+            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定
+            static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
+            if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; }
             int items[24], n = 0;
-            items[n++] = MI_PLAY;
-            if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
-            items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG;
-            if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
-            items[n++] = MI_QUIT;
+            if (menuPage == 0) {
+                items[n++] = MI_PLAY;
+                if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
+                items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
+                if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
+                items[n++] = MI_QUIT;
+            } else if (menuPage == 1) {
+                items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
+                items[n++] = MI_COURT; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+            } else {
+                items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
+            }
+            if (menuSel >= n) menuSel = 0;
             const char *assistNames[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING + SPOT", "タイミング＋立つ場所") };
             const char *camNames[3] = { TR("BEHIND", "後ろから"), TR("SIDE VIEW", "横から"), TR("FOLLOW BALL", "ボールを追う") };
+            (void)camNames;
 
             int W = GetScreenWidth(), H = GetScreenHeight();
-            // 行が多いときは、画面に収まるように行を詰める
-            int pw = 680, rowH = Clamp((GetScreenHeight() - 210) / n, 21, 40), ph = 110 + n * rowH + 86;
-            int fs = rowH >= 36 ? 24 : rowH >= 28 ? 20 : 18;
-            int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
-            int rowY0 = py + 110;
+            bool titleMain = app == APP_TITLE && menuPage == 0;
+            // 並べ方：タイトルは左に大きく、選手と試合は左のパネル（右に選手）、それ以外は真ん中のパネル
+            int pw, rowH, fs, px, py, ph, rowY0;
+            if (titleMain) { pw = 520; rowH = 54; fs = 30; px = 70; rowY0 = H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }
+            else if (menuPage == 1) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
+            else { pw = 680; rowH = Clamp((H - 260) / n, 28, 46); fs = rowH >= 36 ? 24 : 20; px = W / 2 - pw / 2; ph = 110 + n * rowH + 60; py = H / 2 - ph / 2; rowY0 = py + 100; }
 
-            // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定。マウス：左クリックで次、右クリックで前
+            // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定、Esc で戻る。マウス：左クリックで次、右クリックで前
             int change = 0; bool activate = false;
             if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP))   menuSel = (menuSel + n - 1) % n;
             if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) menuSel = (menuSel + 1) % n;
@@ -362,11 +450,19 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
-            if (app == APP_PAUSE && IsKeyPressed(KEY_ESCAPE)) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
-            int it = items[menuSel];
-            if (activate && it != MI_PLAY && it != MI_TOURNAMENT && it != MI_RESTART && it != MI_TITLE && it != MI_QUIT) { change = +1; activate = false; }
-            if (change != 0) {
+            if (IsKeyPressed(KEY_ESCAPE)) {
+                if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS;
+                    for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
+                    n = 0; activate = false; change = 0; }
+                else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
+            }
+            int it = n > 0 ? items[menuSel] : MI_BACK;
+            bool action = it == MI_PLAY || it == MI_TOURNAMENT || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK;
+            if (activate && !action) { change = +1; activate = false; }
+            if (change != 0 && n > 0) {
                 switch (it) {
+                    case MI_PLAY:   if (app == APP_TITLE) { mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; } break;   // タイトル：←→でモード
                     case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
                     case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); gYouPersona = 0; forceRestart = true; break;
@@ -387,7 +483,6 @@ int main(void)
                     case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
                     case MI_FEED:   proFeed = !proFeed; break;
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
-                    case MI_CAMERA: camMode = (camMode + 3 + change) % 3; break;
                     case MI_AIM:    aimLanes = !aimLanes; break;
                     case MI_TOURNAMENT: slamSel = (slamSel + SLAM_COUNT + 1 + change) % (SLAM_COUNT + 1); break;
                     case MI_SOUND:  SfxSetVolume(roundf(Clamp(SfxGetVolume() + 0.1f * change, 0.0f, 1.0f) * 10.0f) / 10.0f); break;
@@ -395,16 +490,22 @@ int main(void)
                 }
                 if (it != MI_TOURNAMENT) SaveSettings();
             }
-            if (activate) {
+            if (activate && n > 0) {
                 if (it == MI_PLAY || it == MI_RESTART) {
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
                     app = APP_PLAY;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_TOURNAMENT) {
-                    // 大会を始める：今のツアー（男子・女子）、コート、試合の長さで
+                    // 大会を始める：今のツアー（男子・女子）、試合の長さで
                     if (slamSel == SLAM_COUNT) TourStartSeason(&tour, gWomen, setsToWin);
                     else TourStart(&tour, gWomen, slamSel, setsToWin);
                     app = APP_BRACKET;
+                } else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
+                else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
+                else if (it == MI_BACK) {
+                    int back = menuPage == 1 ? MI_PG_MATCH : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS;
+                    for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
                     app = APP_TITLE; menuSel = 0;
@@ -412,25 +513,51 @@ int main(void)
                     quitGame = true;
                 }
             }
+            if (n == 0 || app == APP_PLAY || app == APP_BRACKET) { continue; }
 
             BeginDrawing();
-            ClearBackground((Color){ 30, 70, 60, 255 });
-            // 背景：コートの線をうっすら
-            for (int i = 0; i < 9; i++) DrawLine(W / 2 - 300 + i * 75, H, W / 2 - 120 + i * 30, 0, Fade(RAYWHITE, 0.06f));
-            DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f));
-            DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f));
-            const char *title = app == APP_TITLE ? "SWEET SPOT" : TR("PAUSED", "一時停止");
-            DrawText(title, W / 2 - MeasureText(title, 52) / 2, py + 24, 52, YELLOW);
-            const char *sub = app == APP_TITLE ? TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス") : TR("Esc: resume", "Esc：戻る");
-            DrawText(sub, W / 2 - MeasureText(sub, 18) / 2, py + 82, 18, LIGHTGRAY);
+            // ---- 背景 ----
+            Color youShirtM = gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
+            Vector2 youScr = { 0 }, oppScr = { 0 };
+            if (titleMain || menuPage == 1) {
+                DrawShowcase(gYouPersona, ai.persona, youShirtM, (float)GetTime(), titleMain ? 1.55f : 1.35f, &youScr, &oppScr);   // カメラを左へずらして、2 人を画面の右に
+                // 左側を暗くして文字を読みやすく
+                DrawRectangleGradientH(0, 0, W * 6 / 10, H, Fade(BLACK, 0.80f), Fade(BLACK, 0.0f));
+            } else {
+                ClearBackground((Color){ 30, 70, 60, 255 });
+                for (int i = 0; i < 9; i++) DrawLine(W / 2 - 300 + i * 75, H, W / 2 - 120 + i * 30, 0, Fade(RAYWHITE, 0.06f));
+            }
+            // ---- 見出し ----
+            if (titleMain) {
+                DrawText("SWEET SPOT", px + 4, 90 + 4, 96, Fade(BLACK, 0.5f));
+                DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
+                DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
+            } else {
+                if (menuPage != 1) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
+                else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
+                const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : TR("PAUSED", "一時停止");
+                int tx = menuPage == 1 ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
+                DrawText(title, tx, py + 22, 46, YELLOW);
+                const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : TR("Esc: back", "Esc：戻る");
+                DrawText(sub, menuPage == 1 ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
+            }
+            // ---- 項目 ----
             for (int i = 0; i < n; i++) {
                 int ry = rowY0 + i * rowH;
                 bool sel = i == menuSel;
-                if (sel) DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
+                if (sel) {
+                    if (titleMain) { DrawRectangle(px - 10, ry, pw, rowH - 6, Fade(YELLOW, 0.20f)); DrawRectangle(px - 10, ry, 6, rowH - 6, YELLOW); }
+                    else DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
+                }
                 const char *label = "", *value = "";
                 switch (items[i]) {
-                    case MI_PLAY:    label = app == APP_TITLE ? TextFormat(TR("PLAY  (%s)", "プレイ（%s）"), ModeName(mode)) : TR("RESUME", "続ける"); break;
-                    case MI_TOURNAMENT: label = TextFormat(TR("GRAND SLAM  < %s >  (%s)", "グランドスラム  < %s >（%s）"), slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel), gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子")); break;
+                    case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
+                                     if (app == APP_TITLE) { value = ModeName(mode); }
+                                     break;
+                    case MI_TOURNAMENT: label = TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
+                    case MI_PG_MATCH:    label = TR("PLAYERS & MATCH", "選手と試合"); break;
+                    case MI_PG_SETTINGS: label = TR("SETTINGS", "設定"); break;
+                    case MI_BACK:    label = TR("BACK", "戻る"); break;
                     case MI_MODE:    label = TR("Mode", "モード");            value = ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
@@ -451,21 +578,56 @@ int main(void)
                                            : TextFormat(TR("Sound (%d files)", "音（%d ファイル）"), SfxLoadedCount());
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
-                    case MI_CAMERA:  label = TR("Camera", "カメラ");          value = camNames[camMode]; break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
                     case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;
                     case MI_QUIT:    label = TR("QUIT", "終わる"); break;
                 }
-                DrawText(label, px + 40, ry + (rowH - 4 - fs) / 2, fs, sel ? YELLOW : RAYWHITE);
-                if (value[0]) {
-                    const char *v = TextFormat("<  %s  >", value);
-                    DrawText(v, px + pw - 40 - MeasureText(v, fs), ry + (rowH - 4 - fs) / 2, fs, sel ? YELLOW : RAYWHITE);
+                Color lc = sel ? YELLOW : RAYWHITE;
+                if (titleMain) {
+                    DrawText(label, px + 8, ry + (rowH - 6 - fs) / 2, fs, lc);
+                    if (value[0]) { const char *v = TextFormat("<  %s  >", value); DrawText(v, px + pw - 20 - MeasureText(v, 22), ry + (rowH - 6 - 22) / 2, 22, lc); }
+                } else {
+                    DrawText(label, px + 40, ry + (rowH - 4 - fs) / 2, fs, lc);
+                    if (value[0]) { const char *v = TextFormat("<  %s  >", value); DrawText(v, px + pw - 40 - MeasureText(v, fs), ry + (rowH - 4 - fs) / 2, fs, lc); }
                 }
             }
-            int hy = rowY0 + n * rowH + 14;
-            DrawText(TR("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定（マウス：左クリックで次、右クリックで前）"), px + 30, hy, 16, LIGHTGRAY);
-            DrawText(TR("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", "試合中：WASD 移動、マウスで狙う、左クリック トップスピン、右クリック スライス、Space＋クリック フラット、"), px + 30, hy + 24, 16, LIGHTGRAY);
-            DrawText(TR("Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu", "Shift＋クリック ロブ、Ctrl＋クリック ドロップ、Q かがむ、M 消音、Esc メニュー"), px + 30, hy + 46, 16, LIGHTGRAY);
+            // ---- 選手と試合：右に 2 人の名前・身長・紹介 ----
+            if (menuPage == 1) {
+                int prevRight = 0;
+                for (int k = 0; k < 2; k++) {
+                    int pp = k == 0 ? gYouPersona : ai.persona;
+                    Vector2 sp = k == 0 ? youScr : oppScr;
+                    const char *nm = k == 0 ? (gYouPersona ? PERSONAS[pp].name : TR("YOU", "自分")) : PERSONAS[pp].name;
+                    const char *tag = k == 0 ? TR("YOU", "自分") : TR("OPPONENT", "相手");
+                    int cx = (int)sp.x, cy = (int)sp.y - 70;
+                    int bw = 230, bx = Clamp(cx - bw / 2, pw + 50, W - bw - 10);
+                    if (bx < prevRight + 10) bx = prevRight + 10;   // 2 つの名札が重ならないように
+                    prevRight = bx + bw;
+                    DrawRectangle(bx, cy - 6, bw, 62, Fade(BLACK, 0.55f));
+                    DrawText(tag, bx + 10, cy, 16, k == 0 ? SKYBLUE : ORANGE);
+                    DrawText(nm, bx + 10, cy + 20, 22, RAYWHITE);
+                    DrawText(TextFormat("%.0f cm", PersonaHeight(pp)), bx + bw - 10 - MeasureText(TextFormat("%.0f cm", PersonaHeight(pp)), 16), cy, 16, LIGHTGRAY);
+                }
+                // 紹介文（下に 2 人分）
+                int by = H - 150, bx0 = pw + 60, bw0 = W - bx0 - 20;
+                DrawRectangle(bx0, by, bw0, 130, Fade(BLACK, 0.60f));
+                for (int k = 0; k < 2; k++) {   // 枠に収まるように字を小さくする
+                    const char *bl = k == 0 ? TextFormat("%s：%s", gYouPersona ? PERSONAS[gYouPersona].shortName : TR("YOU", "自分"), PersonaBlurb(gYouPersona))
+                                            : TextFormat("%s：%s", PERSONAS[ai.persona].shortName, PersonaBlurb(ai.persona));
+                    char buf[256]; snprintf(buf, sizeof(buf), "%s", bl);
+                    int bfs = 18; while (bfs > 11 && MeasureText(buf, bfs) > bw0 - 28) bfs--;
+                    DrawText(buf, bx0 + 14, by + 14 + k * 36, bfs, k == 0 ? SKYBLUE : ORANGE);
+                }
+                DrawText(TextFormat(TR("%s  -  %s court  -  %s", "%s  -  %s コート  -  %s"), LevelNameUI(ai.level), SurfNameUI(gSurface), ModeName(mode)), bx0 + 14, by + 90, 18, LIGHTGRAY);
+            }
+            // ---- 下の案内 ----
+            const char *hint = TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
+            DrawText(hint, titleMain ? px : (menuPage == 1 ? px + 20 : px + 30), H - 34, 16, LIGHTGRAY);
+            if (titleMain || menuPage == 0) {
+                DrawText(TR("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat, Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu",
+                            "試合中：WASD 移動、マウスで狙う、左クリック トップ、右クリック スライス、Space＋クリック フラット、Shift＋クリック ロブ、Ctrl＋クリック ドロップ、Esc メニュー"),
+                         titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.8f));
+            }
             EndDrawing();
             continue;
         }
