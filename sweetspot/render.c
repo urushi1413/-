@@ -1342,7 +1342,8 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Vector3 sockTop = Vector3Lerp(kn, ft, 0.78f);
         Limb(WV(kn), WV(ft), 0.050f * bLg, 0.040f * bLg, skin);                    // すね
         Limb(WV(hp), WV(kn), 0.068f * bLg, 0.052f * bLg, skin);                    // 太もも
-        if (!a->female) DrawCylinderEx(WV(hp), WV(mid), 0.092f * fmaxf(bLg, 1.0f), 0.088f * fmaxf(bLg, 1.0f), 10, shorts);   // ショーツ（脚の部分は少しゆったり）
+        // ショーツの脚の部分：股関節より少し下から始める（太ももが前に傾くと、上の端がシャツの裾から飛び出すので）
+        if (!a->female) DrawCylinderEx(WV(Vector3Lerp(hp, mid, 0.22f)), WV(mid), 0.092f * fmaxf(bLg, 1.0f), 0.088f * fmaxf(bLg, 1.0f), 10, shorts);
         DrawCylinderEx(WV(sockTop), WV(ft), 0.046f, 0.044f, 8, sock);              // ソックス
         float tx = sinf(toes[i]), tz = cosf(toes[i]);
         Vector3 heel = { ft.x - tx * 0.06f, ft.y - 0.035f, ft.z - tz * 0.06f };
@@ -1372,8 +1373,8 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.01f, hr.z), 0.098f * bWa, 0.096f * bWa, 10, shorts);
             // 腰まわりを 1 つのだ円の筒で包む（左右の筒だけだと前と後ろにすき間ができて、シャツの裾が見えていた）。下はふさぐ（股）
             Vector3 hipSideS = Vector3Subtract(W(hcy, 0, -hsy), W(0, 0, 0));
-            Vector3 pb = { pelvis.x, pelvis.y - 0.075f, pelvis.z }, pt = { pelvis.x, pelvis.y + 0.020f, pelvis.z };   // 上はシャツの下に隠れる
-            LitEllipseTube(WV(pb), WV(pt), hipSideS, hipSideS, 0.176f * bWa, 0.114f * bBu, 0.168f * bWa, 0.108f * bBu, 16, shorts, true, true);
+            Vector3 pb = { pelvis.x, pelvis.y - 0.140f, pelvis.z }, pt = { pelvis.x, pelvis.y + 0.020f, pelvis.z };   // 上はシャツの下に隠れる。下は股まで
+            LitEllipseTube(WV(pb), WV(pt), hipSideS, hipSideS, 0.165f * bWa, 0.108f * bBu, 0.168f * bWa, 0.108f * bBu, 16, shorts, true, true);
         }
     }
     // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
@@ -1386,7 +1387,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Vector3 c1 = { waist.x, hipY + 0.22f, waist.z };
         Vector3 c2 = { chest.x, hipY + 0.47f, chest.z };
         Vector3 c3 = { chest.x, hipY + 0.57f, chest.z };
-        if (untucked) LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.198f * bWa, 0.132f * bBu, 0.150f * bWa, 0.100f * bBu, 14, shirt, false, false);   // 裾は開いている（上は次の筒とぴったり合わせる）
+        if (untucked) LitEllipseTube(WV(c0), WV(((Vector3){ c1.x, c1.y + 0.015f, c1.z })), hipSide, hipSide, 0.198f * bWa, 0.132f * bBu, 0.150f * bWa, 0.100f * bBu, 14, shirt, false, false);   // 裾は開いている（上は次の筒とぴったり合わせる）
         else LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs * bWa, 0.110f * bBu, 0.150f * fs * bWa, 0.100f * bBu, 14, shirt, false, true);
         LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs * bWa, 0.100f * bBu, 0.190f * fs * bSh, 0.118f * bBu, 14, shirt, false, false);
         LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs * bSh, 0.118f * bBu, 0.120f * fs * bSh, 0.075f * bBu, 14, shirt, true, false);
