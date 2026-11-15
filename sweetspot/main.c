@@ -1790,7 +1790,7 @@ int main(void)
                 P.anim.smashT = SMASH_TIME; P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.anim.celebT = 0.0f;
                 youSmashPrevE = 0.0f;
                 phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.2f);
-                const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : TR("YOU", "自分");
+                const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : "YOU";   // テロップは英語
                 if (youSmashes == 1) {
                     snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES THE RACKET!\nCode violation, racket abuse. Warning.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告"), nm);
                 } else {
