@@ -247,6 +247,13 @@ static float RevPhase(int r, int m)
     return 2.0f;
 }
 static float Ease(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
+// 2 つの色の間（raylib の色を混ぜる関数は古い版にないので自前で）
+static Color MixColor(Color a, Color b, float k)
+{
+    k = Clamp01(k);
+    return (Color){ (unsigned char)(a.r + (b.r - a.r) * k), (unsigned char)(a.g + (b.g - a.g) * k),
+                    (unsigned char)(a.b + (b.b - a.b) * k), (unsigned char)(a.a + (b.a - a.a) * k) };
+}
 
 void TourDraw(const Tournament *t, int W, int H, float time)
 {
@@ -319,8 +326,8 @@ void TourDraw(const Tournament *t, int W, int H, float time)
                 bool decided = r < TOUR_ROUNDS && t->winner[r][i / 2] >= 0 && myPh >= 0.4f;
                 bool lost = decided && t->winner[r][i / 2] != e;
                 Color nc = lost ? GRAY : RAYWHITE;
-                if (lost && myPh < 1.0f) nc = ColorLerp(RAYWHITE, GRAY, Ease((myPh - 0.4f) / 0.2f));
-                if (r == TOUR_ROUNDS && inPh < 1.0f) nc = ColorLerp(accent, RAYWHITE, 0.0f);   // 優勝者の登場
+                if (lost && myPh < 1.0f) nc = MixColor(RAYWHITE, GRAY, Ease((myPh - 0.4f) / 0.2f));
+                if (r == TOUR_ROUNDS && inPh < 1.0f) nc = accent;   // 優勝者の登場
                 DrawText(ENT_NAME(e), x + 6, (int)y - fs / 2, fs, nc);
                 if (lost) DrawLine(x + 6, (int)y, x + 6 + (int)(MeasureText(ENT_NAME(e), fs) * (myPh >= 1.0f ? 1.0f : Ease((myPh - 0.4f) / 0.25f))), (int)y, Fade(GRAY, 0.8f));   // 負けた人に線
             }

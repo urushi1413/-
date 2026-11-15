@@ -1968,6 +1968,20 @@ Color QualityColor(float q)
 }
 
 
+// 中心から外へ色が変わる円（光のにじみ）。raylib の円のグラデーション関数は版によって引数の形が違うので、自前で描く
+static void GlowCircle(float cx, float cy, float r, Color inner, Color outer)
+{
+    const int seg = 36;
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < seg; i++) {
+        float a0 = 2.0f * PI * i / seg, a1 = 2.0f * PI * (i + 1) / seg;
+        rlColor4ub(inner.r, inner.g, inner.b, inner.a); rlVertex2f(cx, cy);
+        rlColor4ub(outer.r, outer.g, outer.b, outer.a); rlVertex2f(cx + cosf(a1) * r, cy + sinf(a1) * r);
+        rlColor4ub(outer.r, outer.g, outer.b, outer.a); rlVertex2f(cx + cosf(a0) * r, cy + sinf(a0) * r);
+    }
+    rlEnd();
+}
+
 // ================= 時間帯と天気 =================
 // 空の色、全体の色合い（3D を描いた後に画面全体へ掛ける）、光の向きと強さ、ナイターの照明。
 //   gTimeSetting / gWeatherSetting は設定（0 = おまかせ）。試合ごとに AtmosNewMatch で決まる
@@ -2044,8 +2058,8 @@ void DrawSky(Camera3D cam)
             Vector2 s = GetWorldToScreen(sp, cam);
             float r = gAtm.sunSize * H / 720.0f;
             BeginBlendMode(BLEND_ADDITIVE);
-            DrawCircleGradient((int)s.x, (int)s.y, r * 4.0f, Fade(gAtm.sunCol, 0.35f), Fade(gAtm.sunCol, 0.0f));
-            DrawCircleGradient((int)s.x, (int)s.y, r, Fade(gAtm.sunCol, 0.9f), Fade(gAtm.sunCol, 0.0f));
+            GlowCircle(s.x, s.y, r * 4.0f, Fade(gAtm.sunCol, 0.35f), Fade(gAtm.sunCol, 0.0f));
+            GlowCircle(s.x, s.y, r, Fade(gAtm.sunCol, 0.9f), Fade(gAtm.sunCol, 0.0f));
             EndBlendMode();
         }
     }
@@ -2106,8 +2120,8 @@ void AtmosOverlay(Camera3D cam)
             if (facing <= 0.02f) continue;
             Vector2 sc = GetWorldToScreen(lp, cam);
             float d = Vector3Length(toL), r = Clamp(900.0f / d, 10.0f, 70.0f) * H / 720.0f;
-            DrawCircleGradient((int)sc.x, (int)sc.y, r * 2.4f, Fade((Color){ 255, 240, 200, 255 }, 0.16f * facing), Fade(BLACK, 0.0f));
-            DrawCircleGradient((int)sc.x, (int)sc.y, r * 0.7f, Fade((Color){ 255, 255, 240, 255 }, 0.8f * facing), Fade(BLACK, 0.0f));
+            GlowCircle(sc.x, sc.y, r * 2.4f, Fade((Color){ 255, 240, 200, 255 }, 0.16f * facing), Fade(BLACK, 0.0f));
+            GlowCircle(sc.x, sc.y, r * 0.7f, Fade((Color){ 255, 255, 240, 255 }, 0.8f * facing), Fade(BLACK, 0.0f));
         }
         EndBlendMode();
     }
