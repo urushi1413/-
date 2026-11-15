@@ -262,6 +262,29 @@ Vector3 ReturnPos(bool deuce, bool second)
     return (Vector3){ deuce ? 2.3f : -2.3f, 0.0f, HALF_LEN + (second ? 0.3f : 1.8f) };
 }
 
+// サーバーの立ち位置に合わせたレシーブの位置（レシーバーの座標）。serverX はサーバーの世界の x（サーバーは反対側のコート）。
+//   打てるコースの両端（センターの T とワイドの角）を結ぶ角の二等分線の上に立つ。サーバーが横へ寄るほど、ワイドへ切れる角度が大きいので外へ動く。
+//   真ん中寄りから打つときの位置（ReturnPos）を基準に、二等分線のずれの分だけ動かす。ワイドは弾んでから外へ逃げるので少し外寄り
+static float BisectX(float sx, float side, float zr)
+{
+    Vector2 S = { sx, -(HALF_LEN + 0.15f) };
+    Vector2 T = { 0.0f, SERVICE_Z }, Wd = { side * SINGLES_W * 0.5f, SERVICE_Z };
+    Vector2 dT = Vector2Normalize(Vector2Subtract(T, S)), dW = Vector2Normalize(Vector2Subtract(Wd, S));
+    Vector2 b = Vector2Normalize(Vector2Add(dT, dW));
+    return S.x + b.x * (zr - S.y) / b.y;
+}
+Vector3 ReturnPosVs(bool deuce, bool second, float serverX)
+{
+    Vector3 p = ReturnPos(deuce, second);
+    float side = deuce ? 1.0f : -1.0f;
+    float sx = -serverX;                             // サーバーの位置をレシーバーの座標へ（180° 回す）
+    float base = BisectX(-side * 0.6f, side, p.z);   // ふだんの位置（センター寄り 0.6m から打つとき）
+    float now  = BisectX(sx, side, p.z);
+    p.x += (now - base) * 1.1f;
+    p.x = Clamp(p.x, -SINGLES_W * 0.5f - 2.0f, SINGLES_W * 0.5f + 2.0f);
+    return p;
+}
+
 // 飛んでくる球を予測して、どこで打つかを決める（AI 座標で考える）
 void AiPlan(Opponent *ai, const Ball *worldBall)
 {

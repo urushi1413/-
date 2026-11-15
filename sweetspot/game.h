@@ -780,6 +780,7 @@ Ball FlipSides(Ball b);
 Vector3 AiHome(void);
 Vector3 AiNetPos(const Opponent *ai);
 Vector3 ReturnPos(bool deuce, bool second);
+Vector3 ReturnPosVs(bool deuce, bool second, float serverX);   // サーバーの立ち位置に合わせたレシーブ位置
 void AiPlan(Opponent *ai, const Ball *worldBall);
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge, Vector3 *target);
 bool AiSwing(Opponent *ai, Ball *ball, Vector3 player);

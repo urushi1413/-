@@ -614,7 +614,7 @@ int main(void)
             P.chargingShot = -1; P.chargingServe = -1;
             if (server == 0) {
                 P.pos = (Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
-                ai.pos = Rot180(ReturnPos(deuce, serveNo == 2));
+                ai.pos = Rot180(ReturnPosVs(deuce, serveNo == 2, P.pos.x));
                 ai.standPos = ai.pos;
                 P.sv = SV_READY;
                 P.aimSlide = 0.0f;   // サーブの狙いはボックスの真ん中（ボディ）から
@@ -698,6 +698,15 @@ int main(void)
                 P.pos.x = deuceSide ? Clamp(P.pos.x, 0.2f, SINGLES_W * 0.5f) : Clamp(P.pos.x, -SINGLES_W * 0.5f, -0.2f);
             }
             P.pos.z = HALF_LEN + 0.15f;
+            // 相手（AI）はこちらの立ち位置に合わせてレシーブの位置を変える（横へ寄ってワイドを狙うと、外へ動いて待つ）
+            if (mode == MODE_MATCH && phase == PH_SERVE && P.sv == SV_READY) {
+                Vector3 want = Rot180(ReturnPosVs(deuceSide, serveNo == 2, P.pos.x));
+                Vector3 d = Vector3Subtract(want, ai.pos);
+                float dl = Vector3Length(d), step = 3.0f * frameDt;
+                if (dl > 0.01f) { Vector3 mv = Vector3Scale(d, fminf(step, dl) / dl); ai.pos = Vector3Add(ai.pos, mv); ai.vel = Vector3Scale(mv, 1.0f / fmaxf(frameDt, 1e-4f)); }
+                else ai.vel = (Vector3){ 0 };
+                ai.standPos = ai.pos;
+            } else if (mode == MODE_MATCH && phase == PH_SERVE) ai.vel = (Vector3){ 0 };   // トスを上げたら止まって構える
         } else if (P.downT > 0.0f) {
             // 飛びついて倒れている：起き上がるまで動けない
             P.downT -= simDt;
