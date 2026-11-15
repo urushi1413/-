@@ -12,10 +12,12 @@ import numpy as np
 import soundfile as sf
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from build_sounds import SR, OUT, load  # noqa: E402
+from build_sounds import SR, OUT, load, lp, hp, trim  # noqa: E402
+from scipy.signal import fftconvolve  # noqa: E402
 
 # (録音ファイル名の末尾, 書き出す名前, 打った瞬間（秒）, 打つ前の声の長さ（秒）)
-#   打った瞬間は、無音から急に立ち上がる打球音（サーブ）、マイクに当たる低い「ボン」や強い立ち上がり（ストローク）から決めた
+#   打った瞬間は、無音から急に立ち上がる声（サーブ）、マイクに当たる低い「ボン」や強い立ち上がり（ストローク）から決めた
+#   録音は近くで録った声だけ（打球音なし）なので、遠くに聞こえるように加工して、打った瞬間に打球音（hit_good）を重ねる
 CUTS = [
     ("alcaraz.m4a",        "alcarazz_grunt", 0.770, 0.20),
     ("alcaraz_serve.m4a",  "alcarazz_serve", 1.690, 0.40),
@@ -25,6 +27,23 @@ CUTS = [
     ("djokovic_serve.m4a", "djokovik_serve", 2.221, 0.40),
 ]
 HIT_PEAK = 0.89   # 打った後の声の大きさ（いまの hit_voice と同じ）
+HIT_MIX = 2.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の半分ほど（遠くの声）
+
+
+def far_away(x, seed):
+    """近くで録った声を、コートの向こうで聞こえるように：
+         マイクが近いと強くなる低い音を削り、高い音を少し丸め、コートの跳ね返りと響きを足す"""
+    rng = np.random.default_rng(seed)
+    y = lp(hp(x, 230), 6000)
+    n = int(0.6 * SR)
+    ir = np.zeros(n)
+    ir[0] = 1.0
+    for d, g in ((0.011, 0.35), (0.019, 0.25), (0.031, 0.2), (0.047, 0.14), (0.068, 0.1)):   # 地面・後ろの壁・客席
+        ir[int(d * SR)] += g * rng.choice([-1, 1])
+    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.11 * SR))
+    tail[: int(0.02 * SR)] = 0
+    ir += lp(tail, 4000) * 0.035
+    return fftconvolve(y, ir)[: len(y)]
 
 
 def tail_end(x, start):
@@ -61,7 +80,14 @@ def main():
         x = load(path[0])
         c, s = int(contact * SR), int((contact - lead) * SR)
         e = tail_end(x, c)
-        pre, hit = x[s:c].copy(), x[c:e].copy()
+        seg = far_away(x[s:e], len(count) + int(contact * 1000))   # 打つ前と後をまとめて加工（響きがつながるように）
+        cc = c - s
+        # 打球音（芯で打った音）を打った瞬間に重ねる
+        goods = sorted(glob.glob(os.path.join(OUT, "hit_good*.wav")))
+        ball = trim(load(goods[int(contact * 1000) % len(goods)]))
+        ball = ball / max(np.max(np.abs(ball)), 1e-6) * HIT_MIX * np.max(np.abs(seg[cc:]))
+        seg[cc:cc + len(ball)] += ball[: len(seg) - cc]
+        pre, hit = seg[:cc].copy(), seg[cc:].copy()
         g = HIT_PEAK / max(np.max(np.abs(hit)), 1e-6)       # 打つ前と同じ倍率
         pre, hit = pre * g, hit * g
         n = int(0.01 * SR)
