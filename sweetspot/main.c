@@ -502,9 +502,9 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS };
             static bool nameEdit = false;   // 名前を入力している
-            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）
+            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; }
             int items[24], n = 0;
@@ -513,10 +513,13 @@ int main(void)
                 if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
                 items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
+                if (app == APP_TITLE) items[n++] = MI_CREDITS;
                 items[n++] = MI_QUIT;
             } else if (menuPage == 1) {
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+            } else if (menuPage == 4) {
+                items[n++] = MI_BACK;
             } else if (menuPage == 3) {
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
@@ -534,6 +537,7 @@ int main(void)
             // 並べ方：タイトルは左に大きく、選手と試合は左のパネル（右に選手）、それ以外は真ん中のパネル
             int pw, rowH, fs, px, py, ph, rowY0;
             if (titleMain) { pw = 520; rowH = 54; fs = 30; px = 70; rowY0 = H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }
+            else if (menuPage == 4) { pw = Clamp(W - 120, 600, 1100); rowH = 40; fs = 22; px = W / 2 - pw / 2; py = 30; ph = H - 60; rowY0 = py + ph - 60; }
             else if (menuPage == 1 || menuPage == 3) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
             else { pw = 680; rowH = Clamp((H - 260) / n, 28, 46); fs = rowH >= 36 ? 24 : 20; px = W / 2 - pw / 2; ph = 110 + n * rowH + 60; py = H / 2 - ph / 2; rowY0 = py + 100; }
 
@@ -570,15 +574,15 @@ int main(void)
                 }
             }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing) {
-                if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS;
+                if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -628,9 +632,10 @@ int main(void)
                 } else if (it == MI_NAME) { nameEdit = true; while (GetCharPressed() > 0) { } }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
+                else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
                 else if (it == MI_BACK) {
-                    int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS;
+                    int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
@@ -665,11 +670,51 @@ int main(void)
                 bool leftPanel = menuPage == 1 || menuPage == 3;
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
                 else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
-                const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム") : TR("PAUSED", "一時停止");
+                const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム")
+                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : TR("PAUSED", "一時停止");
                 int tx = leftPanel ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
                 DrawText(title, tx, py + 22, 46, YELLOW);
                 const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : TR("Esc: back", "Esc：戻る");
                 DrawText(sub, leftPanel ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
+            }
+            // ---- クレジット ----
+            if (menuPage == 4) {
+                static const char *LINES_JA[] = {
+                    "#制作", "SWEET SPOT  -  URUSHI",
+                    "#録音", "打球音・靴の音・滑る音・拍手・主審の「フォルト」：作者が試合会場で録音",
+                    "選手の声・主審と線審のコール・雄叫び：作者の声",
+                    "#効果音素材", "Gregor Quendel「Free Crowd Cheering Sounds」（CC BY 4.0）  -  会場のざわめき・大きな拍手・勝利の歓声",
+                    "  https://www.gregorquendel.com  /  https://opengameart.org/content/free-crowd-cheering-sounds",
+                    "Kenney「Impact Sounds」（CC0）  -  バウンド・ネット    https://kenney.nl",
+                    "OpenGameArt（CC0）  -  ホールの拍手、竹の素振り（空振り）",
+                    "ブーイング・「おお〜」・ラケットを叩きつける音：合成（作者のツールで作成）",
+                    "#フォント・ライブラリ", "IPA フォント（IPAP ゴシック）  -  IPA フォントライセンス v1.0（fonts/ に同梱）",
+                    "raylib  -  zlib/libpng ライセンス    https://www.raylib.com",
+                    "#おことわり", "登場する選手・大会・トロフィーは実在のものを参考にした架空のもので、実在の人物・団体とは関係ありません。",
+                };
+                static const char *LINES_EN[] = {
+                    "#MADE BY", "SWEET SPOT  -  URUSHI",
+                    "#RECORDINGS", "Ball hits, footwork, slides, applause, umpire's \"fault\": recorded at tournaments by the author",
+                    "Player voices, umpire and line calls, roar: the author's voice",
+                    "#SOUND ASSETS", "Gregor Quendel - Free Crowd Cheering Sounds (CC BY 4.0) - crowd ambience, big applause, match win cheers",
+                    "  https://www.gregorquendel.com  /  https://opengameart.org/content/free-crowd-cheering-sounds",
+                    "Kenney - Impact Sounds (CC0) - bounces, net    https://kenney.nl",
+                    "OpenGameArt (CC0) - hall applause, bamboo swish (whiff)",
+                    "Boos, crowd \"ooh\", racket smash: synthesized with the author's tools",
+                    "#FONT & LIBRARY", "IPA Font (IPAPGothic) - IPA Font License v1.0 (included in fonts/)",
+                    "raylib - zlib/libpng license    https://www.raylib.com",
+                    "#NOTE", "Players, tournaments and trophies are fictional, inspired by real ones, and not affiliated with any real person or organization.",
+                };
+                const char **L = gLang == LANG_JA ? LINES_JA : LINES_EN;
+                int nl = (int)(sizeof(LINES_JA) / sizeof(LINES_JA[0]));
+                int y = py + 100, x0 = px + 40, maxw = pw - 80;
+                for (int i = 0; i < nl; i++) {
+                    const char *ln = L[i];
+                    if (ln[0] == '#') { y += 8; DrawText(ln + 1, x0, y, 20, YELLOW); y += 28; continue; }
+                    int f2 = 18; while (f2 > 12 && MeasureText(ln, f2) > maxw) f2--;   // 枠に収まるように
+                    DrawText(ln, x0 + 12, y, f2, ln[0] == ' ' ? LIGHTGRAY : RAYWHITE);
+                    y += f2 + 8;
+                }
             }
             // ---- 項目 ----
             for (int i = 0; i < n; i++) {
@@ -686,6 +731,7 @@ int main(void)
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
                     case MI_SLAM_GO:    label = TR("START TOURNAMENT", "大会を始める"); break;
+                    case MI_CREDITS:    label = TR("CREDITS", "クレジット"); break;
                     case MI_PG_MATCH:    label = TR("PLAYERS & MATCH", "選手と試合"); break;
                     case MI_PG_SETTINGS: label = TR("SETTINGS", "設定"); break;
                     case MI_BACK:    label = TR("BACK", "戻る"); break;
