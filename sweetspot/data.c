@@ -22,6 +22,7 @@ static const float PERSONA_HEIGHT[PERSONA_COUNT] = {
 };
 float gHeightDelta = 0.0f;
 bool gAllWhite = false;
+int gLang = LANG_JA;   // 表示の言語（初めは日本語）
 int   gYouPersona = 0;
 float gServeAdd = 0.0f, gServeErrMul = 1.0f;
 void RestoreHumanContact(void)

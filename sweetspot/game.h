@@ -13,6 +13,25 @@
 #include <string.h>
 #include <time.h>
 
+// 言語：英語 / 日本語（メニューの Language で切り替え）。TR("英語", "日本語") で表示する文字を選ぶ
+enum { LANG_EN, LANG_JA };
+extern int gLang;
+#define TR(en, ja) (gLang == LANG_JA ? (ja) : (en))
+void UiFontInit(void);
+bool UiJapaneseOk(void);
+void UiDrawText(const char *t, int x, int y, int size, Color c);
+int  UiMeasureText(const char *t, int size);
+#ifndef UI_NO_TEXT_OVERRIDE   // 文字はすべて言語に合ったフォントで描く
+#define DrawText(...) UiDrawText(__VA_ARGS__)
+#define MeasureText(...) UiMeasureText(__VA_ARGS__)
+#endif
+const char *ShotNameUI(int t);
+const char *ServeNameUI(int t);
+const char *LevelNameUI(int l);
+const char *SurfNameUI(int s);
+const char *StyleNameUI(int s);
+const char *ResultTextUI(int r);
+
 // SWEET SPOT — 打点と球種がちゃんと結果に効く、球足の速いリアル系テニス
 // AI と試合をする（練習モード：ラリー・リターン・サーブもある）。
 // 打点（タイミング・体からの距離・高さ）の良し悪しで、球速・回転・コースのずれが決まる。

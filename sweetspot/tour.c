@@ -15,7 +15,9 @@ static const float TOUR_STR[PERSONA_COUNT][3] = {
 
 static const char *SLAM_NAME[SLAM_COUNT]  = { "AUSTRALIAN OPENN", "ROLAND GARROZ", "WIMBLEDONN", "US OPENN" };
 static const int   SLAM_SURF[SLAM_COUNT]  = { SURF_HARD, SURF_CLAY, SURF_GRASS, SURF_HARD };
-static const char *SLAM_PLACE[SLAM_COUNT] = { "MELBOURNE  -  JANUARY", "PARIS  -  MAY", "LONDON  -  JULY", "NEW YORK  -  AUGUST" };
+static const char *SLAM_PLACE_EN[SLAM_COUNT] = { "MELBOURNE  -  JANUARY", "PARIS  -  MAY", "LONDON  -  JULY", "NEW YORK  -  AUGUST" };
+static const char *SLAM_PLACE_JA[SLAM_COUNT] = { "メルボルン  -  1 月", "パリ  -  5 月", "ロンドン  -  7 月", "ニューヨーク  -  8 月" };
+#define SLAM_PLACE (gLang == LANG_JA ? SLAM_PLACE_JA : SLAM_PLACE_EN)
 // 予選上がりの名前（架空）
 static const char *QUAL_MEN[] = { "Lukas Brandtner", "Mateo Varga", "Tomas Ruzicka", "Hugo Lefevre", "Diego Arrieta", "Kenta Moriyama",
                                   "Elias Nordqvist", "Bram Dekker", "Ivan Sokolenko", "Marco Bellandi", "Felix Hartung", "Rui Cardoso" };
@@ -26,12 +28,13 @@ const char *TourName(int slam) { return SLAM_NAME[((slam % SLAM_COUNT) + SLAM_CO
 int TourSlamSurface(int slam) { return SLAM_SURF[((slam % SLAM_COUNT) + SLAM_COUNT) % SLAM_COUNT]; }
 const char *TourRoundName(int round)
 {
+    if (gLang == LANG_JA) return round == 0 ? "4 回戦" : round == 1 ? "準々決勝" : round == 2 ? "準決勝" : round == 3 ? "決勝" : "";
     return round == 0 ? "FOURTH ROUND" : round == 1 ? "QUARTERFINAL" : round == 2 ? "SEMIFINAL" : round == 3 ? "FINAL" : "";
 }
 const char *TourEntrantName(const Tournament *t, int e)
 {
     if (e < 0) return "";
-    if (t->slot[e] < 0) return gYouPersona ? TextFormat("YOU (%s)", PERSONAS[gYouPersona].shortName) : "YOU";
+    if (t->slot[e] < 0) return gYouPersona ? TextFormat(TR("YOU (%s)", "自分（%s）"), PERSONAS[gYouPersona].shortName) : TR("YOU", "自分");
     if (t->slot[e] == 0) return t->women ? QUAL_WOMEN[t->qual[e]] : QUAL_MEN[t->qual[e]];
     return PERSONAS[t->slot[e]].name;
 }
@@ -214,8 +217,8 @@ void TourDraw(const Tournament *t, int W, int H, float time)
     Color accent = t->slam == 2 ? (Color){ 200, 170, 230, 255 } : YELLOW;   // ウィンブルドンは紫
     const char *title = TourName(t->slam);
     DrawText(title, W / 2 - MeasureText(title, 44) / 2, 18, 44, accent);
-    const char *sub = TextFormat("%s  -  %s  -  %s", SLAM_PLACE[t->slam], t->women ? "WOMEN'S SINGLES" : "MEN'S SINGLES",
-                                 t->surface == SURF_CLAY ? "CLAY" : t->surface == SURF_GRASS ? "GRASS (all white)" : "HARD");
+    const char *sub = TextFormat("%s  -  %s  -  %s", SLAM_PLACE[t->slam], t->women ? TR("WOMEN'S SINGLES", "女子シングルス") : TR("MEN'S SINGLES", "男子シングルス"),
+                                 t->surface == SURF_CLAY ? TR("CLAY", "クレー") : t->surface == SURF_GRASS ? TR("GRASS (all white)", "芝（服は白だけ）") : TR("HARD", "ハード"));
     DrawText(sub, W / 2 - MeasureText(sub, 18) / 2, 66, 18, LIGHTGRAY);
     // シーズン：4 大会の結果
     if (t->season) {
@@ -231,7 +234,7 @@ void TourDraw(const Tournament *t, int W, int H, float time)
     int colW = (W - 60) / cols, top = 140, h = H - top - 100;
     for (int r = 0; r <= TOUR_ROUNDS; r++) {
         int n = TOUR_SIZE >> r, x = 30 + r * colW;
-        const char *rn = r < TOUR_ROUNDS ? TourRoundName(r) : "CHAMPION";
+        const char *rn = r < TOUR_ROUNDS ? TourRoundName(r) : TR("CHAMPION", "優勝");
         DrawText(rn, x + 4, top - 22, 16, (r == t->round && !t->playerOut && !t->champion) ? accent : LIGHTGRAY);
         float rowH = (float)h / n;
         int bh = (int)fminf(30.0f, rowH - 4.0f);
@@ -256,19 +259,19 @@ void TourDraw(const Tournament *t, int W, int H, float time)
     const char *msg;
     if (t->champion) {
         DrawTrophy(W - 150, H - 250, 0.8f, time);
-        if (t->season && t->slam < SLAM_COUNT - 1) msg = TextFormat("CHAMPION!   Enter: next slam (%s)", SLAM_NAME[t->slam + 1]);
-        else if (t->season && t->seasonTitles == SLAM_COUNT) msg = "CALENDAR GRAND SLAM!!   Enter: back to title";
-        else if (t->season) msg = TextFormat("CHAMPION!   Season: %d of 4 slams   Enter: back to title", t->seasonTitles);
-        else msg = "CHAMPION!   Enter: back to title";
+        if (t->season && t->slam < SLAM_COUNT - 1) msg = TextFormat(TR("CHAMPION!   Enter: next slam (%s)", "優勝！   Enter：次の大会（%s）"), SLAM_NAME[t->slam + 1]);
+        else if (t->season && t->seasonTitles == SLAM_COUNT) msg = TR("CALENDAR GRAND SLAM!!   Enter: back to title", "年間グランドスラム達成！！   Enter：タイトルに戻る");
+        else if (t->season) msg = TextFormat(TR("CHAMPION!   Season: %d of 4 slams   Enter: back to title", "優勝！   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), t->seasonTitles);
+        else msg = TR("CHAMPION!   Enter: back to title", "優勝！   Enter：タイトルに戻る");
     } else if (t->playerOut) {
         if (t->season && t->slam < SLAM_COUNT - 1)
-            msg = TextFormat("You lost in the %s.   Enter: next slam (%s)", TourRoundName(t->outRound), SLAM_NAME[t->slam + 1]);
+            msg = TextFormat(TR("You lost in the %s.   Enter: next slam (%s)", "%sで負けた   Enter：次の大会（%s）"), TourRoundName(t->outRound), SLAM_NAME[t->slam + 1]);
         else if (t->season)
-            msg = TextFormat("You lost in the %s.   Season: %d of 4 slams   Enter: back to title", TourRoundName(t->outRound), t->seasonTitles);
+            msg = TextFormat(TR("You lost in the %s.   Season: %d of 4 slams   Enter: back to title", "%sで負けた   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), TourRoundName(t->outRound), t->seasonTitles);
         else
-            msg = TextFormat("You lost in the %s.   Enter: back to title", TourRoundName(t->outRound));
+            msg = TextFormat(TR("You lost in the %s.   Enter: back to title", "%sで負けた   Enter：タイトルに戻る"), TourRoundName(t->outRound));
     } else {
-        msg = TextFormat("Next: %s vs %s   -   Enter: play", TourRoundName(t->round), TourOpponentName(t));
+        msg = TextFormat(TR("Next: %s vs %s   -   Enter: play", "次：%s  対 %s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t));
     }
     DrawText(msg, W / 2 - MeasureText(msg, 24) / 2, H - 56, 24, accent);
 }

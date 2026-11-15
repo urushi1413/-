@@ -1423,12 +1423,12 @@ const char *ResultText(ShotResult r)
 const char *MissText(MissReason m)
 {
     switch (m) {
-        case MISS_EARLY:   return "WHIFF: too early";
-        case MISS_LATE:    return "WHIFF: too late";
-        case MISS_FAR:     return "WHIFF: too far";
-        case MISS_HIGH:    return "WHIFF: too high";
-        case MISS_LOW:     return "WHIFF: too low";
-        case MISS_NO_BALL: return "no ball to hit";
+        case MISS_EARLY:   return TR("WHIFF: too early", "空振り：早すぎ");
+        case MISS_LATE:    return TR("WHIFF: too late", "空振り：遅すぎ");
+        case MISS_FAR:     return TR("WHIFF: too far", "空振り：遠すぎ");
+        case MISS_HIGH:    return TR("WHIFF: too high", "空振り：高すぎ");
+        case MISS_LOW:     return TR("WHIFF: too low", "空振り：低すぎ");
+        case MISS_NO_BALL: return TR("no ball to hit", "打てる球がない");
         default:           return "";
     }
 }

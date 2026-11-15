@@ -3,7 +3,12 @@
 #include "game.h"
 #include <ctype.h>
 
-static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };
+static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };   // 記録用（英語のまま）
+static const char *ModeName(int m)   // 表示用
+{
+    static const char *JA[MODE_COUNT] = { "試合", "ラリー練習", "リターン練習", "サーブ練習" };
+    return gLang == LANG_JA ? JA[m % MODE_COUNT] : MODE_NAMES[m % MODE_COUNT];
+}
 
 // 試合の統計（中継のマッチサマリーの形）。mst はサーブの入り [0=1st 打数 1=1st 入 2=2nd 打数 3=2nd 入 4=返されなかった 5=DF]
 static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp)
@@ -23,7 +28,7 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     DrawText(sets, px + pw - 24 - MeasureText(sets, 26), py + 24, 26, RAYWHITE);
     int y = py + 74;
     DrawRectangle(px, y, pw, 40, rowB);
-    DrawText("YOU", px + 70 - MeasureText("YOU", 24) / 2, y + 8, 24, you);
+    DrawText(TR("YOU", "自分"), px + 70 - MeasureText(TR("YOU", "自分"), 24) / 2, y + 8, 24, you);
     DrawText(opp, px + pw - 70 - MeasureText(opp, 24) / 2, y + 8, 24, aiC);
     y += 44;
     for (int r = 0; r < nRows; r++) {
@@ -37,19 +42,19 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
             #define NUM(a)    snprintf(v[k], sizeof(v[k]), "%d", (a))
             #define FRAC(a, b) snprintf(v[k], sizeof(v[k]), "%d / %d", (a), (b))
             switch (r) {
-                case 0:  label = "Aces";                    NUM(m->aces); break;
-                case 1:  label = "Double Faults";           NUM(mst[k][5]); break;
-                case 2:  label = "1st Serves IN";           PCT(mst[k][1], mst[k][0]); break;
-                case 3:  label = "1st Serve Points Won";    PCT(m->s1Won, m->s1Pts); break;
-                case 4:  label = "2nd Serve Points Won";    PCT(m->s2Won, m->s2Pts); break;
-                case 5:  label = "Total Serve Returns IN";  PCT(retIn, retFaced); break;
-                case 6:  label = "Break Points Won";        FRAC(m->bpWon, m->bpTotal); break;
-                case 7:  label = "Net Approach Points Won"; FRAC(m->netWon, m->netPts); break;
-                case 8:  label = "Total Unforced Errors";   NUM(m->unforced); break;
-                case 9:  label = "Total Winners";           NUM(m->winners); break;
-                case 10: label = "Total Points Won";        NUM(m->points); break;
-                case 11: label = "Average Shot Speed";      snprintf(v[k], sizeof(v[k]), "%.0f km/h", m->shots ? m->speedSum / m->shots : 0.0f); break;
-                default: label = "Average Rally (shots)";   snprintf(v[k], sizeof(v[k]), "%.1f", ms[0].rallyPoints ? (float)ms[0].rallyTotal / ms[0].rallyPoints : 0.0f); break;
+                case 0:  label = TR("Aces", "サービスエース");                    NUM(m->aces); break;
+                case 1:  label = TR("Double Faults", "ダブルフォールト");           NUM(mst[k][5]); break;
+                case 2:  label = TR("1st Serves IN", "ファーストサーブの確率");           PCT(mst[k][1], mst[k][0]); break;
+                case 3:  label = TR("1st Serve Points Won", "ファーストサーブでの得点率");    PCT(m->s1Won, m->s1Pts); break;
+                case 4:  label = TR("2nd Serve Points Won", "セカンドサーブでの得点率");    PCT(m->s2Won, m->s2Pts); break;
+                case 5:  label = TR("Total Serve Returns IN", "リターンが入った率");  PCT(retIn, retFaced); break;
+                case 6:  label = TR("Break Points Won", "ブレークポイント");        FRAC(m->bpWon, m->bpTotal); break;
+                case 7:  label = TR("Net Approach Points Won", "ネットに出たポイント"); FRAC(m->netWon, m->netPts); break;
+                case 8:  label = TR("Total Unforced Errors", "アンフォーストエラー");   NUM(m->unforced); break;
+                case 9:  label = TR("Total Winners", "ウィナー");           NUM(m->winners); break;
+                case 10: label = TR("Total Points Won", "取ったポイント");        NUM(m->points); break;
+                case 11: label = TR("Average Shot Speed", "平均の球速");      snprintf(v[k], sizeof(v[k]), "%.0f km/h", m->shots ? m->speedSum / m->shots : 0.0f); break;
+                default: label = TR("Average Rally (shots)", "平均のラリー（打数）");   snprintf(v[k], sizeof(v[k]), "%.1f", ms[0].rallyPoints ? (float)ms[0].rallyTotal / ms[0].rallyPoints : 0.0f); break;
             }
             #undef PCT
             #undef NUM
@@ -75,14 +80,14 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
-    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\n",
-            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol);
+    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\n",
+            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang);
     fclose(f);
 }
 static bool LoadSettingsFile(Settings *s)
@@ -102,6 +107,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "camera")) s->cam = iv;     else if (!strcmp(key, "screen_info")) s->hud = iv;
         else if (!strcmp(key, "guides")) s->guides = iv;  else if (!strcmp(key, "sensitivity")) s->sens = v;
         else if (!strcmp(key, "volume")) s->vol = v;
+        else if (!strcmp(key, "language")) s->lang = iv;
     }
     fclose(f);
     return true;
@@ -112,6 +118,7 @@ int main(void)
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
     InitWindow(1280, 720, "SWEET SPOT");
     SfxInit();
+    UiFontInit();   // 日本語フォント
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
@@ -221,8 +228,12 @@ int main(void)
     int hudLevel = 0;
     // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
     int guideLevel = 0;
-    static const char *HUD_NAMES[4] = { "FULL", "CLEAN (no help lines)", "MINIMAL (score + gauge)", "OFF (TV style)" };
-    static const char *GUIDE_NAMES[3] = { "ALL", "AIM ONLY", "OFF" };
+    static const char *HUD_NAMES_EN[4] = { "FULL", "CLEAN (no help lines)", "MINIMAL (score + gauge)", "OFF (TV style)" };
+    static const char *HUD_NAMES_JA[4] = { "全部", "すっきり（説明の行なし）", "最小（スコアとゲージ）", "なし（中継のように）" };
+    static const char *GUIDE_NAMES_EN[3] = { "ALL", "AIM ONLY", "OFF" };
+    static const char *GUIDE_NAMES_JA[3] = { "全部", "狙いの印だけ", "なし" };
+#define HUD_NAMES (gLang == LANG_JA ? HUD_NAMES_JA : HUD_NAMES_EN)
+#define GUIDE_NAMES (gLang == LANG_JA ? GUIDE_NAMES_JA : GUIDE_NAMES_EN)
     // リプレイ・ハイライト
     long pointStart = 0;                 // 今のポイントが始まったフレーム（記録の通し番号）
     bool hlPending = false;              // 前のポイントをハイライトに取っておく
@@ -237,10 +248,10 @@ int main(void)
     int   menuFrames = 0;              // メニューを開いてからのフレーム数
     // 設定：前回の設定を読む（なければ今の初期値）
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume() }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume() };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang };
         if (LoadSettingsFile(&s)) {
             setsToWin = Clamp(s.sets, 1, 3); gWomen = s.women != 0;
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
@@ -249,6 +260,7 @@ int main(void)
             assistLevel = Clamp(s.assist, 0, 2); proFeed = s.feed != 0; aimLanes = s.lanes != 0; camMode = Clamp(s.cam, 0, 2);
             hudLevel = Clamp(s.hud, 0, 3); guideLevel = Clamp(s.guides, 0, 2);
             aimSens = Clamp(s.sens, 0.25f, 3.0f); SfxSetVolume(Clamp(s.vol, 0.0f, 1.0f));
+            gLang = s.lang == LANG_EN ? LANG_EN : LANG_JA;
         }
     }
 
@@ -310,16 +322,16 @@ int main(void)
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
-            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_RESTART, MI_TITLE, MI_QUIT };
+            enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT };
             int items[24], n = 0;
             items[n++] = MI_PLAY;
             if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
             items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA; items[n++] = MI_HUD; items[n++] = MI_GUIDES;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
-            static const char *assistNames[3] = { "OFF", "TIMING", "TIMING + SPOT" };
-            static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
+            const char *assistNames[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING + SPOT", "タイミング＋立つ場所") };
+            const char *camNames[3] = { TR("BEHIND", "後ろから"), TR("SIDE VIEW", "横から"), TR("FOLLOW BALL", "ボールを追う") };
 
             int W = GetScreenWidth(), H = GetScreenHeight();
             // 行が多いときは、画面に収まるように行を詰める
@@ -361,6 +373,7 @@ int main(void)
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
+                    case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
@@ -400,9 +413,9 @@ int main(void)
             for (int i = 0; i < 9; i++) DrawLine(W / 2 - 300 + i * 75, H, W / 2 - 120 + i * 30, 0, Fade(RAYWHITE, 0.06f));
             DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f));
             DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f));
-            const char *title = app == APP_TITLE ? "SWEET SPOT" : "PAUSED";
+            const char *title = app == APP_TITLE ? "SWEET SPOT" : TR("PAUSED", "一時停止");
             DrawText(title, W / 2 - MeasureText(title, 52) / 2, py + 24, 52, YELLOW);
-            const char *sub = app == APP_TITLE ? "real tennis where contact point and spin matter" : "Esc: resume";
+            const char *sub = app == APP_TITLE ? TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス") : TR("Esc: resume", "Esc：戻る");
             DrawText(sub, W / 2 - MeasureText(sub, 18) / 2, py + 82, 18, LIGHTGRAY);
             for (int i = 0; i < n; i++) {
                 int ry = rowY0 + i * rowH;
@@ -410,31 +423,32 @@ int main(void)
                 if (sel) DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
                 const char *label = "", *value = "";
                 switch (items[i]) {
-                    case MI_PLAY:    label = app == APP_TITLE ? TextFormat("PLAY  (%s)", MODE_NAMES[mode]) : "RESUME"; break;
-                    case MI_TOURNAMENT: label = TextFormat("GRAND SLAM  < %s >  (%s)", slamSel == SLAM_COUNT ? "SEASON: ALL 4" : TourName(slamSel), gWomen ? "WOMEN" : "MEN"); break;
-                    case MI_MODE:    label = "Mode";            value = MODE_NAMES[mode]; break;
-                    case MI_SETS:    label = "Match length";    value = setsToWin == 1 ? "1 SET" : (setsToWin == 2 ? "BEST OF 3" : "BEST OF 5"); break;
-                    case MI_TOUR:    label = "Tour";            value = gWomen ? "WOMEN" : "MEN"; break;
-                    case MI_PLAYER:  label = "Play as";         value = gYouPersona ? PERSONAS[gYouPersona].name : "YOU (no traits)"; break;
-                    case MI_OPP:     label = "Opponent";        value = PERSONAS[ai.persona].name; break;
-                    case MI_HUD:     label = "Screen info (F1)"; value = HUD_NAMES[hudLevel]; break;
-                    case MI_GUIDES:  label = "Guides (F2)";     value = GUIDE_NAMES[guideLevel]; break;
-                    case MI_AI:      label = "AI level";        value = AI_LEVELS[ai.level].name; break;
-                    case MI_STYLE:   label = "Style";           value = style == STYLE_CASUAL ? "CASUAL (easy)" : "REAL"; break;
-                    case MI_COURT:   label = "Court";           value = gSurface == SURF_CLAY ? "CLAY (slow, high)"
-                                                                       : gSurface == SURF_GRASS ? "GRASS (fast, low)" : "HARD"; break;
-                    case MI_ASSIST:  label = "Assist";          value = assistNames[assistLevel]; break;
-                    case MI_FEED:    label = "Practice feed";   value = proFeed ? "PRO" : "CLUB"; break;
-                    case MI_SENS:    label = "Mouse sensitivity"; value = TextFormat("%.2f", aimSens); break;
-                    case MI_SOUND:   label = !SfxDeviceOk() ? "Sound (no audio device)"
-                                           : SfxLoadedCount() == 0 ? "Sound (no files in sounds/)"
-                                           : TextFormat("Sound (%d files)", SfxLoadedCount());
-                                     value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : "OFF"; break;
-                    case MI_AIM:     label = "Aim";             value = aimLanes ? "LANES (5 spots)" : "CURVE (free, never wide)"; break;
-                    case MI_CAMERA:  label = "Camera";          value = camNames[camMode]; break;
-                    case MI_RESTART: label = "RESTART"; break;
-                    case MI_TITLE:   label = "BACK TO TITLE"; break;
-                    case MI_QUIT:    label = "QUIT"; break;
+                    case MI_PLAY:    label = app == APP_TITLE ? TextFormat(TR("PLAY  (%s)", "プレイ（%s）"), ModeName(mode)) : TR("RESUME", "続ける"); break;
+                    case MI_TOURNAMENT: label = TextFormat(TR("GRAND SLAM  < %s >  (%s)", "グランドスラム  < %s >（%s）"), slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel), gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子")); break;
+                    case MI_MODE:    label = TR("Mode", "モード");            value = ModeName(mode); break;
+                    case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
+                    case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
+                    case MI_PLAYER:  label = TR("Play as", "自分の選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TR("YOU (no traits)", "自分（癖なし）"); break;
+                    case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
+                    case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
+                    case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
+                    case MI_LANG:    label = "Language / 言語";  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;
+                    case MI_AI:      label = TR("AI level", "AI の強さ");        value = LevelNameUI(ai.level); break;
+                    case MI_STYLE:   label = TR("Style", "難しさ");           value = style == STYLE_CASUAL ? TR("CASUAL (easy)", "カジュアル（かんたん）") : TR("REAL", "リアル"); break;
+                    case MI_COURT:   label = TR("Court", "コート");           value = gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
+                                                                       : gSurface == SURF_GRASS ? TR("GRASS (fast, low)", "芝（速く、低く滑る）") : TR("HARD", "ハード"); break;
+                    case MI_ASSIST:  label = TR("Assist", "手がかり");          value = assistNames[assistLevel]; break;
+                    case MI_FEED:    label = TR("Practice feed", "練習の球出し");   value = proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ"); break;
+                    case MI_SENS:    label = TR("Mouse sensitivity", "マウスの感度"); value = TextFormat("%.2f", aimSens); break;
+                    case MI_SOUND:   label = !SfxDeviceOk() ? TR("Sound (no audio device)", "音（音の出る機器がない）")
+                                           : SfxLoadedCount() == 0 ? TR("Sound (no files in sounds/)", "音（sounds/ にファイルがない）")
+                                           : TextFormat(TR("Sound (%d files)", "音（%d ファイル）"), SfxLoadedCount());
+                                     value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
+                    case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
+                    case MI_CAMERA:  label = TR("Camera", "カメラ");          value = camNames[camMode]; break;
+                    case MI_RESTART: label = TR("RESTART", "やり直す"); break;
+                    case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;
+                    case MI_QUIT:    label = TR("QUIT", "終わる"); break;
                 }
                 DrawText(label, px + 40, ry + (rowH - 4 - fs) / 2, fs, sel ? YELLOW : RAYWHITE);
                 if (value[0]) {
@@ -443,23 +457,23 @@ int main(void)
                 }
             }
             int hy = rowY0 + n * rowH + 14;
-            DrawText("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", px + 30, hy, 16, LIGHTGRAY);
-            DrawText("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", px + 30, hy + 24, 16, LIGHTGRAY);
-            DrawText("Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu", px + 30, hy + 46, 16, LIGHTGRAY);
+            DrawText(TR("W/S select   A/D change   Enter OK   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定（マウス：左クリックで次、右クリックで前）"), px + 30, hy, 16, LIGHTGRAY);
+            DrawText(TR("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat,", "試合中：WASD 移動、マウスで狙う、左クリック トップスピン、右クリック スライス、Space＋クリック フラット、"), px + 30, hy + 24, 16, LIGHTGRAY);
+            DrawText(TR("Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu", "Shift＋クリック ロブ、Ctrl＋クリック ドロップ、Q かがむ、M 消音、Esc メニュー"), px + 30, hy + 46, 16, LIGHTGRAY);
             EndDrawing();
             continue;
         }
 
         if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
-        if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), "SCREEN INFO: %s  (F1)", HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
-        if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), "GUIDES: %s  (F2)", GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
+        if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), TR("SCREEN INFO: %s  (F1)", "画面の表示：%s（F1）"), HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
+        if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), TR("GUIDES: %s  (F2)", "ガイド：%s（F2）"), GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
-            if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "SOUND OFF  (M)"); }
+            if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "%s", TR("SOUND OFF  (M)", "音を消した（M）")); }
             else {
                 SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
-                if (!SfxDeviceOk())             snprintf(toast, sizeof(toast), "SOUND ON - but no audio device");
-                else if (SfxLoadedCount() == 0) snprintf(toast, sizeof(toast), "SOUND ON - beep test. No files in sounds/");
-                else                            snprintf(toast, sizeof(toast), "SOUND ON %.0f%% - %d files (M)", SfxGetVolume() * 100.0f, SfxLoadedCount());
+                if (!SfxDeviceOk())             snprintf(toast, sizeof(toast), "%s", TR("SOUND ON - but no audio device", "音を出す - でも音の出る機器がない"));
+                else if (SfxLoadedCount() == 0) snprintf(toast, sizeof(toast), "%s", TR("SOUND ON - beep test. No files in sounds/", "音を出す - テストの音。sounds/ にファイルがない"));
+                else                            snprintf(toast, sizeof(toast), TR("SOUND ON %.0f%% - %d files (M)", "音を出す %.0f%% - %d ファイル（M）"), SfxGetVolume() * 100.0f, SfxLoadedCount());
                 SfxTest();   // 鳴るかどうか、その場でわかるように
             }
             toastT = 3.0f;
@@ -490,15 +504,15 @@ int main(void)
                 DrawReplayFrame(f, rp.cam);
                 EndMode3D();
                 int W = GetScreenWidth(), H = GetScreenHeight();
-                if (fmodf((float)GetTime(), 1.0f) < 0.7f) { DrawRectangle(20, 20, 150, 40, (Color){ 200, 30, 30, 230 }); DrawText("REPLAY", 34, 28, 26, RAYWHITE); }
+                if (fmodf((float)GetTime(), 1.0f) < 0.7f) { DrawRectangle(20, 20, 150, 40, (Color){ 200, 30, 30, 230 }); DrawText(TR("REPLAY", "リプレイ"), 34, 28, 26, RAYWHITE); }
                 if (rp.mode == 1) {
-                    const char *hc = TextFormat("HIGHLIGHTS  %d / %d", rp.clip + 1, HighlightCount());
+                    const char *hc = TextFormat(TR("HIGHLIGHTS  %d / %d", "ハイライト  %d / %d"), rp.clip + 1, HighlightCount());
                     DrawText(hc, 190, 30, 22, YELLOW);
                 }
                 int cw = MeasureText(cap, 30);
                 DrawRectangle(W / 2 - cw / 2 - 20, H - 120, cw + 40, 50, Fade(BLACK, 0.65f));
                 DrawText(cap, W / 2 - cw / 2, H - 110, 30, RAYWHITE);
-                const char *hint = rp.mode == 1 ? "Enter: next   Esc: stop" : "Enter / R: back";
+                const char *hint = rp.mode == 1 ? TR("Enter: next   Esc: stop", "Enter：次   Esc：やめる") : TR("Enter / R: back", "Enter / R：戻る");
                 DrawText(hint, W / 2 - MeasureText(hint, 18) / 2, H - 50, 18, LIGHTGRAY);
                 EndDrawing();
             }
@@ -825,7 +839,7 @@ int main(void)
                     P.lastServeType = type;
                     if (mode == MODE_SERVE) svStats[serveNo - 1][0]++;
                     if (best < 0) {
-                        serveMsg = "WHIFF (ball above reach)";   // 空振りはフォルト
+                        serveMsg = TR("WHIFF (ball above reach)", "空振り（届かない高さ）");   // 空振りはフォルト
                         SfxWhiff();
                         P.lastServeKmh = 0.0f;
                         plog.serves++; plog.serveWhiffs++;
@@ -889,7 +903,7 @@ int main(void)
                     // 打たずに落とした：トスのやり直し（ペナルティなし）
                     P.chargingServe = -1;
                     ball = (Ball){ 0 };
-                    serveMsg = "Let the toss drop - toss again";
+                    serveMsg = TR("Let the toss drop - toss again", "トスを見送った - もう一度");
                     P.sv = SV_READY;
                 }
             }
@@ -902,9 +916,9 @@ int main(void)
                     svStats[serveNo - 1][1]++;
                     serveMsg = "IN";
                 } else if (serveNo == 1) {
-                    serveMsg = (ball.result == RESULT_NET) ? "FAULT (net)" : (serveMsg[0] ? serveMsg : "FAULT (out)");
+                    serveMsg = (ball.result == RESULT_NET) ? TR("FAULT (net)", "フォルト（ネット）") : (serveMsg[0] ? serveMsg : TR("FAULT (out)", "フォルト（アウト）"));
                 } else {
-                    serveMsg = (ball.result == RESULT_NET) ? "DOUBLE FAULT (net)" : "DOUBLE FAULT";
+                    serveMsg = (ball.result == RESULT_NET) ? TR("DOUBLE FAULT (net)", "ダブルフォールト（ネット）") : TR("DOUBLE FAULT", "ダブルフォールト");
                     doubleFaults++;
                 }
                 if (!in && serveNo == 1) serveNo = 2;
@@ -1259,8 +1273,8 @@ int main(void)
                 float retX = 0.5f * (ball.boxX0 + ball.boxX1);
                 float canMove = fmaxf(ball.age - 0.3f, 0.0f) * PLAYER_SPEED;
                 serveAce = true;
-                if (fabsf(ball.pos.x - retX) - REACH_SIDE > canMove) { aces++; serveMsg = "ACE!"; }
-                else serveMsg = "IN (returnable)";
+                if (fabsf(ball.pos.x - retX) - REACH_SIDE > canMove) { aces++; serveMsg = TR("ACE!", "エース！"); }
+                else serveMsg = TR("IN (returnable)", "イン（返される）");
             }
         }
 
@@ -1339,8 +1353,8 @@ int main(void)
                     retPending = true; retServer = hitter;
                 } else if (serveNo == 1) {
                     serveNo = 2;
-                    pointMsg = (ball.result == RESULT_NET) ? "Fault (net)" : "Fault";
-                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), "Fault (OUT %.0fcm)", fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg;
+                    pointMsg = (ball.result == RESULT_NET) ? TR("Fault (net)", "フォルト（ネット）") : TR("Fault", "フォルト");
+                    if (ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), TR("Fault (OUT %.0fcm)", "フォルト（アウト %.0fcm）"), fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg;
                                                      lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
@@ -1348,7 +1362,7 @@ int main(void)
                     phaseTimer = 1.5f;
                 } else {
                     winner = 1 - hitter;
-                    pointMsg = "Double fault";
+                    pointMsg = TR("Double fault", "ダブルフォールト");
                     if (ball.result == RESULT_OUT) { lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     endKind = 4;
@@ -1358,18 +1372,18 @@ int main(void)
                     winner = 1 - hitter;
                     endKind = 3;
                     if (ball.result == RESULT_OUT) { SfxCallOut(); lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
-                    pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? "Your error (net)" : "AI error (net)")
-                                                           : (hitter == 0 ? "Your error (out)" : "AI error (out)");
+                    pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? TR("Your error (net)", "自分のミス（ネット）") : TR("AI error (net)", "相手のミス（ネット）"))
+                                                           : (hitter == 0 ? TR("Your error (out)", "自分のミス（アウト）") : TR("AI error (out)", "相手のミス（アウト）"));
                     if (ball.result == RESULT_OUT) {   // どれだけ外れたか
-                        snprintf(outMsg, sizeof(outMsg), "%s error (OUT %.0fcm)", hitter == 0 ? "Your" : "AI", fmaxf(ball.outBy * 100.0f, 1.0f));
+                        snprintf(outMsg, sizeof(outMsg), TR("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), hitter == 0 ? TR("Your", "自分") : TR("AI", "相手"), fmaxf(ball.outBy * 100.0f, 1.0f));
                         pointMsg = outMsg;
                     }
                 } else if (ball.bounces >= 2) {
                     winner = hitter;
                     endKind = ball.isServe ? 1 : 2;
-                    if (ball.isServe) { pointMsg = (hitter == 0) ? "Your ace / unreturned serve" : "AI ace / unreturned serve";
+                    if (ball.isServe) { pointMsg = (hitter == 0) ? TR("Your ace / unreturned serve", "自分のサービスエース") : TR("AI ace / unreturned serve", "相手のサービスエース");
                                         mst[hitter][4]++; retPending = false; }
-                    else              pointMsg = (hitter == 0) ? "Your winner" : "AI winner";
+                    else              pointMsg = (hitter == 0) ? TR("Your winner", "自分のウィナー") : TR("AI winner", "相手のウィナー");
                 }
             }
             if (winner >= 0) {
@@ -1408,12 +1422,12 @@ int main(void)
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
-                    snprintf(scoreCall, sizeof(scoreCall), "GAME, SET%s  %s   (%d - %d)", score.over ? " AND MATCH" : "",
-                             winner == 0 ? "YOU" : OPP_SHORT, g[0], g[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), TR("GAME, SET%s  %s   (%d - %d)", "ゲーム、セット%s  %s   (%d - %d)"), score.over ? TR(" AND MATCH", "アンドマッチ") : "",
+                             winner == 0 ? TR("YOU", "自分") : OPP_SHORT, g[0], g[1]);
                     if (!score.over) { setBreak = true; summaryT = 0.0f; }
                 }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
-                    snprintf(scoreCall, sizeof(scoreCall), "GAME %s   (%d - %d)", winner == 0 ? "YOU" : OPP_SHORT, score.games[0], score.games[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), TR("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? TR("YOU", "自分") : OPP_SHORT, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
@@ -1434,11 +1448,11 @@ int main(void)
                         phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.6f);
                         const char *nm = OPP_SHORT;
                         if (ai.smashes == 1) {
-                            snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", nm, nm);
+                            snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告、%s 選手"), nm, nm);
                         } else {
                             // 2 回目からはポイントペナルティ（ゲームの始まりなので、これでゲームが終わることはない）
                             AwardPoint(&score, 0);
-                            snprintf(rageMsg, sizeof(rageMsg), "%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", nm, nm);
+                            snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ、%s 選手"), nm, nm);
                         }
                         rageMsgT = SMASH_TIME + 2.5f;
                         SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos));
@@ -1486,14 +1500,14 @@ int main(void)
                 }
                 // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
                 {
-                    const char *who = winner == 0 ? "YOU" : OPP_SHORT;
-                    const char *big = gPointImportance >= 1.0f ? "BIG POINT  -  " : "";
-                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), "%s SMASHES THE RACKET", OPP_SHORT);
-                    else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), "%sACE  %s  %.0f km/h", big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
-                    else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? "%s%s WINNER  (%d-shot rally)" : "%s%s WINNER", big, who, rallyHits);
-                    else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), "%s%d-SHOT RALLY  -  point %s", big, rallyHits, who);
-                    else                        snprintf(hlCap, sizeof(hlCap), "%sPOINT %s", big, who);
-                    if (score.over) snprintf(hlCap, sizeof(hlCap), "MATCH POINT  -  %s WINS", who);
+                    const char *who = winner == 0 ? TR("YOU", "自分") : OPP_SHORT;
+                    const char *big = gPointImportance >= 1.0f ? TR("BIG POINT  -  ", "大事なポイント  -  ") : "";
+                    if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), TR("%s SMASHES THE RACKET", "%s がラケットを叩きつける"), OPP_SHORT);
+                    else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), TR("%sACE  %s  %.0f km/h", "%sエース  %s  %.0f km/h"), big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
+                    else if (endKind == 2)      snprintf(hlCap, sizeof(hlCap), rallyHits >= 8 ? TR("%s%s WINNER  (%d-shot rally)", "%s%s のウィナー（%d 本のラリー）") : TR("%s%s WINNER", "%s%s のウィナー"), big, who, rallyHits);
+                    else if (rallyHits >= 10)   snprintf(hlCap, sizeof(hlCap), TR("%s%d-SHOT RALLY  -  point %s", "%s%d 本のラリー  -  %s のポイント"), big, rallyHits, who);
+                    else                        snprintf(hlCap, sizeof(hlCap), TR("%sPOINT %s", "%s%s のポイント"), big, who);
+                    if (score.over) snprintf(hlCap, sizeof(hlCap), TR("MATCH POINT  -  %s WINS", "マッチポイント  -  %s の勝ち"), who);
                     hlScore = 0.5f * rallyHits + (endKind == 2 ? 3.0f : 0.0f) + (endKind == 1 ? 2.0f : 0.0f) + 4.0f * gPointImportance
                             + (ai.anim.celebT > 0.0f ? 1.5f : 0.0f) + (ai.anim.smashT > 0.0f ? 6.0f : 0.0f) + (score.over ? 8.0f : 0.0f)
                             + RandRange(0.0f, 0.5f);
@@ -1828,7 +1842,7 @@ int main(void)
 
         // ポイントの後：リプレイの案内
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)
-            DrawText("R: replay", GetScreenWidth() / 2 - MeasureText("R: replay", 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
+            DrawText(TR("R: replay", "R：リプレイ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay", "R：リプレイ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
         if (tour.active && mode == MODE_MATCH && hudLevel <= 2) {
             const char *tl = TextFormat("%s  -  %s", TourName(tour.slam), TourRoundName(tour.round));
@@ -1851,10 +1865,10 @@ int main(void)
             DrawCircleLines((int)cx, (int)cy, BALL_R * S, Fade(YELLOW, al));
             bool in = hawk.result == RESULT_IN;
             float gap = (hawk.lineDist - BALL_R) * 100.0f;   // 球の端とラインの外側の縁の距離（cm）
-            const char *verdict = in ? (hawk.lineDist > 0.0f ? TextFormat("IN  (on the line %.1fcm)", fabsf(gap)) : "IN")
-                                     : TextFormat("OUT  %.1fcm", gap);
+            const char *verdict = in ? (hawk.lineDist > 0.0f ? TextFormat(TR("IN  (on the line %.1fcm)", "イン（ラインに %.1fcm かかった）"), fabsf(gap)) : TR("IN", "イン"))
+                                     : TextFormat(TR("OUT  %.1fcm", "アウト  %.1fcm"), gap);
             DrawRectangle(px, py, pw, 26, Fade(BLACK, 0.6f * al));
-            DrawText("BALL MARK  (close call)", px + 8, py + 5, 16, Fade(RAYWHITE, al));
+            DrawText(TR("BALL MARK  (close call)", "ボールの跡（際どい判定）"), px + 8, py + 5, 16, Fade(RAYWHITE, al));
             DrawText(verdict, px + 10, py + ph - 30, 22, Fade(in ? (Color){ 120, 255, 120, 255 } : (Color){ 255, 110, 90, 255 }, al));
         }
 
@@ -1869,11 +1883,11 @@ int main(void)
                      20, y, 22, RAYWHITE); y += 30;
             if (P.lastServeKmh > 0.0f || serveMsg[0]) {
                 if (P.lastServeKmh > 0.0f) {
-                    DrawText(TextFormat("%s  %.0f km/h", SERVES[P.lastServeType].name, P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
-                    DrawText(TextFormat("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", P.lastServeH, SERVE_IDEAL_H, P.lastServeQ * 100.0f),
+                    DrawText(TextFormat("%s  %.0f km/h", ServeNameUI(P.lastServeType), P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
+                    DrawText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
                              20, y, 18, QualityColor(P.lastServeQ)); y += 22;
                 } else {
-                    DrawText(SERVES[P.lastServeType].name, 20, y, 18, SERVES[P.lastServeType].color); y += 44;
+                    DrawText(ServeNameUI(P.lastServeType), 20, y, 18, SERVES[P.lastServeType].color); y += 44;
                 }
                 if (ball.netClearance > -50.0f)
                     DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
@@ -1881,72 +1895,72 @@ int main(void)
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
                 DrawText(serveMsg, 20, y, 22, mc); y += 30;
             } else {
-                DrawText("A/D: position.  Mouse: left/right.  Later release = deeper", 20, y, 18, RAYWHITE); y += 22;
-                DrawText("Hold L-click kick / R-click slice / Space+click flat", 20, y, 18, RAYWHITE); y += 22;
-                DrawText("to toss, release to hit. Hold to let a bad toss drop.", 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TR("A/D: position.  Mouse: left/right.  Later release = deeper", "A/D：立ち位置。マウス：左右。遅く離すほど深い"), 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
             }
         } else if (P.hasLast) {
             const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
                 DrawText(MissText(c->miss), 20, y, 22, RED); y += 30;
                 if (c->miss != MISS_NO_BALL) {
-                    DrawText(TextFormat("Ball was %.2f m from you, %+.0f deg (side=0, front=90), %.2f m high",
+                    DrawText(TextFormat(TR("Ball was %.2f m from you, %+.0f deg (side=0, front=90), %.2f m high", "球は %.2f m 先、%+.0f 度（横 0、前 90）、高さ %.2f m"),
                                         c->side, c->angleDeg, c->height), 20, y, 16, RAYWHITE); y += 20;
-                    DrawText("White ring on the ground = ideal distance, faint ring = max reach", 20, y, 16, LIGHTGRAY); y += 20;
+                    DrawText(TR("White ring on the ground = ideal distance, faint ring = max reach", "地面の白い輪 = 理想の距離、薄い輪 = 届く限界"), 20, y, 16, LIGHTGRAY); y += 20;
                 }
             } else {
-                const char *stroke = c->overhead ? "Overhead" : (c->forehand ? "Forehand" : "Backhand");
+                const char *stroke = c->overhead ? TR("Overhead", "頭上") : (c->forehand ? TR("Forehand", "フォア") : TR("Backhand", "バック"));
                 // バウンド後の球：上がり際（ライジング）・頂点・落ち際
-                const char *tag = c->dive ? " DIVE!" : (c->volley ? " volley"
-                                : (c->vyBall > 0.6f ? " on the rise" : (c->vyBall > -0.6f ? " at the top" : " dropping")));
+                const char *tag = c->dive ? TR(" DIVE!", " 飛びつき！") : (c->volley ? TR(" volley", " ボレー")
+                                : (c->vyBall > 0.6f ? TR(" on the rise", " 上がり際") : (c->vyBall > -0.6f ? TR(" at the top", " 頂点") : TR(" dropping", " 落ち際"))));
                 DrawText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
-                                    c->overhead && P.lastType != SHOT_SLICE && P.lastType < SHOT_NORMAL_COUNT ? "SMASH" : SHOTS[P.lastType].name,
+                                    c->overhead && P.lastType != SHOT_SLICE && P.lastType < SHOT_NORMAL_COUNT ? TR("SMASH", "スマッシュ") : ShotNameUI(P.lastType),
                                     c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
                 y += 30;
                 if (c->overhead) {
-                    const char *tStr = c->height > OVERHEAD_IDEAL_H + 0.15f ? "early" : (c->height < OVERHEAD_IDEAL_H - 0.15f ? "late" : "good");
-                    DrawText(TextFormat("Timing  height %.2f m (ideal %.2f) %-5s %3.0f%%", c->height, OVERHEAD_IDEAL_H, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
-                    DrawText(TextFormat("Position under the ball         %3.0f%%", c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    const char *tStr = c->height > OVERHEAD_IDEAL_H + 0.15f ? TR("early", "早い") : (c->height < OVERHEAD_IDEAL_H - 0.15f ? TR("late", "遅い") : TR("good", "良い"));
+                    DrawText(TextFormat(TR("Timing  height %.2f m (ideal %.2f) %-5s %3.0f%%", "タイミング  高さ %.2f m（理想 %.2f）%s %3.0f%%"), c->height, OVERHEAD_IDEAL_H, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    DrawText(TextFormat(TR("Position under the ball         %3.0f%%", "球の下の位置  %3.0f%%"), c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
                     y += 22;
                 } else {
                     float idealAng = c->volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
-                    const char *tStr = c->angleDeg > idealAng + 8.0f ? "early" : (c->angleDeg < idealAng - 8.0f ? "late" : "good");
-                    const char *dStr = c->side < IDEAL_R - 0.15f ? "jammed" : (c->side > IDEAL_R + 0.15f ? "stretched" : "good");
-                    const char *hStr = c->height < SHOTS[P.lastType].idealHeight - 0.2f ? "low"
-                                     : (HeightErr(&SHOTS[P.lastType], c->height, c->easeKmh) > 0.2f ? "high" : "good");
-                    DrawText(TextFormat("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
-                    DrawText(TextFormat("Distance %.2f m  %-9s %3.0f%%", c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
-                    DrawText(TextFormat("Height   %.2f m  %-9s %3.0f%%", c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
+                    const char *tStr = c->angleDeg > idealAng + 8.0f ? TR("early", "早い") : (c->angleDeg < idealAng - 8.0f ? TR("late", "遅い") : TR("good", "良い"));
+                    const char *dStr = c->side < IDEAL_R - 0.15f ? TR("jammed", "近すぎ") : (c->side > IDEAL_R + 0.15f ? TR("stretched", "遠すぎ") : TR("good", "良い"));
+                    const char *hStr = c->height < SHOTS[P.lastType].idealHeight - 0.2f ? TR("low", "低い")
+                                     : (HeightErr(&SHOTS[P.lastType], c->height, c->easeKmh) > 0.2f ? TR("high", "高い") : TR("good", "良い"));
+                    DrawText(TextFormat(TR("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", "タイミング  %+3.0f 度（%+.0f ms）%s %3.0f%%"), c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    DrawText(TextFormat(TR("Distance %.2f m  %-9s %3.0f%%", "距離  %.2f m  %s %3.0f%%"), c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    DrawText(TextFormat(TR("Height   %.2f m  %-9s %3.0f%%", "高さ  %.2f m  %s %3.0f%%"), c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
                 }
                 DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, P.lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
                 if (ball.lastHitter == HITTER_PLAYER) {
                     if (ball.netClearance > -50.0f)
                         DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
-                    DrawText(ResultText(ball.result), 300, y, 22, ball.result == RESULT_IN ? GREEN : RED);
+                    DrawText(ResultTextUI(ball.result), 300, y, 22, ball.result == RESULT_IN ? GREEN : RED);
                 }
                 y += 24;
             }
         } else {
-            DrawText("Move to the ball. Hold longer = deeper. Release to swing", 20, y, 18, RAYWHITE);
+            DrawText(TR("Move to the ball. Hold longer = deeper. Release to swing", "球の所へ動く。長く押すほど深い。離して振る"), 20, y, 18, RAYWHITE);
         }
         }   // 左上のパネル
         // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ
         if (hudLevel == 0) {
         y = GetScreenHeight() - 98;
         if (mode == MODE_SERVE)
-            DrawText(TextFormat("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d",
+            DrawText(TextFormat(TR("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d", "ファースト %d/%d   セカンド %d/%d   エース %d   ダブルフォールト %d"),
                                 svStats[0][1], svStats[0][0], svStats[1][1], svStats[1][0], aces, doubleFaults), 20, y, 16, RAYWHITE);
         else
-            DrawText(TextFormat("IN  flat %d/%d  top %d/%d  slice %d/%d  lob %d/%d  top lob %d/%d  drop %d/%d",
+            DrawText(TextFormat(TR("IN  flat %d/%d  top %d/%d  slice %d/%d  lob %d/%d  top lob %d/%d  drop %d/%d", "入った  フラット %d/%d  トップ %d/%d  スライス %d/%d  ロブ %d/%d  トップロブ %d/%d  ドロップ %d/%d"),
                                 stats[SHOT_FLAT][1], stats[SHOT_FLAT][0], stats[SHOT_TOP][1], stats[SHOT_TOP][0],
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  M mute  Esc menu", 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText(TR("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  M mute  Esc menu", "WASD 移動  マウス 狙い  左クリック トップ  右クリック スライス  Space＋クリック フラット  Shift＋クリック ロブ  Ctrl＋クリック ドロップ  Q かがむ  M 消音  Esc メニュー"), 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
-            DrawText(TextFormat("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", AI_LEVELS[ai.level].name), 20, y, 16, LIGHTGRAY);
+            DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", "G モード：試合   1/2/3 AI の強さ：%s   C カメラ  T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else
-            DrawText(TextFormat("G mode: %s   V feed: %s   F feed  C cam  T slow", MODE_NAMES[mode], proFeed ? "PRO" : "CLUB"),
+            DrawText(TextFormat(TR("G mode: %s   V feed: %s   F feed  C cam  T slow", "G モード：%s   V 球出し：%s   F 球出し  C カメラ  T スロー"), ModeName(mode), proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ")),
                      20, y, 16, LIGHTGRAY);
         }
 
@@ -1956,8 +1970,8 @@ int main(void)
             int so = 30 * score.nSetsDone;   // 終わったセットの列
             int sbw = 300 + so, sx = GetScreenWidth() - sbw - 10, sy = 10;
             DrawRectangle(sx, sy, sbw, 96, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
-            DrawText("GAMES", sx + 166 + so, sy + 4, 12, LIGHTGRAY);
-            DrawText(score.tiebreak ? "TIEBREAK" : "POINT", sx + 222 + so, sy + 4, 12, LIGHTGRAY);
+            DrawText(TR("GAMES", "ゲーム"), sx + 166 + so, sy + 4, 12, LIGHTGRAY);
+            DrawText(score.tiebreak ? TR("TIEBREAK", "タイブレーク") : TR("POINT", "ポイント"), sx + 222 + so, sy + 4, 12, LIGHTGRAY);
             for (int k = 0; k < 2; k++) {
                 int ry = sy + 20 + k * 36;
                 Color nameC = (k == 0) ? RAYWHITE : (Color){ 140, 170, 255, 255 };
@@ -1966,7 +1980,7 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? "YOU" : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
+                DrawText(k == 0 ? TR("YOU", "自分") : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
@@ -1986,7 +2000,7 @@ int main(void)
             if (ai.lastKmh > 0.0f && hudLevel <= 1) {
                 int ly = sy + (score.nGames ? 126 : 102);
                 DrawRectangle(sx, ly - 3, sbw, 22, Fade((Color){ 10, 20, 40, 255 }, 0.6f));
-                DrawText(TextFormat("AI last: %s %.0f km/h", ai.lastServe ? "SERVE" : SHOTS[ai.lastType].name, ai.lastKmh),
+                DrawText(TextFormat(TR("AI last: %s %.0f km/h", "相手の最後の球：%s %.0f km/h"), ai.lastServe ? TR("SERVE", "サーブ") : ShotNameUI(ai.lastType), ai.lastKmh),
                          sx + 8, ly, 16, LIGHTGRAY);
             }
             if (pointMsg[0]) {
@@ -2011,12 +2025,12 @@ int main(void)
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
-                DrawMatchSummary(score.sets[0] > score.sets[1] ? "MATCH SUMMARY - YOU WIN" : TextFormat("MATCH SUMMARY - %s WINS", OPP_SHORT),
-                                 tour.active ? "Enter: back to the draw    R: highlights" : "Enter: new match    R: highlights", &score, ms, mst, OPP_SHORT);
+                DrawMatchSummary(score.sets[0] > score.sets[1] ? TR("MATCH SUMMARY - YOU WIN", "試合の結果 - 自分の勝ち") : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
+                                 tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT);
             else if (setBreak && phaseTimer <= 0.0f)
-                DrawMatchSummary(TextFormat("AFTER SET %d", score.nSetsDone), "Enter / click: next set", &score, ms, mst, OPP_SHORT);
+                DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT);
             else if (showSummary)
-                DrawMatchSummary("MATCH SUMMARY", "Tab: close", &score, ms, mst, OPP_SHORT);
+                DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT);
         }
 
         // 統計（Tab）
@@ -2025,34 +2039,34 @@ int main(void)
             DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.85f));
             int ty = by + 16;
             #define LINE(...) do { DrawText(TextFormat(__VA_ARGS__), bx + 20, ty, 20, RAYWHITE); ty += 26; } while (0)
-            DrawText("SESSION STATS  (Tab to close)   saved to playlog.csv", bx + 20, ty, 22, YELLOW); ty += 36;
+            DrawText(TR("SESSION STATS  (Tab to close)   saved to playlog.csv", "今回の成績（Tab で閉じる）  playlog.csv に保存"), bx + 20, ty, 22, YELLOW); ty += 36;
             int sw = plog.swings > 0 ? plog.swings : 1;
-            LINE("Swings %d:  hit %d (%d%%)   whiff %d (%d%%)", plog.swings, plog.hits, plog.hits * 100 / sw, plog.whiffs, plog.whiffs * 100 / sw);
-            LINE("  whiffs: early %d  late %d  far %d  high %d  low %d",
+            LINE(TR("Swings %d:  hit %d (%d%%)   whiff %d (%d%%)", "振った %d：当たった %d（%d%%）  空振り %d（%d%%）"), plog.swings, plog.hits, plog.hits * 100 / sw, plog.whiffs, plog.whiffs * 100 / sw);
+            LINE(TR("  whiffs: early %d  late %d  far %d  high %d  low %d", "  空振り：早い %d  遅い %d  遠い %d  高い %d  低い %d"),
                  plog.miss[MISS_EARLY], plog.miss[MISS_LATE], plog.miss[MISS_FAR], plog.miss[MISS_HIGH], plog.miss[MISS_LOW]);
             int res = plog.shotIn + plog.shotOut + plog.shotNet; if (res < 1) res = 1;
-            LINE("Your shots that landed: IN %d%%   OUT %d%%   NET %d%%  (of %d)",
+            LINE(TR("Your shots that landed: IN %d%%   OUT %d%%   NET %d%%  (of %d)", "自分の打球：イン %d%%   アウト %d%%   ネット %d%%（%d 本）"),
                  plog.shotIn * 100 / res, plog.shotOut * 100 / res, plog.shotNet * 100 / res, plog.shotIn + plog.shotOut + plog.shotNet);
             ty += 8;
             int no = plog.nOffset > 0 ? plog.nOffset : 1;
-            LINE("Timing vs best moment: avg %.0f ms off   early %d / on time %d / late %d",
+            LINE(TR("Timing vs best moment: avg %.0f ms off   early %d / on time %d / late %d", "一番いい瞬間とのずれ：平均 %.0f ms   早い %d / ちょうど %d / 遅い %d"),
                  plog.sumAbsOffset / no, plog.early, plog.onTime, plog.late);
-            LINE("Contact quality: avg %.0f%%   best possible from where you stood: %.0f%%",
+            LINE(TR("Contact quality: avg %.0f%%   best possible from where you stood: %.0f%%", "当たりの質：平均 %.0f%%   その位置での最高：%.0f%%"),
                  plog.hits ? plog.sumQ / plog.hits * 100.0f : 0.0f, plog.sumBestQ / no * 100.0f);
-            LINE("Main cause:  POSITION (feet) %d   TIMING (hands) %d", plog.posProblem, plog.timingProblem);
+            LINE(TR("Main cause:  POSITION (feet) %d   TIMING (hands) %d", "主な原因：位置（足） %d   タイミング（手） %d"), plog.posProblem, plog.timingProblem);
             ty += 8;
-            LINE("Balls you didn't swing at: %d landing IN (%d were reachable), %d going OUT",
+            LINE(TR("Balls you didn't swing at: %d landing IN (%d were reachable), %d going OUT", "振らなかった球：イン %d（届いた %d）、アウト %d"),
                  plog.noSwingIn, plog.noSwingReachable, plog.noSwingOut);
-            LINE("Reaction (first move after opponent hit): avg %.2f s",
+            LINE(TR("Reaction (first move after opponent hit): avg %.2f s", "反応（相手が打ってから動き出すまで）：平均 %.2f 秒"),
                  plog.nFirstMove ? plog.sumFirstMove / plog.nFirstMove : 0.0f);
             ty += 8;
-            LINE("Serves %d:  in %d   whiff %d", plog.serves, plog.servesIn, plog.serveWhiffs);
+            LINE(TR("Serves %d:  in %d   whiff %d", "サーブ %d：入った %d   空振り %d"), plog.serves, plog.servesIn, plog.serveWhiffs);
             if (mode == MODE_MATCH) {
                 ty += 8;
                 for (int k = 0; k < 2; k++) {
                     int a = mst[k][0] ? mst[k][0] : 1, b = mst[k][2] ? mst[k][2] : 1, in = mst[k][1] + mst[k][3];
-                    LINE("%-3s 1st in %d/%d (%d%%)  2nd in %d/%d (%d%%)  unreturned %d/%d  DF %d",
-                         k == 0 ? "YOU" : "AI", mst[k][1], mst[k][0], mst[k][1] * 100 / a, mst[k][3], mst[k][2], mst[k][3] * 100 / b,
+                    LINE(TR("%-3s 1st in %d/%d (%d%%)  2nd in %d/%d (%d%%)  unreturned %d/%d  DF %d", "%s  ファースト %d/%d（%d%%）  セカンド %d/%d（%d%%）  返されなかった %d/%d  DF %d"),
+                         k == 0 ? TR("YOU", "自分") : TR("AI", "相手"), mst[k][1], mst[k][0], mst[k][1] * 100 / a, mst[k][3], mst[k][2], mst[k][3] * 100 / b,
                          mst[k][4], in, mst[k][5]);
                 }
             }
@@ -2072,18 +2086,18 @@ int main(void)
             float pw = HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * P.charge;
             float dz = -AimFromHold((ShotType)P.chargingShot, P.pos.z, P.aimX, P.hold, style).z;
             if (sp->touchAngle > 0.0f)
-                DrawText(TextFormat("%s  depth %.1f m", sp->name, dz), gx, gy - 24, 20, RAYWHITE);
+                DrawText(TextFormat(TR("%s  depth %.1f m", "%s  深さ %.1f m"), ShotNameUI(P.chargingShot), dz), gx, gy - 24, 20, RAYWHITE);
             else
-                DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, pw), dz,
-                                    dz > HALF_LEN ? "  LONG" : ""), gx, gy - 24, 20, dz > HALF_LEN ? RED : RAYWHITE);
+                DrawText(TextFormat(TR("%s  %.0f km/h  depth %.1f m%s", "%s  %.0f km/h  深さ %.1f m%s"), ShotNameUI(P.chargingShot), Lerp(sp->minKmh, sp->maxKmh, pw), dz,
+                                    dz > HALF_LEN ? TR("  LONG", "  長い") : ""), gx, gy - 24, 20, dz > HALF_LEN ? RED : RAYWHITE);
         }
         if (P.chargingServe >= 0 && hudLevel <= 2) {
             const ServeSpec *sp = &SERVES[P.chargingServe];
             DrawRectangle(gx, gy, gw, 20, Fade(BLACK, 0.6f));
             DrawRectangle(gx, gy, (int)(gw * P.charge), 20, sp->color);
             float sd = -ServeDepthFromTime(P.serveT);
-            DrawText(TextFormat("%s  %.0f km/h  depth %.1f m%s", sp->name, Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
-                                sd > SERVICE_Z ? "  LONG" : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
+            DrawText(TextFormat(TR("%s  %.0f km/h  depth %.1f m%s", "%s  %.0f km/h  深さ %.1f m%s"), ServeNameUI(P.chargingServe), Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
+                                sd > SERVICE_Z ? TR("  LONG", "  長い") : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
         }
         if (toastT > 0.0f) {
             toastT -= frameDt;
@@ -2091,25 +2105,25 @@ int main(void)
             DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, GetScreenHeight() - 210, tw + 32, 44, Fade(BLACK, 0.75f));
             DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
         }
-        if (slowMo) DrawText("SLOW x0.25", GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
+        if (slowMo) DrawText(TR("SLOW x0.25", "スロー x0.25"), GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
         if (hudLevel == 0) {
-            static const char *camNames[3] = { "BEHIND", "SIDE VIEW", "FOLLOW BALL" };
-            DrawText(TextFormat("Camera: %s (C)", camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
+            const char *camNames[3] = { TR("BEHIND", "後ろから"), TR("SIDE VIEW", "横から"), TR("FOLLOW BALL", "ボールを追う") };
+            DrawText(TextFormat(TR("Camera: %s (C)", "カメラ：%s（C）"), camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
         }
-        if (botControls) DrawText("AUTOPILOT (B)", GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
-        if (hudLevel == 0) DrawText("Tab: stats", GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
+        if (botControls) DrawText(TR("AUTOPILOT (B)", "自動操作（B）"), GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
+        if (hudLevel == 0) DrawText(TR("Tab: stats", "Tab：成績"), GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
         if (hudLevel == 0) {
-            static const char *an[3] = { "OFF", "TIMING", "TIMING+SPOT" };
-            DrawText(TextFormat("H assist: %s", an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
-            DrawText(TextFormat("N style: %s", STYLE_NAMES[style]), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);
-            DrawText(TextFormat("Court: %s", SURFACES[gSurface].name), 780, GetScreenHeight() - 30, 18, LIGHTGRAY);
+            const char *an[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING+SPOT", "タイミング＋立つ場所") };
+            DrawText(TextFormat(TR("H assist: %s", "H 手がかり：%s"), an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
+            DrawText(TextFormat(TR("N style: %s", "N 難しさ：%s"), StyleNameUI(style)), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);
+            DrawText(TextFormat(TR("Court: %s", "コート：%s"), SurfNameUI(gSurface)), 780, GetScreenHeight() - 30, 18, LIGHTGRAY);
             // 音の状態（いつも出す）
             {
                 const char *st; Color sc = LIGHTGRAY;
-                if (!SfxDeviceOk())               { st = "Sound: no audio device"; sc = RED; }
-                else if (SfxLoadedCount() == 0)   { st = TextFormat("Sound: no files in %s", SfxDir()); sc = RED; }
-                else if (SfxGetVolume() <= 0.0f)  { st = "Sound: OFF (M)"; sc = ORANGE; }
-                else                               st = TextFormat("Sound: %.0f%%  %d files (M)", SfxGetVolume() * 100.0f, SfxLoadedCount());
+                if (!SfxDeviceOk())               { st = TR("Sound: no audio device", "音：音の出る機器がない"); sc = RED; }
+                else if (SfxLoadedCount() == 0)   { st = TextFormat(TR("Sound: no files in %s", "音：%s にファイルがない"), SfxDir()); sc = RED; }
+                else if (SfxGetVolume() <= 0.0f)  { st = TR("Sound: OFF (M)", "音：なし（M）"); sc = ORANGE; }
+                else                               st = TextFormat(TR("Sound: %.0f%%  %d files (M)", "音：%.0f%%  %d ファイル（M）"), SfxGetVolume() * 100.0f, SfxLoadedCount());
                 DrawText(st, 560, GetScreenHeight() - 52, 16, sc);
             }
         }
