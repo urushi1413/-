@@ -701,6 +701,9 @@ const char *TourOpponentName(const Tournament *t);
 int  TourSlamSurface(int slam);
 void TourRecordPlayerMatch(Tournament *t, bool playerWon, const Score *s);
 void TourDraw(const Tournament *t, int W, int H, float time);
+void TourBeginReveal(const Tournament *t, int fromRound);   // ほかの試合の結果を 1 試合ずつ見せ始める
+bool TourRevealActive(void);
+void TourRevealSkip(void);
 const char *TourName(int slam);
 const char *TourRoundName(int round);
 

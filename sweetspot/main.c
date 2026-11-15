@@ -389,7 +389,9 @@ int main(void)
         // ================= 大会の組み合わせ表 =================
         if (app == APP_BRACKET) {
             SfxCrowd(false, 0.0f);
-            if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && IsKeyPressed(KEY_SPACE))) {
+            bool goKey = IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && IsKeyPressed(KEY_SPACE));
+            if (goKey && TourRevealActive()) { TourRevealSkip(); goKey = false; }   // 結果を見せている途中：飛ばすだけ
+            if (goKey) {
                 int op = TourOpponent(&tour);
                 if (op < 0 && TourNextSlam(&tour)) {
                     // シーズン：次の大会の組み合わせ表へ
@@ -737,7 +739,7 @@ int main(void)
         for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
-                TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score);
+                { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
                 app = APP_BRACKET; mouseLocked = false; EnableCursor();
                 continue;
             }

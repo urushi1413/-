@@ -24,6 +24,8 @@ static const char *QUAL_MEN[] = { "Lukas Brandtner", "Mateo Varga", "Tomas Ruzic
 static const char *QUAL_WOMEN[] = { "Anna Kowalik", "Lea Fournier", "Mia Lindgren", "Elena Moretti", "Sara Okafor", "Yui Takamura",
                                     "Nina Petrova", "Clara Vidal", "Julia Hoffer", "Ana Ribeiro", "Eva Novakova", "Lily Chen", "Zoe Marchetti" };
 
+// 結果を 1 試合ずつ見せる状態（TourBeginReveal）
+static struct { bool on; int n; int r[TOUR_SIZE], m[TOUR_SIZE]; double t0; } gRev;
 const char *TourName(int slam) { return SLAM_NAME[((slam % SLAM_COUNT) + SLAM_COUNT) % SLAM_COUNT]; }
 int TourSlamSurface(int slam) { return SLAM_SURF[((slam % SLAM_COUNT) + SLAM_COUNT) % SLAM_COUNT]; }
 const char *TourRoundName(int round)
@@ -53,6 +55,7 @@ void TourStart(Tournament *t, bool women, int slam, int setsToWin)
     // シーズンの記録は残す
     bool season = t->season && t->active; int titles = t->seasonTitles; bool won[SLAM_COUNT]; memcpy(won, t->seasonWon, sizeof(won));
     memset(t, 0, sizeof(*t));
+    gRev.on = false;
     if (season) { t->season = true; t->seasonTitles = titles; memcpy(t->seasonWon, won, sizeof(won)); }
     t->active = true; t->women = women; t->slam = slam; t->surface = TourSlamSurface(slam); t->setsToWin = setsToWin;
     // 出る選手：そのツアーの選手を全員（強い順に並べる）
@@ -211,6 +214,40 @@ static Color SlamColor(int slam)
     return slam == 0 ? (Color){ 20, 70, 130, 255 } : slam == 1 ? (Color){ 120, 55, 30, 255 } : slam == 2 ? (Color){ 30, 70, 40, 255 } : (Color){ 25, 40, 95, 255 };
 }
 
+// ---- 結果を 1 試合ずつ見せる（自分の試合が終わって組み合わせ表に戻ったとき） ----
+//   その試合の 2 人が光る → 負けた方が暗くなる → 勝った方の名前が次のラウンドへ進む → スコアが出る
+static float StepLen(int r) { return r >= 2 ? 1.25f : 0.95f; }   // 準決勝と決勝はゆっくり
+void TourBeginReveal(const Tournament *t, int fromRound)
+{
+    gRev.n = 0;
+    for (int r = fromRound; r < TOUR_ROUNDS; r++) {
+        int n = TOUR_SIZE >> r;
+        int mine = -1;
+        for (int m = 0; m < n / 2; m++) if (t->slot[t->ent[r][2 * m]] < 0 || t->slot[t->ent[r][2 * m + 1]] < 0) mine = m;
+        if (mine >= 0 && t->winner[r][mine] >= 0) { gRev.r[gRev.n] = r; gRev.m[gRev.n++] = mine; }   // 自分の試合を最初に
+        for (int m = 0; m < n / 2 && gRev.n < TOUR_SIZE; m++)
+            if (m != mine && t->winner[r][m] >= 0) { gRev.r[gRev.n] = r; gRev.m[gRev.n++] = m; }
+    }
+    gRev.on = gRev.n > 0;
+    gRev.t0 = GetTime() + 0.5;   // 表が出てから少し待って始める
+}
+static double RevealTotal(void) { double s = 0; for (int i = 0; i < gRev.n; i++) s += StepLen(gRev.r[i]); return s; }
+bool TourRevealActive(void) { return gRev.on && GetTime() - gRev.t0 < RevealTotal(); }
+void TourRevealSkip(void) { gRev.t0 = GetTime() - RevealTotal() - 1.0; }
+// 試合 (r, m) の見せ方：-1 = まだ見せない、0〜1 = 見せている途中、2 = 見せ終わった（または見せる対象でない）
+static float RevPhase(int r, int m)
+{
+    if (!gRev.on) return 2.0f;
+    double t = GetTime() - gRev.t0;
+    for (int i = 0; i < gRev.n; i++) {
+        float len = StepLen(gRev.r[i]);
+        if (gRev.r[i] == r && gRev.m[i] == m) return t < 0.0 ? -1.0f : (t < len ? (float)(t / len) : 2.0f);
+        t -= len;
+    }
+    return 2.0f;
+}
+static float Ease(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
+
 void TourDraw(const Tournament *t, int W, int H, float time)
 {
     ClearBackground(SlamColor(t->slam));
@@ -229,32 +266,91 @@ void TourDraw(const Tournament *t, int W, int H, float time)
             DrawText(nm, x + k * 150 + 75 - MeasureText(nm, 14) / 2, 92, 14, c);
         }
     }
+    bool revealing = TourRevealActive();
     // 列：4 回戦 / 準々決勝 / 準決勝 / 決勝 / 優勝
     int cols = TOUR_ROUNDS + 1;
     int colW = (W - 60) / cols, top = 140, h = H - top - 100;
+    #define BOX_X(r)     (30 + (r) * colW)
+    #define BOX_Y(r, i)  (top + ((float)h / (TOUR_SIZE >> (r))) * ((i) + 0.5f))
+    #define BOX_H(r)     ((int)fminf(30.0f, (float)h / (TOUR_SIZE >> (r)) - 4.0f))
+    // 名前（シード・予選上がりの印つき）
+    #define ENT_NAME(e)  (t->seed[e] ? TextFormat("[%d] %s", t->seed[e], TourEntrantName(t, e)) : t->slot[e] == 0 ? TextFormat("(Q) %s", TourEntrantName(t, e)) : TourEntrantName(t, e))
+    // 勝ち上がりの線（勝者が決まって見せ終わった線は明るく）
+    for (int r = 0; r < TOUR_ROUNDS; r++) {
+        int n = TOUR_SIZE >> r;
+        for (int m = 0; m < n / 2; m++) {
+            float ya = BOX_Y(r, 2 * m), yb = BOX_Y(r, 2 * m + 1), yn = BOX_Y(r + 1, m);
+            int xr = BOX_X(r) + colW - 16, xm = BOX_X(r) + colW - 8, xn = BOX_X(r + 1);
+            Color dim = Fade(RAYWHITE, 0.18f);
+            DrawLine(xr, (int)ya, xm, (int)ya, dim); DrawLine(xr, (int)yb, xm, (int)yb, dim);
+            DrawLine(xm, (int)ya, xm, (int)yb, dim); DrawLine(xm, (int)yn, xn, (int)yn, dim);
+            float ph = RevPhase(r, m);
+            int w = t->winner[r][m];
+            if (w >= 0 && ph >= 0.4f) {   // 勝った方の道を明るく（見せている間は伸びていく）
+                float yw = (t->ent[r][2 * m] == w) ? ya : yb;
+                float k = ph >= 2.0f ? 1.0f : Ease((ph - 0.4f) / 0.35f);
+                Color lit = Fade(accent, ph >= 2.0f ? 0.55f : 0.95f);
+                DrawLineEx((Vector2){ (float)xr, yw }, (Vector2){ xr + (xm - xr) * Clamp01(k * 3.0f), yw }, 2.0f, lit);
+                if (k > 0.33f) DrawLineEx((Vector2){ (float)xm, yw }, (Vector2){ (float)xm, yw + (yn - yw) * Clamp01((k - 0.33f) * 3.0f) }, 2.0f, lit);
+                if (k > 0.66f) DrawLineEx((Vector2){ (float)xm, yn }, (Vector2){ xm + (xn - xm) * Clamp01((k - 0.66f) * 3.0f), yn }, 2.0f, lit);
+            }
+        }
+    }
     for (int r = 0; r <= TOUR_ROUNDS; r++) {
-        int n = TOUR_SIZE >> r, x = 30 + r * colW;
+        int n = TOUR_SIZE >> r, x = BOX_X(r);
         const char *rn = r < TOUR_ROUNDS ? TourRoundName(r) : TR("CHAMPION", "優勝");
-        DrawText(rn, x + 4, top - 22, 16, (r == t->round && !t->playerOut && !t->champion) ? accent : LIGHTGRAY);
-        float rowH = (float)h / n;
-        int bh = (int)fminf(30.0f, rowH - 4.0f);
+        DrawText(rn, x + 4, top - 22, 16, (r == t->round && !t->playerOut && !t->champion && !revealing) ? accent : LIGHTGRAY);
+        int bh = BOX_H(r);
         int fs = bh >= 24 ? 16 : 14;
         for (int i = 0; i < n; i++) {
-            float y = top + rowH * (i + 0.5f);
+            float y = BOX_Y(r, i);
             int e = t->ent[r][i];
-            if (r > 0 && t->winner[r - 1][i] < 0) e = -1;   // まだ決まっていない
+            float inPh = r > 0 ? RevPhase(r - 1, i) : 2.0f;   // この枠に入る勝者を見せている途中か
+            if (r > 0 && (t->winner[r - 1][i] < 0 || inPh < 0.75f)) e = -1;   // まだ決まっていない（見せていない）
+            float myPh = r < TOUR_ROUNDS ? RevPhase(r, i / 2) : 2.0f;     // この枠の人の試合
+            bool active = myPh >= 0.0f && myPh < 1.0f;
             Color box = (e >= 0 && t->slot[e] < 0) ? (Color){ 60, 110, 200, 255 } : (Color){ 30, 35, 45, 255 };
             DrawRectangle(x, (int)y - bh / 2, colW - 16, bh, Fade(box, 0.9f));
-            if (e >= 0) {
-                bool lost = r < TOUR_ROUNDS && t->winner[r][i / 2] >= 0 && t->winner[r][i / 2] != e;
-                const char *nm = t->seed[e] ? TextFormat("[%d] %s", t->seed[e], TourEntrantName(t, e))
-                               : t->slot[e] == 0 ? TextFormat("(Q) %s", TourEntrantName(t, e)) : TourEntrantName(t, e);
-                DrawText(nm, x + 6, (int)y - fs / 2, fs, lost ? GRAY : RAYWHITE);
+            if (active && e >= 0) {   // 試合中：枠が光る
+                float pulse = 0.5f + 0.5f * sinf(time * 14.0f);
+                DrawRectangleLinesEx((Rectangle){ (float)x - 1, y - bh / 2 - 1, (float)colW - 14, (float)bh + 2 }, 2.0f, Fade(accent, 0.5f + 0.5f * pulse * (1.0f - Clamp01((myPh - 0.4f) * 3.0f))));
             }
-            // 前のラウンドの試合のスコア（勝った人の箱の下に）
-            if (r > 0 && t->winner[r - 1][i] >= 0)
-                DrawText(t->score[r - 1][i], x + 6, (int)y + bh / 2 + 1, 12, (Color){ 200, 220, 160, 255 });
+            if (e >= 0) {
+                bool decided = r < TOUR_ROUNDS && t->winner[r][i / 2] >= 0 && myPh >= 0.4f;
+                bool lost = decided && t->winner[r][i / 2] != e;
+                Color nc = lost ? GRAY : RAYWHITE;
+                if (lost && myPh < 1.0f) nc = ColorLerp(RAYWHITE, GRAY, Ease((myPh - 0.4f) / 0.2f));
+                if (r == TOUR_ROUNDS && inPh < 1.0f) nc = ColorLerp(accent, RAYWHITE, 0.0f);   // 優勝者の登場
+                DrawText(ENT_NAME(e), x + 6, (int)y - fs / 2, fs, nc);
+                if (lost) DrawLine(x + 6, (int)y, x + 6 + (int)(MeasureText(ENT_NAME(e), fs) * (myPh >= 1.0f ? 1.0f : Ease((myPh - 0.4f) / 0.25f))), (int)y, Fade(GRAY, 0.8f));   // 負けた人に線
+            }
+            // 前のラウンドの試合のスコア（勝った人の箱の下に）。名前が着いてから出す
+            if (r > 0 && t->winner[r - 1][i] >= 0 && inPh >= 0.8f)
+                DrawText(t->score[r - 1][i], x + 6, (int)y + bh / 2 + 1, 12, Fade((Color){ 200, 220, 160, 255 }, inPh >= 2.0f ? 1.0f : Ease((inPh - 0.8f) / 0.2f)));
         }
+    }
+    // 勝った人の名前が次のラウンドの枠へ進む
+    if (revealing)
+        for (int i = 0; i < gRev.n; i++) {
+            int r = gRev.r[i], m = gRev.m[i];
+            float ph = RevPhase(r, m);
+            if (ph < 0.4f || ph >= 0.75f) continue;
+            int w = t->winner[r][m];
+            int from = t->ent[r][2 * m] == w ? 2 * m : 2 * m + 1;
+            float k = Ease((ph - 0.4f) / 0.35f);
+            float x0 = (float)BOX_X(r), y0 = BOX_Y(r, from), x1 = (float)BOX_X(r + 1), y1 = BOX_Y(r + 1, m);
+            int fs = BOX_H(r + 1) >= 24 ? 16 : 14;
+            Vector2 p = { x0 + (x1 - x0) * k + 6, y0 + (y1 - y0) * k - fs / 2 - 10.0f * sinf(PI * k) };
+            DrawText(ENT_NAME(w), (int)p.x, (int)p.y, fs, accent);
+        }
+    #undef BOX_X
+    #undef BOX_Y
+    #undef BOX_H
+    #undef ENT_NAME
+    if (revealing) {
+        const char *sk = TR("Results coming in...   Enter: skip", "ほかの試合の結果   Enter：飛ばす");
+        DrawText(sk, W / 2 - MeasureText(sk, 22) / 2, H - 56, 22, LIGHTGRAY);
+        return;
     }
     const char *msg;
     if (t->champion) {
