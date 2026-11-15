@@ -1,5 +1,14 @@
 SWEET SPOT 効果音の出典
 
+■ 作者（ゲームを作った本人）が試合会場で録音したもの
+  hit_good〜_4（打球音）, hit_voice_soft, applause, applause_big, call_fault（主審の「フォルト」）,
+  squeak〜_5（靴の「キュッ」）, slide
+  （hit_ok, hit_bad, hit_slice は hit_good から作ったもの）
+
+■ 作者本人の声
+  grunt_pre, hit_voice（共通の声）, <選手>_grunt_pre / _hit_voice / _serve_pre / _serve_voice（選手の声。作者が演じたもの）,
+  djokovik_roar（雄叫び）, call_*（主審・線審のコール。call_fault を除く）
+
 ■ Kenney「Impact Sounds」 — CC0（パブリックドメイン）
   https://kenney.nl/assets/impact-sounds
   bounce_clay, bounce_grass, net（tools/build_sounds.py でフィルタ）
