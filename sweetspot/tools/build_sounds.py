@@ -144,8 +144,8 @@ def main():
 
     # ---- 観客 ----
     gq = os.path.join(SRC, "gq", "Gregor Quendel - Free Crowd Cheering Sounds - MP3", "Gregor Quendel - Crowd Cheering Sounds - ")
-    write("crowd", loop(seg(load(gq + "10 - Ambience.mp3"), 1, 33)), peak=0.6, ogg=True)
-    write("crowd_2", loop(seg(load(gq + "07 - Soft cheering and chatter.mp3"), 1, 37)), peak=0.6, ogg=True)
+    # ざわめき：「10 - Ambience」は観客の掛け声が選手の名前（アルカラス）のように聞こえたので使わない
+    write("crowd", loop(seg(load(gq + "07 - Soft cheering and chatter.mp3"), 1, 37)), peak=0.6, ogg=True)
     # 勝利の歓声：録音は盛り上がるまで 4〜6 秒かかるので、盛り上がる直前から切り出す（1 秒以内に最高潮）
     # ウィナー・長いラリーの後の大歓声（applause_big と交互）。録音の頭のほぼ無音の 1 秒は切る
     write("applause_big_2", fade(seg(load(gq + "04 - Strong cheering - II - Short.mp3"), 1.0, 8.0), 0.15, 2.0), ogg=True)
