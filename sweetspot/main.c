@@ -28,7 +28,7 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     DrawText(sets, px + pw - 24 - MeasureText(sets, 26), py + 24, 26, RAYWHITE);
     int y = py + 74;
     DrawRectangle(px, y, pw, 40, rowB);
-    DrawText(TR("YOU", "自分"), px + 70 - MeasureText(TR("YOU", "自分"), 24) / 2, y + 8, 24, you);
+    DrawText(YouName(), px + 70 - MeasureText(YouName(), 24) / 2, y + 8, 24, you);
     DrawText(opp, px + pw - 70 - MeasureText(opp, 24) / 2, y + 8, 24, aiC);
     y += 44;
     for (int r = 0; r < nRows; r++) {
@@ -86,8 +86,8 @@ static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
-    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\n",
-            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang);
+    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\nname=%s\n",
+            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, gPlayerName);
     fclose(f);
 }
 static bool LoadSettingsFile(Settings *s)
@@ -97,6 +97,11 @@ static bool LoadSettingsFile(Settings *s)
     char line[128];
     while (fgets(line, sizeof(line), f)) {
         char key[64]; float v;
+        if (strncmp(line, "name=", 5) == 0) {   // 名前（文字）
+            char nm[64] = { 0 }; sscanf(line + 5, "%63[^\r\n]", nm);
+            if (nm[0]) snprintf(gPlayerName, sizeof(gPlayerName), "%.12s", nm);
+            continue;
+        }
         if (sscanf(line, "%63[^=]=%f", key, &v) != 2) continue;
         int iv = (int)v;
         if (!strcmp(key, "sets")) s->sets = iv;           else if (!strcmp(key, "women")) s->women = iv;
@@ -376,6 +381,7 @@ int main(void)
         if (ai.anim.splitT > 0.0f)  ai.anim.splitT  -= simDt;
 
         gAllWhite = tour.active && tour.slam == 2;   // ウィンブルドンは白い服
+        snprintf(gOppName, sizeof(gOppName), "%s", OPP_SHORT);   // 相手の名前（テロップ用）
         ApplyHumanTraits();                          // 自分が使う選手の癖（足、回転、ミス、サーブ、身長、利き手）
         // ================= 大会の組み合わせ表 =================
         if (app == APP_BRACKET) {
@@ -408,7 +414,8 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME };
+            static bool nameEdit = false;   // 名前を入力している
             // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; }
@@ -423,7 +430,7 @@ int main(void)
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (menuSel >= n) menuSel = 0;
@@ -439,10 +446,26 @@ int main(void)
             else if (menuPage == 1) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
             else { pw = 680; rowH = Clamp((H - 260) / n, 28, 46); fs = rowH >= 36 ? 24 : 20; px = W / 2 - pw / 2; ph = 110 + n * rowH + 60; py = H / 2 - ph / 2; rowY0 = py + 100; }
 
+            // 名前の入力中：英数字（大文字）を 12 文字まで。Enter / Esc で終わる
+            if (nameEdit) {
+                int ch;
+                while ((ch = GetCharPressed()) > 0) {
+                    size_t L = strlen(gPlayerName);
+                    if (ch >= 'a' && ch <= 'z') ch -= 32;
+                    if (L < 12 && ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == ' ' || ch == '-' || ch == '.')) { gPlayerName[L] = (char)ch; gPlayerName[L + 1] = 0; }
+                }
+                if (IsKeyPressed(KEY_BACKSPACE) && gPlayerName[0]) gPlayerName[strlen(gPlayerName) - 1] = 0;
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                    nameEdit = false;
+                    if (!gPlayerName[0]) snprintf(gPlayerName, sizeof(gPlayerName), "PLAYER");
+                    SaveSettings();
+                }
+            }
             // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定、Esc で戻る。マウス：左クリックで次、右クリックで前
             int change = 0; bool activate = false;
-            if (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP))   menuSel = (menuSel + n - 1) % n;
-            if (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN)) menuSel = (menuSel + 1) % n;
+            bool nameEditing = nameEdit;
+            if (!nameEditing && (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)))   menuSel = (menuSel + n - 1) % n;   // 名前の入力中は文字として使う
+            if (!nameEditing && (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN))) menuSel = (menuSel + 1) % n;
             if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT))  change = -1;
             if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT)) change = +1;
             if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) activate = true;
@@ -455,15 +478,16 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
-            if (IsKeyPressed(KEY_ESCAPE)) {
+            if (IsKeyPressed(KEY_ESCAPE) && !nameEditing) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
                     int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
             }
+            if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || it == MI_TOURNAMENT || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK;
+            bool action = it == MI_PLAY || it == MI_TOURNAMENT || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -505,7 +529,8 @@ int main(void)
                     if (slamSel == SLAM_COUNT) TourStartSeason(&tour, gWomen, setsToWin);
                     else TourStart(&tour, gWomen, slamSel, setsToWin);
                     app = APP_BRACKET;
-                } else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
+                } else if (it == MI_NAME) { nameEdit = true; while (GetCharPressed() > 0) { } }
+                else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
                 else if (it == MI_BACK) {
                     int back = menuPage == 1 ? MI_PG_MATCH : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
@@ -563,10 +588,12 @@ int main(void)
                     case MI_PG_MATCH:    label = TR("PLAYERS & MATCH", "選手と試合"); break;
                     case MI_PG_SETTINGS: label = TR("SETTINGS", "設定"); break;
                     case MI_BACK:    label = TR("BACK", "戻る"); break;
+                    case MI_NAME:    label = TR("Your name (Enter to edit)", "名前（Enter で入力）");
+                                     value = nameEdit ? TextFormat("%s%s", gPlayerName, fmodf((float)GetTime(), 1.0f) < 0.5f ? "_" : " ") : gPlayerName; break;
                     case MI_MODE:    label = TR("Mode", "モード");            value = ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
-                    case MI_PLAYER:  label = TR("Play as", "自分の選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TR("YOU (no traits)", "自分（癖なし）"); break;
+                    case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
                     case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
@@ -602,8 +629,8 @@ int main(void)
                 for (int k = 0; k < 2; k++) {
                     int pp = k == 0 ? gYouPersona : ai.persona;
                     Vector2 sp = k == 0 ? youScr : oppScr;
-                    const char *nm = k == 0 ? (gYouPersona ? PERSONAS[pp].name : TR("YOU", "自分")) : PERSONAS[pp].name;
-                    const char *tag = k == 0 ? TR("YOU", "自分") : TR("OPPONENT", "相手");
+                    const char *nm = k == 0 ? (gYouPersona ? PERSONAS[pp].name : YouName()) : PERSONAS[pp].name;
+                    const char *tag = k == 0 ? TR("PLAYER", "プレイヤー") : TR("OPPONENT", "相手");
                     int cx = (int)sp.x, cy = (int)sp.y - 70;
                     int bw = 230, bx = Clamp(cx - bw / 2, pw + 50, W - bw - 10);
                     if (bx < prevRight + 10) bx = prevRight + 10;   // 2 つの名札が重ならないように
@@ -617,7 +644,7 @@ int main(void)
                 int by = H - 150, bx0 = pw + 60, bw0 = W - bx0 - 20;
                 DrawRectangle(bx0, by, bw0, 130, Fade(BLACK, 0.60f));
                 for (int k = 0; k < 2; k++) {   // 枠に収まるように字を小さくする
-                    const char *bl = k == 0 ? TextFormat("%s：%s", gYouPersona ? PERSONAS[gYouPersona].shortName : TR("YOU", "自分"), PersonaBlurb(gYouPersona))
+                    const char *bl = k == 0 ? TextFormat("%s：%s", gYouPersona ? PERSONAS[gYouPersona].shortName : YouName(), PersonaBlurb(gYouPersona))
                                             : TextFormat("%s：%s", PERSONAS[ai.persona].shortName, PersonaBlurb(ai.persona));
                     char buf[256]; snprintf(buf, sizeof(buf), "%s", bl);
                     int bfs = 18; while (bfs > 11 && MeasureText(buf, bfs) > bw0 - 28) bfs--;
@@ -686,7 +713,7 @@ int main(void)
                 int cw = MeasureText(cap, 30);
                 DrawRectangle(W / 2 - cw / 2 - 20, H - 120, cw + 40, 50, Fade(BLACK, 0.65f));
                 DrawText(cap, W / 2 - cw / 2, H - 110, 30, RAYWHITE);
-                const char *vn[REPLAY_VIEWS] = { TR("SIDE (TV)", "横から（中継）"), TR("BEHIND YOU", "自分の後ろから"), TR("FOLLOW BALL", "ボールを追う"), TR("BEHIND OPPONENT", "相手の後ろから") };
+                const char *vn[REPLAY_VIEWS] = { TR("SIDE (TV)", "横から（中継）"), TR("BEHIND PLAYER", "プレイヤーの後ろから"), TR("FOLLOW BALL", "ボールを追う"), TR("BEHIND OPPONENT", "相手の後ろから") };
                 const char *hint = rp.mode == 1 ? TextFormat(TR("Enter: next   Esc: stop   C: camera (%s)", "Enter：次   Esc：やめる   C：カメラ（%s）"), vn[rp.view])
                                                 : TextFormat(TR("Enter / R: back   C: camera (%s)", "Enter / R：戻る   C：カメラ（%s）"), vn[rp.view]);
                 DrawText(hint, W / 2 - MeasureText(hint, 18) / 2, H - 50, 18, LIGHTGRAY);
@@ -1586,7 +1613,7 @@ int main(void)
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? TL("Your error (net)", "自分のミス（ネット）") : TL("AI error (net)", "相手のミス（ネット）"))
                                                            : (hitter == 0 ? TL("Your error (out)", "自分のミス（アウト）") : TL("AI error (out)", "相手のミス（アウト）"));
                     if (ball.result == RESULT_OUT) {   // どれだけ外れたか
-                        snprintf(outMsg, sizeof(outMsg), TL("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), hitter == 0 ? TL("Your", "自分") : TL("AI", "相手"), fmaxf(ball.outBy * 100.0f, 1.0f));
+                        snprintf(outMsg, sizeof(outMsg), TL("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), hitter == 0 ? YouName() : gOppName, fmaxf(ball.outBy * 100.0f, 1.0f));
                         pointMsg = outMsg;
                     }
                 } else if (ball.bounces >= 2) {
@@ -1598,6 +1625,11 @@ int main(void)
                 }
             }
             if (winner >= 0) {
+                {   // テロップ：「Your ...」「AI ...」を名前に（例 NADAR winner）
+                    static char nameMsg[96];
+                    if (strncmp(pointMsg, "Your ", 5) == 0)      { snprintf(nameMsg, sizeof(nameMsg), "%s %s", YouName(), pointMsg + 5); pointMsg = nameMsg; }
+                    else if (strncmp(pointMsg, "AI ", 3) == 0)   { snprintf(nameMsg, sizeof(nameMsg), "%s %s", gOppName, pointMsg + 3); pointMsg = nameMsg; }
+                }
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
                 SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
                 crowdExcite = Clamp01(0.25f + (rallyHits - 2) / 12.0f + ((endKind == 1 || endKind == 2) ? 0.35f : 0.0f) + 0.4f * gPointImportance);   // 観客が沸く
@@ -1634,11 +1666,11 @@ int main(void)
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
                     snprintf(scoreCall, sizeof(scoreCall), TL("GAME, SET%s  %s   (%d - %d)", "ゲーム、セット%s  %s   (%d - %d)"), score.over ? TL(" AND MATCH", "アンドマッチ") : "",
-                             winner == 0 ? TL("YOU", "自分") : OPP_SHORT, g[0], g[1]);
+                             winner == 0 ? YouName() : OPP_SHORT, g[0], g[1]);
                     if (!score.over) { setBreak = true; summaryT = 0.0f; }
                 }
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
-                    snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? TL("YOU", "自分") : OPP_SHORT, score.games[0], score.games[1]);
+                    snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? YouName() : OPP_SHORT, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
@@ -1748,7 +1780,7 @@ int main(void)
                 }
                 // ---- ハイライトの候補：長いラリー・ウィナー・エース・大事なポイント・ラケット破壊・試合の最後 ----
                 {
-                    const char *who = winner == 0 ? TL("YOU", "自分") : OPP_SHORT;
+                    const char *who = winner == 0 ? YouName() : OPP_SHORT;
                     const char *big = gPointImportance >= 1.0f ? TL("BIG POINT  -  ", "大事なポイント  -  ") : "";
                     if (ai.anim.smashT > 0.0f)  snprintf(hlCap, sizeof(hlCap), TL("%s SMASHES THE RACKET", "%s がラケットを叩きつける"), OPP_SHORT);
                     else if (endKind == 1)      snprintf(hlCap, sizeof(hlCap), TL("%sACE  %s  %.0f km/h", "%sエース  %s  %.0f km/h"), big, who, hitter == 0 ? P.lastServeKmh : ai.lastKmh);
@@ -2321,7 +2353,7 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? TR("YOU", "自分") : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
+                DrawText(k == 0 ? YouName() : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
@@ -2366,7 +2398,7 @@ int main(void)
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
-                DrawMatchSummary(score.sets[0] > score.sets[1] ? TR("MATCH SUMMARY - YOU WIN", "試合の結果 - 自分の勝ち") : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
+                DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
                                  tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT);
             else if (setBreak && phaseTimer <= 0.0f)
                 DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT);
@@ -2402,7 +2434,7 @@ int main(void)
             LINE(TR("  whiffs: early %d  late %d  far %d  high %d  low %d", "  空振り：早い %d  遅い %d  遠い %d  高い %d  低い %d"),
                  plog.miss[MISS_EARLY], plog.miss[MISS_LATE], plog.miss[MISS_FAR], plog.miss[MISS_HIGH], plog.miss[MISS_LOW]);
             int res = plog.shotIn + plog.shotOut + plog.shotNet; if (res < 1) res = 1;
-            LINE(TR("Your shots that landed: IN %d%%   OUT %d%%   NET %d%%  (of %d)", "自分の打球：イン %d%%   アウト %d%%   ネット %d%%（%d 本）"),
+            LINE(TR("Shots that landed: IN %d%%   OUT %d%%   NET %d%%  (of %d)", "打球：イン %d%%   アウト %d%%   ネット %d%%（%d 本）"),
                  plog.shotIn * 100 / res, plog.shotOut * 100 / res, plog.shotNet * 100 / res, plog.shotIn + plog.shotOut + plog.shotNet);
             ty += 8;
             int no = plog.nOffset > 0 ? plog.nOffset : 1;
@@ -2423,7 +2455,7 @@ int main(void)
                 for (int k = 0; k < 2; k++) {
                     int a = mst[k][0] ? mst[k][0] : 1, b = mst[k][2] ? mst[k][2] : 1, in = mst[k][1] + mst[k][3];
                     LINE(TR("%-3s 1st in %d/%d (%d%%)  2nd in %d/%d (%d%%)  unreturned %d/%d  DF %d", "%s  ファースト %d/%d（%d%%）  セカンド %d/%d（%d%%）  返されなかった %d/%d  DF %d"),
-                         k == 0 ? TR("YOU", "自分") : TR("AI", "相手"), mst[k][1], mst[k][0], mst[k][1] * 100 / a, mst[k][3], mst[k][2], mst[k][3] * 100 / b,
+                         k == 0 ? YouName() : gOppName, mst[k][1], mst[k][0], mst[k][1] * 100 / a, mst[k][3], mst[k][2], mst[k][3] * 100 / b,
                          mst[k][4], in, mst[k][5]);
                 }
             }

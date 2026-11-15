@@ -709,6 +709,9 @@ extern float gErrMul;
 extern float gRiseSkill;
 // 自分が使う選手（0 = 自分＝癖なし）。選手の癖（足、回転、ミス、サーブ、身長、利き手、声、見た目）が自分にも効く
 extern int   gYouPersona;
+extern char  gPlayerName[16];        // 設定で入れた自分の名前（癖なしの選手のときに出す）
+extern char  gOppName[24];           // 相手の名前（表示用。main が毎フレーム入れる）
+const char *YouName(void);           // 自分の表示名：使っている選手の名前、癖なしなら入れた名前
 extern float gServeAdd;      // サーブの速さの上乗せ（km/h）。自分のサーブだけ（AI のサーブは打つ前に 0 にする）
 extern float gServeErrMul;   // サーブのぶれの倍率
 extern float gServeSpeedK;   // 速いサーブのぶれの効き（自分 1。AI は安定感とコースの厳しさを別に決めているので小さく）

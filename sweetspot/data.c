@@ -24,6 +24,9 @@ float gHeightDelta = 0.0f;
 bool gAllWhite = false;
 int gLang = LANG_JA;   // 表示の言語（初めは日本語）
 int   gYouPersona = 0;
+char  gPlayerName[16] = "PLAYER";
+char  gOppName[24] = "AI";
+const char *YouName(void) { return gYouPersona ? PERSONAS[gYouPersona].shortName : (gPlayerName[0] ? gPlayerName : "PLAYER"); }
 float gServeAdd = 0.0f, gServeErrMul = 1.0f, gServeSpeedK = 1.0f;
 void RestoreHumanContact(void)
 {

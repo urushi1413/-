@@ -64,7 +64,7 @@ const char *ScoreText(const Score *s)
     int a = s->points[0], b = s->points[1];
     if (a >= 3 && b >= 3) {
         if (a == b) return TL("Deuce", "デュース");
-        return (a > b) ? TL("Advantage You", "アドバンテージ 自分") : TL("Advantage AI", "アドバンテージ 相手");
+        return TextFormat("Advantage %s", a > b ? YouName() : gOppName);
     }
     return TextFormat("%s - %s", PointName(s->points[sv]), PointName(s->points[rv]));
 }

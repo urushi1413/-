@@ -34,7 +34,7 @@ const char *TourRoundName(int round)
 const char *TourEntrantName(const Tournament *t, int e)
 {
     if (e < 0) return "";
-    if (t->slot[e] < 0) return gYouPersona ? TextFormat(TR("YOU (%s)", "自分（%s）"), PERSONAS[gYouPersona].shortName) : TR("YOU", "自分");
+    if (t->slot[e] < 0) return YouName();
     if (t->slot[e] == 0) return t->women ? QUAL_WOMEN[t->qual[e]] : QUAL_MEN[t->qual[e]];
     return PERSONAS[t->slot[e]].name;
 }
