@@ -1178,6 +1178,17 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     float shuffle = freeBody ? Smooth01((lat - 0.70f) / 0.15f) * (1.0f - Smooth01((spd - 3.6f) / 0.8f)) * Smooth01(spd / 0.8f) : 0.0f;
     float runTurn = freeBody ? Smooth01((spd - 3.5f) / 1.5f) * (1.0f - Clamp01(a->windup * 2.0f)) : 0.0f;
     float runYaw = (spd > 0.05f && mdz > -0.3f) ? Clamp(atan2f(mdx, fmaxf(mdz, 0.0f)), -1.2f, 1.2f) * runTurn : 0.0f;
+    // 後ろへ速く下がるとき（ロブを追う・深い球から下がる）：前を向いたまま後ろ歩きせず、体を横〜後ろへ回して走る。
+    //   顔は肩越しにネット（ボール）の方を見る。真後ろなら 110° ほど回す（フォア側へ）。ゆっくり下がるときは前を向いたまま
+    {
+        float backK = freeBody ? Smooth01((-mdz - 0.30f) / 0.40f) * Smooth01((spd - 2.2f) / 1.5f) * (1.0f - Clamp01(a->windup * 2.0f)) : 0.0f;
+        if (backK > 0.0f) {
+            float sgnB = mdx >= -0.05f ? 1.0f : -1.0f;
+            float th = sgnB * fabsf(atan2f(mdx, mdz));             // 走る向き（右後ろ＝プラス）
+            float by = Clamp(th * 0.62f, -1.95f, 1.95f);
+            runYaw = Lerp(runYaw, by, backK);
+        }
+    }
     yaw += runYaw; hipYaw += runYaw;
     float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
     // ボレー：当てるのに合わせて、球と反対の足（フォアなら左）を球の方へ踏み込む。低い球は膝を曲げて沈む
