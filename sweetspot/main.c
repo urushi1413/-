@@ -823,7 +823,7 @@ int main(void)
                 P.sv = SV_READY;
                 P.aimSlide = 0.0f;   // サーブの狙いはボックスの真ん中（ボディ）から
             } else {
-                P.pos = ReturnPos(deuce, serveNo == 2);
+                P.pos = HumanReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                 ai.standPos = ai.pos;
                 phaseTimer = RandRange(1.2f, 2.2f);   // 構えてからトスまで（毎回同じリズムだと読めてしまう）
@@ -1925,7 +1925,7 @@ int main(void)
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
                         ball = feedSwing ? feedNext : MachineServe();
-                        P.pos = ReturnPos(true, false);   // リターンの構え位置へ
+                        P.pos = HumanReturnPos(true, false);   // リターンの構え位置へ
                         P.vel = (Vector3){ 0 };
                     } else {
                         ball = feedSwing ? feedNext : MachineFeed(proFeed);

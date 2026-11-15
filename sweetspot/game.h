@@ -96,6 +96,15 @@ typedef struct {
 #define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
 #define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
 #define SERVE_SPEED_ERR  0.4f   // 速いサーブのぶれの増え方（125km/h を超えた分）
+#ifndef RETURN_X
+#define RETURN_X           3.2f    // レシーブの立ち位置：センターから横へ（m）。サーバーが真ん中寄りから打つとき。センターとワイドの真ん中（レシーバーが打つ深さで）
+#endif
+#ifndef SERVE_READ
+#define SERVE_READ         0.5f    // サーブへの反応の速さ（ふつうの球の反応時間に掛ける）。トスとフォームで読めるので短い
+#endif
+#ifndef RETURN_MOVE_K
+#define RETURN_MOVE_K      1.6f    // 横へ大きく動かされた速いサーブを、慌てて返し損なう強さ（センターでもワイドでも）
+#endif
 #define RETURN_MISS_EASY   0.40f   // 速いサーブ（150km/h〜）をレシーバーが返せない（ラケットに当てられない・枠に当たる）起きやすさ：EASY
 #define RETURN_MISS_NORMAL 0.20f   //   NORMAL
 #define RETURN_MISS_PRO    0.13f   //   PRO
@@ -541,6 +550,7 @@ typedef struct {
     int     rageSet;       // 最後に叩きつけたセット（+1。0 はまだ）
     float   planH;         // 打つ予定の打点の高さ（スマッシュの構えを見せるため）
     float   tilt;          // 気持ちが崩れている量（0〜1）。ポイントごとに弱まる
+    float retFromX;          // サーブが打たれたときの横の位置（AI の座標）。リターンでどれだけ横へ動かされたかに使う
 } Opponent;
 
 typedef struct {
@@ -803,6 +813,7 @@ Ball FlipSides(Ball b);
 Vector3 AiHome(void);
 Vector3 AiNetPos(const Opponent *ai);
 Vector3 ReturnPos(bool deuce, bool second);
+Vector3 HumanReturnPos(bool deuce, bool second);
 Vector3 ReturnPosVs(bool deuce, bool second, float serverX);   // サーバーの立ち位置に合わせたレシーブ位置
 void AiPlan(Opponent *ai, const Ball *worldBall);
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge, Vector3 *target);

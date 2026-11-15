@@ -262,6 +262,11 @@ static Vector3 AiHomeFor(const Opponent *ai)
 // ファーストは下がって時間を作り（ベースラインの 1.8m 後ろ）、セカンドは前で待つ（0.3m 後ろ）
 Vector3 ReturnPos(bool deuce, bool second)
 {
+    return (Vector3){ deuce ? RETURN_X : -RETURN_X, 0.0f, HALF_LEN + (second ? 0.3f : 1.8f) };
+}
+// 人間がレシーブするときの最初の位置（自分で動けるので、今までどおりセンター寄り）
+Vector3 HumanReturnPos(bool deuce, bool second)
+{
     return (Vector3){ deuce ? 2.3f : -2.3f, 0.0f, HALF_LEN + (second ? 0.3f : 1.8f) };
 }
 
@@ -537,6 +542,11 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
         float sp = Clamp01((c.inKmh - 75.0f) / 40.0f);   // 弾んだ後の速さ（200km/h のサーブで 100km/h 前後）
         float far = Clamp01((c.side - IDEAL_R) / 0.9f);
         float pm = RM[ai->level % 3] * sp * (0.45f + 0.9f * far) * (1.0f - 0.5f * Clamp01(pp->returnAggro));
+        // 横へ大きく動かされた速いサーブは、追いついても慌てて振るので返し損なう（センターでもワイドでも同じ）
+        //   体からの距離だけだと、追いついて構え直せるセンターのサーブがほとんどミスにならず、ワイドばかり効く
+        float moved = fabsf(b.pos.x - ai->retFromX);
+        float hurry = Clamp01((moved - 1.0f) / 1.6f) * Clamp01((c.inKmh - 60.0f) / 35.0f);
+        pm += RM[ai->level % 3] * RETURN_MOVE_K * hurry * (1.0f - 0.5f * Clamp01(pp->returnAggro));
         if (RandRange(0.0f, 1.0f) < pm) c.miss = MISS_LATE;
         else gErrMul *= 1.0f + 0.5f * sp;   // 返せても、速いほどぶれる
     }
@@ -685,7 +695,8 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->leaving = false;
         ai->swung = false;
         // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
-        if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
+        if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * SERVE_READ : lv->reaction;
+        if (ball->lastHitter == HITTER_PLAYER && ball->isServe) ai->retFromX = Rot180(ai->pos).x;   // 構えていた位置
         if (ball->lastHitter == HITTER_PLAYER && ball->touch) {   // ロブ・ドロップ：打つ形からは読めないので、気づくのが遅れる
             static const float READ[3] = { 1.3f, 1.0f, 0.95f };
             ai->seeTimer += TOUCH_READ_DELAY * READ[ai->level % 3];
