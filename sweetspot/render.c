@@ -71,6 +71,27 @@ static void LitEllipseDisc(Vector3 c, Vector3 n, Vector3 ex, Vector3 ey, float a
     }
     rlEnd();
 }
+// だ円の球：中心 c、軸 ex・ey・ez（長さ 1 の向き）とそれぞれの半径。両面に描く（左右反転しても消えないように）
+static void LitBlob(Vector3 c, Vector3 ex, Vector3 ey, Vector3 ez, float rx, float ry, float rz, Color col)
+{
+    const int RG = 7, SL = 10;
+    rlCheckRenderBatchLimit(RG * SL * 12);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < RG; i++) for (int j = 0; j < SL; j++) {
+        Vector3 P[4], N[4];
+        for (int k = 0; k < 4; k++) {
+            float th = PI * (i + (k >> 1)) / RG, q = 2 * PI * (j + (k & 1)) / SL;
+            float nz = cosf(th), nx = sinf(th) * cosf(q), ny = sinf(th) * sinf(q);
+            P[k] = Vector3Add(c, Vector3Add(Vector3Scale(ex, nx * rx), Vector3Add(Vector3Scale(ey, ny * ry), Vector3Scale(ez, nz * rz))));
+            N[k] = Vector3Normalize(Vector3Add(Vector3Scale(ex, nx / rx), Vector3Add(Vector3Scale(ey, ny / ry), Vector3Scale(ez, nz / rz))));
+        }
+        LitVertex(P[0], N[0], col); LitVertex(P[3], N[3], col); LitVertex(P[2], N[2], col);
+        LitVertex(P[0], N[0], col); LitVertex(P[1], N[1], col); LitVertex(P[3], N[3], col);
+        LitVertex(P[0], N[0], col); LitVertex(P[2], N[2], col); LitVertex(P[3], N[3], col);
+        LitVertex(P[0], N[0], col); LitVertex(P[3], N[3], col); LitVertex(P[1], N[1], col);
+    }
+    rlEnd();
+}
 // 箱（面ごとに明るさを変える）
 void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
 {
@@ -1379,9 +1400,27 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Vector3 uU = Vector3CrossProduct(fF, rR);                                                    // 顔の上
     if (uU.y < 0.0f) uU = Vector3Negate(uU);
     // 顔の形：縦長さ・横幅・あごの張り（下半分の横幅）。顔の部品も髪も、この形に合わせて置く
-    float kH = a->faceH > 0.0f ? a->faceH : 1.0f, kW = a->faceW > 0.0f ? a->faceW : 1.0f, kJ = a->jaw > 0.0f ? a->jaw : 1.0f;
+    // 人の頭は横幅が縦の長さより狭い：みんな縦 1.06 倍・横 0.86 倍を基本に、選手ごとの差をかける。あごの張りは控えめに効かせる
+    float kH = 1.06f * (a->faceH > 0.0f ? a->faceH : 1.0f), kW = 0.86f * (a->faceW > 0.0f ? a->faceW : 1.0f);
+    float kJ = 1.0f + 0.55f * ((a->jaw > 0.0f ? a->jaw : 1.0f) - 1.0f);
     #define JAWK(upv) (1.0f + (kJ - 1.0f) * Clamp01(-(upv) / 0.105f * 1.6f))
     #define HP(fw, rt, upv) Vector3Add(head, Vector3Add(Vector3Scale(fF, (fw)), Vector3Add(Vector3Scale(rR, (rt) * kW * JAWK(upv)), Vector3Scale(uU, (upv) * kH))))
+    // 髪の塊も顔の形に合わせて横を細く・縦を長く（丸い球のままだと横にはみ出してヘルメットのようになる）
+    Vector3 hW0 = WV(head), fW = Vector3Subtract(WV(Vector3Add(head, fF)), hW0), rW = Vector3Subtract(WV(Vector3Add(head, rR)), hW0), uW = Vector3Subtract(WV(Vector3Add(head, uU)), hW0);
+    #define HAIRBLOB(lc, r, col) LitBlob(WV(lc), fW, rW, uW, (r), (r) * kW, (r) * kH, (col))
+    // だ円の帯（ヘッドバンド・サンバイザー）：頭の形に合わせて、高さ u0〜u1 に巻く
+    #define HEADBAND(u0, u1, rr, col) do { \
+        rlCheckRenderBatchLimit(24 * 12); rlBegin(RL_TRIANGLES); \
+        for (int qi = 0; qi < 24; qi++) { \
+            float q0 = 2 * PI * qi / 24, q1 = 2 * PI * (qi + 1) / 24; \
+            Vector3 o0 = Vector3Add(Vector3Scale(fF, (rr) * cosf(q0)), Vector3Scale(rR, (rr) * kW * sinf(q0))); \
+            Vector3 o1 = Vector3Add(Vector3Scale(fF, (rr) * cosf(q1)), Vector3Scale(rR, (rr) * kW * sinf(q1))); \
+            Vector3 a0 = WV(Vector3Add(Vector3Add(head, o0), Vector3Scale(uU, (u0) * kH))), a1 = WV(Vector3Add(Vector3Add(head, o1), Vector3Scale(uU, (u0) * kH))); \
+            Vector3 b0 = WV(Vector3Add(Vector3Add(head, o0), Vector3Scale(uU, (u1) * kH))), b1 = WV(Vector3Add(Vector3Add(head, o1), Vector3Scale(uU, (u1) * kH))); \
+            Vector3 n0 = Vector3Normalize(Vector3Subtract(WV(Vector3Add(head, o0)), hW0)), n1 = Vector3Normalize(Vector3Subtract(WV(Vector3Add(head, o1)), hW0)); \
+            LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(b0, n0, col); LitVertex(a0, n0, col); LitVertex(a1, n1, col); LitVertex(b1, n1, col); \
+            LitVertex(a0, n0, col); LitVertex(b0, n0, col); LitVertex(b1, n1, col); LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(a1, n1, col); \
+        } rlEnd(); } while (0)
     {   // 頭：だ円の球（顔の形）
         const int RG = 10, SL = 14;
         rlCheckRenderBatchLimit(RG * SL * 6);
@@ -1406,39 +1445,39 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Color hd = { (unsigned char)(hair.r * 0.85f), (unsigned char)(hair.g * 0.85f), (unsigned char)(hair.b * 0.85f), 255 };   // 影になる房
         switch (a->hairStyle) {
             case HS_SWEPT:        // 横に流した髪（フェデラー、ズベレフ）：ボリュームがあり、前髪が片側へ流れ、耳の上とえり足を覆う
-                DrawSphere(WV(HP(-0.020f, 0.0f, 0.030f)), 0.110f, hair);
-                DrawSphere(WV(HP(0.050f, 0.030f, 0.072f)), 0.064f, hair);
-                DrawSphere(WV(HP(0.040f, -0.045f, 0.078f)), 0.050f, hd);
-                for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.010f, sd * 0.086f, 0.030f)), 0.050f, hair);
-                DrawSphere(WV(HP(-0.075f, 0.0f, -0.030f)), 0.075f, hair);
+                HAIRBLOB(HP(-0.020f, 0.0f, 0.030f), 0.110f, hair);
+                HAIRBLOB(HP(0.050f, 0.030f, 0.072f), 0.064f, hair);
+                HAIRBLOB(HP(0.040f, -0.045f, 0.078f), 0.050f, hd);
+                for (int sd = -1; sd <= 1; sd += 2) HAIRBLOB(HP(-0.010f, sd * 0.086f, 0.030f), 0.050f, hair);
+                HAIRBLOB(HP(-0.075f, 0.0f, -0.030f), 0.075f, hair);
                 break;
             case HS_CURLY:        // もじゃもじゃの巻き毛（シナー）：頭より大きく、房が盛り上がる
             case HS_CURLY_SHORT:  // 短い巻き毛（アルカラス、マレー）：前が高い
             {
                 bool big = a->hairStyle == HS_CURLY;
-                DrawSphere(WV(HP(-0.020f, 0.0f, 0.030f)), big ? 0.112f : 0.106f, hair);
+                HAIRBLOB(HP(-0.020f, 0.0f, 0.030f), big ? 0.112f : 0.106f, hair);
                 for (int i = 0; i < (big ? 14 : 9); i++) {
                     float t = i * 2.39996f, rr = sqrtf((i + 0.5f) / (big ? 14.0f : 9.0f));   // 頭のてっぺんに散らす
                     float fx = 0.065f * rr * cosf(t) + (big ? 0.0f : 0.02f), sx = 0.072f * rr * sinf(t);
                     float up = (big ? 0.098f : 0.088f) - 0.03f * rr * rr + (!big && fx > 0.03f ? 0.012f : 0.0f);
-                    DrawSphere(WV(HP(fx - 0.01f, sx, up)), big ? 0.046f : 0.036f, (i % 3 == 0) ? hd : hair);
+                    HAIRBLOB(HP(fx - 0.01f, sx, up), big ? 0.046f : 0.036f, (i % 3 == 0) ? hd : hair);
                 }
-                if (big) for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.005f, sd * 0.088f, 0.035f)), 0.052f, hair);   // 耳の上の房
+                if (big) for (int sd = -1; sd <= 1; sd += 2) HAIRBLOB(HP(-0.005f, sd * 0.088f, 0.035f), 0.052f, hair);   // 耳の上の房
             } break;
             case HS_NADAL:        // バンダナの上と、後ろ・横にはみ出す髪
-                DrawSphere(WV(HP(-0.015f, 0.0f, 0.035f)), 0.106f, hair);
-                DrawSphere(WV(HP(-0.085f, 0.0f, -0.035f)), 0.080f, hair);
-                for (int sd = -1; sd <= 1; sd += 2) DrawSphere(WV(HP(-0.030f, sd * 0.088f, -0.010f)), 0.055f, hair);
+                HAIRBLOB(HP(-0.015f, 0.0f, 0.035f), 0.106f, hair);
+                HAIRBLOB(HP(-0.085f, 0.0f, -0.035f), 0.080f, hair);
+                for (int sd = -1; sd <= 1; sd += 2) HAIRBLOB(HP(-0.030f, sd * 0.088f, -0.010f), 0.055f, hair);
                 break;
             case HS_FADE:         // 横を刈り上げ（肌が透ける暗い色）、上だけ長い（キルギオス）
             {
                 Color fade = { (unsigned char)((hair.r + skin.r) / 2), (unsigned char)((hair.g + skin.g) / 2), (unsigned char)((hair.b + skin.b) / 2), 255 };
-                DrawSphere(WV(HP(-0.034f, 0.0f, 0.020f)), 0.1000f, fade);   // 顔にかからないよう後ろ寄り
-                DrawSphere(WV(HP(0.005f, 0.0f, 0.072f)), 0.080f, hair);
-                DrawSphere(WV(HP(0.055f, 0.0f, 0.078f)), 0.055f, hair);
+                HAIRBLOB(HP(-0.034f, 0.0f, 0.020f), 0.1000f, fade);   // 顔にかからないよう後ろ寄り
+                HAIRBLOB(HP(0.005f, 0.0f, 0.072f), 0.080f, hair);
+                HAIRBLOB(HP(0.055f, 0.0f, 0.078f), 0.055f, hair);
             } break;
             case HS_SPIKY:        // 短く立てた髪（錦織）
-                DrawSphere(WV(HP(-0.020f, 0.0f, 0.028f)), 0.106f, hair);
+                HAIRBLOB(HP(-0.020f, 0.0f, 0.028f), 0.106f, hair);
                 for (int i = 0; i < 9; i++) {
                     float t = i * 2.39996f, rr = sqrtf((i + 0.5f) / 9.0f);
                     Vector3 b = HP(0.055f * rr * cosf(t) + 0.01f, 0.065f * rr * sinf(t), 0.100f - 0.035f * rr * rr);
@@ -1447,21 +1486,21 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 }
                 break;
             case HS_BUN:          // まとめ髪（ウィリアムズ、ガウフ）：頭の上の後ろにお団子
-                DrawSphere(WV(HP(-0.020f, 0.0f, 0.028f)), 0.107f, hair);
-                DrawSphere(WV(HP(-0.060f, 0.0f, 0.110f)), 0.062f, hair);
-                DrawSphere(WV(HP(-0.045f, 0.030f, 0.118f)), 0.040f, hd);
+                HAIRBLOB(HP(-0.020f, 0.0f, 0.028f), 0.107f, hair);
+                HAIRBLOB(HP(-0.060f, 0.0f, 0.110f), 0.062f, hair);
+                HAIRBLOB(HP(-0.045f, 0.030f, 0.118f), 0.040f, hd);
                 break;
             case HS_PONY:         // ポニーテール（下で描く）：頭は後ろにまとめる
-                DrawSphere(WV(HP(-0.022f, 0.0f, 0.025f)), 0.106f, hair);
+                HAIRBLOB(HP(-0.022f, 0.0f, 0.025f), 0.106f, hair);
                 break;
             default:              // 短髪：前髪が少しある
-                DrawSphere(WV(HP(-0.022f, 0.0f, 0.027f)), 0.106f, hair);
-                DrawSphere(WV(HP(0.045f, 0.0f, 0.070f)), 0.055f, hair);
+                HAIRBLOB(HP(-0.022f, 0.0f, 0.027f), 0.106f, hair);
+                HAIRBLOB(HP(0.045f, 0.0f, 0.070f), 0.055f, hair);
                 break;
         }
     }
     if (a->headband.a) {   // ヘッドバンド（フェデラー）・バンダナ（ナダル。後ろに結び目の端が垂れる）
-        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.052f)), WV(HP(0.0f, 0.0f, 0.084f)), 0.110f, 0.106f, 14, a->headband);   // 眉の上のおでこ
+        HEADBAND(0.050f, 0.084f, 0.108f, a->headband);   // 眉の上のおでこ
         if (a->hairStyle == HS_NADAL) {
             float fl = 0.03f * sinf(ph) * move;
             DrawCylinderEx(WV(HP(-0.110f, 0.0f, 0.045f)), WV(Vector3Add(HP(-0.17f, 0.015f, -0.03f), (Vector3){ fl, 0, 0 })), 0.018f, 0.010f, 5, a->headband);
@@ -1469,11 +1508,11 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         }
     }
     if (a->hat == 1) {     // キャップ（シフィオンテク）：頭頂を覆い、つばが前へ
-        DrawSphere(WV(HP(-0.005f, 0.0f, 0.045f)), 0.112f, a->hatCol);
+        HAIRBLOB(HP(-0.005f, 0.0f, 0.045f), 0.112f, a->hatCol);
         Vector3 bc = HP(0.135f, 0.0f, 0.040f);
         DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.070f, 0.070f, 12, a->hatCol);
     } else if (a->hat == 2) {   // サンバイザー（シャラポワ）：額のバンドとつば
-        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.035f)), WV(HP(0.0f, 0.0f, 0.065f)), 0.112f, 0.110f, 14, a->hatCol);
+        HEADBAND(0.035f, 0.065f, 0.110f, a->hatCol);
         Vector3 bc = HP(0.130f, 0.0f, 0.040f);
         DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.065f, 0.065f, 12, a->hatCol);
     }
@@ -1587,6 +1626,8 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         DrawCylinderEx(WV(pb), WV(pt), 0.04f, 0.015f, 8, hair);
     }
     #undef HP
+    #undef HAIRBLOB
+    #undef HEADBAND
 
     // ---- ラケットと腕 ----
     // 右利き：ラケットはいつも右手。両手バックは左手を添える。片手バック・スライスは左手を離す
