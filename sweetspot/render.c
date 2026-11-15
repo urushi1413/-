@@ -3,10 +3,12 @@
 #include "rlgl.h"
 
 // ---- 陰影：光の向き（左上前の太陽）から、面ごとに明るさを変えて描く（一色ののっぺりした見た目をやめる） ----
+// 光の向きと強さは時間帯・天気で変わる（AtmosApply）
+static Vector3 gLightL = { 0.348f, 0.846f, 0.403f };   // 光の来る向き（正規化済み）
+static float   gLightAmb = 0.55f, gLightDiff = 0.50f;   // 当たらない面の明るさ、光の当たる分
 static Color Shade(Color c, Vector3 n)
 {
-    const Vector3 L = { 0.348f, 0.846f, 0.403f };   // 光の来る向き（正規化済み）
-    float l = 0.55f + 0.50f * fmaxf(Vector3DotProduct(n, L), 0.0f) + 0.06f * fmaxf(-n.y, 0.0f) * 0.0f;
+    float l = gLightAmb + gLightDiff * fmaxf(Vector3DotProduct(n, gLightL), 0.0f);
     l = fminf(l, 1.05f);
     return (Color){ (unsigned char)fminf(c.r * l, 255.0f), (unsigned char)fminf(c.g * l, 255.0f), (unsigned char)fminf(c.b * l, 255.0f), c.a };
 }
@@ -498,6 +500,7 @@ static void WallQuad(Texture2D tex, float cx, float w, float zWall, float y0, fl
     rlSetTexture(0);
 }
 
+static void DrawLightTowers(Vector3 camPos);
 void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT)
 {
     BuildFans();
@@ -528,6 +531,7 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
                      w, 0.75f + row * STAND_RISE, STAND_STEP, row % 2 ? step : step2);
         DrawCube((Vector3){ 0, H + 1.0f, -(gStandZ0 + 0.5f + D) }, w, 2.0f, 0.3f, wall);
     }
+    DrawLightTowers(camPos);
     // 観客（席ごとのモデル）。盛り上がると少し弾む
     if (gCrowdOk) {
         bool show[3] = { showL, showR, showB };
@@ -1961,4 +1965,150 @@ Color QualityColor(float q)
     if (q >= 0.75f) return GREEN;
     if (q >= 0.45f) return YELLOW;
     return RED;
+}
+
+
+// ================= 時間帯と天気 =================
+// 空の色、全体の色合い（3D を描いた後に画面全体へ掛ける）、光の向きと強さ、ナイターの照明。
+//   gTimeSetting / gWeatherSetting は設定（0 = おまかせ）。試合ごとに AtmosNewMatch で決まる
+int gTimeSetting = 0, gWeatherSetting = 0;
+int gTod = TOD_DAY, gWx = WX_SUNNY;
+typedef struct {
+    Color skyTop, skyBot;          // 空（上・地平線）
+    Color gradeTop, gradeBot;      // 全体に掛ける色（画面の上・下）。白なら変えない
+    Vector3 light; float amb, diff;
+    Vector3 sunDir; float sunSize; Color sunCol;   // 太陽（sunSize 0 なら描かない）
+} Atmos;
+static Atmos AtmosFor(int tod, int wx)
+{
+    bool cloud = wx == WX_CLOUDY;
+    switch (tod) {
+        case TOD_EVENING:
+            if (cloud) return (Atmos){ { 105, 100, 125, 255 }, { 205, 165, 150, 255 }, { 200, 180, 175, 255 }, { 225, 200, 185, 255 },
+                                       { 0.62f, 0.55f, 0.56f }, 0.72f, 0.22f, { 0 }, 0.0f, { 0 } };
+            return (Atmos){ { 70, 70, 140, 255 }, { 255, 160, 95, 255 }, { 255, 200, 165, 255 }, { 255, 222, 190, 255 },
+                            { 0.62f, 0.35f, 0.70f }, 0.48f, 0.62f, { -0.35f, 0.10f, -0.94f }, 70.0f, { 255, 190, 110, 255 } };
+        case TOD_NIGHT:
+            return (Atmos){ { 6, 9, 24, 255 }, { cloud ? 40 : 22, cloud ? 42 : 30, cloud ? 55 : 62, 255 }, { 95, 100, 130, 255 }, { 215, 215, 225, 255 },
+                            { 0.10f, 0.97f, 0.20f }, 0.66f, 0.36f, { 0 }, 0.0f, { 0 } };
+        default:
+            if (cloud) return (Atmos){ { 150, 158, 170, 255 }, { 215, 218, 222, 255 }, { 205, 208, 214, 255 }, { 215, 217, 222, 255 },
+                                       { 0.348f, 0.846f, 0.403f }, 0.78f, 0.22f, { 0 }, 0.0f, { 0 } };
+            return (Atmos){ { 80, 135, 210, 255 }, { 200, 222, 242, 255 }, { 255, 255, 255, 255 }, { 255, 255, 255, 255 },
+                            { 0.348f, 0.846f, 0.403f }, 0.55f, 0.50f, { 0.30f, 0.55f, -0.78f }, 40.0f, { 255, 250, 225, 255 } };
+    }
+}
+static Atmos gAtm;
+static bool  gAtmOk = false;
+static void AtmosApply(void)
+{
+    gAtm = AtmosFor(gTod, gWx);
+    gLightL = Vector3Normalize(gAtm.light); gLightAmb = gAtm.amb; gLightDiff = gAtm.diff;
+    gAtmOk = true;
+}
+// 試合ごとに決める（おまかせは、昼 5・夕方 2・ナイト 3 の割合。晴れ 7・くもり 3）
+void AtmosNewMatch(void)
+{
+    if (gTimeSetting > 0) gTod = gTimeSetting - 1;
+    else { int r = GetRandomValue(0, 9); gTod = r < 5 ? TOD_DAY : (r < 7 ? TOD_EVENING : TOD_NIGHT); }
+    if (gWeatherSetting > 0) gWx = gWeatherSetting - 1;
+    else gWx = GetRandomValue(0, 9) < 7 ? WX_SUNNY : WX_CLOUDY;
+    AtmosApply();
+}
+const char *AtmosName(void)
+{
+    static const char *T[TOD_COUNT][2] = { { "DAY", "昼" }, { "EVENING", "夕方" }, { "NIGHT", "ナイト" } };
+    static const char *W[WX_COUNT][2] = { { "SUNNY", "晴れ" }, { "CLOUDY", "くもり" } };
+    int j = gLang == LANG_JA;
+    return TextFormat("%s / %s", T[gTod][j], W[gWx][j]);
+}
+// 空：BeginMode3D の前に呼ぶ（奥行きも消す）。太陽は地平線の近くに光のかたまりとして
+void DrawSky(Camera3D cam)
+{
+    if (!gAtmOk) AtmosApply();
+    int W = GetScreenWidth(), H = GetScreenHeight();
+    ClearBackground(gAtm.skyBot);
+    DrawRectangleGradientV(0, 0, W, H, gAtm.skyTop, gAtm.skyBot);
+    if (gTod == TOD_NIGHT && gWx == WX_SUNNY) {   // 星
+        for (int i = 0; i < 140; i++) {
+            unsigned int h = (unsigned int)i * 2654435761u;
+            float x = (float)(h % 10007) / 10007.0f * W, y = (float)((h / 10007) % 9973) / 9973.0f * H * 0.55f;
+            float tw = 0.5f + 0.5f * sinf((float)GetTime() * (1.0f + (i % 5)) + i);
+            DrawPixelV((Vector2){ x, y }, Fade(RAYWHITE, 0.35f + 0.5f * tw * ((i % 3) ? 0.6f : 1.0f)));
+        }
+    }
+    if (gAtm.sunSize > 0.0f) {
+        Vector3 sp = Vector3Add(cam.position, Vector3Scale(Vector3Normalize(gAtm.sunDir), 400.0f));
+        Vector3 fwd = Vector3Subtract(cam.target, cam.position);
+        if (Vector3DotProduct(fwd, Vector3Subtract(sp, cam.position)) > 0.0f) {
+            Vector2 s = GetWorldToScreen(sp, cam);
+            float r = gAtm.sunSize * H / 720.0f;
+            BeginBlendMode(BLEND_ADDITIVE);
+            DrawCircleGradient((int)s.x, (int)s.y, r * 4.0f, Fade(gAtm.sunCol, 0.35f), Fade(gAtm.sunCol, 0.0f));
+            DrawCircleGradient((int)s.x, (int)s.y, r, Fade(gAtm.sunCol, 0.9f), Fade(gAtm.sunCol, 0.0f));
+            EndBlendMode();
+        }
+    }
+}
+
+// 照明：観客席のいちばん上の壁に、コートを向いたライトを並べる（屋根のふちの照明）。ナイターでは光る
+#define LAMP_MAX 24
+static int LampList(Vector3 camPos, Vector3 *pos, Vector3 *face)
+{
+    int n = 0;
+    float H = STAND_ROWS * STAND_RISE, D = STAND_ROWS * STAND_STEP, y = H + 2.35f;
+    bool showL = camPos.x > -gStandX0, showR = camPos.x < gStandX0, showB = camPos.z > -gStandZ0;   // 描いている席だけ
+    if (showB)
+        for (float x = -gStandX0 + 2.5f; x <= gStandX0 - 2.4f && n < LAMP_MAX; x += 3.3f) {
+            pos[n] = (Vector3){ x, y, -(gStandZ0 + 0.5f + D) + 0.2f }; face[n++] = (Vector3){ 0, -0.35f, 1 };
+        }
+    for (int sd = -1; sd <= 1; sd += 2) {
+        if ((sd < 0 && !showL) || (sd > 0 && !showR)) continue;
+        for (float z = -15.0f; z <= 15.01f && n < LAMP_MAX; z += 6.0f) {
+            pos[n] = (Vector3){ sd * (gStandX0 + 0.5f + D - 0.2f), y, z }; face[n++] = (Vector3){ -sd * 1.0f, -0.35f, 0 };
+        }
+    }
+    return n;
+}
+static void DrawLightTowers(Vector3 camPos)
+{
+    Vector3 P[LAMP_MAX], F[LAMP_MAX];
+    int n = LampList(camPos, P, F);
+    Color lamp = gTod == TOD_NIGHT ? (Color){ 255, 252, 235, 255 } : (Color){ 175, 180, 188, 255 };
+    for (int i = 0; i < n; i++) {
+        Vector3 f = Vector3Normalize(F[i]);
+        DrawCube(P[i], fabsf(f.x) > 0.5f ? 0.5f : 1.3f, 0.7f, fabsf(f.x) > 0.5f ? 1.3f : 0.5f, (Color){ 55, 58, 64, 255 });   // 枠
+        Vector3 lp = Vector3Add(P[i], Vector3Scale(f, 0.27f));
+        DrawCube(lp, fabsf(f.x) > 0.5f ? 0.06f : 1.1f, 0.5f, fabsf(f.x) > 0.5f ? 1.1f : 0.06f, lamp);                            // 光る面
+    }
+}
+
+// 3D を描き終えたら（EndMode3D の直後、文字より前に）呼ぶ：全体の色合いと、ナイターのライトの光
+void AtmosOverlay(Camera3D cam)
+{
+    if (!gAtmOk) AtmosApply();
+    int W = GetScreenWidth(), H = GetScreenHeight();
+    if (gAtm.gradeTop.r < 255 || gAtm.gradeTop.g < 255 || gAtm.gradeTop.b < 255 || gAtm.gradeBot.r < 255 || gAtm.gradeBot.g < 255 || gAtm.gradeBot.b < 255) {
+        BeginBlendMode(BLEND_MULTIPLIED);
+        DrawRectangleGradientV(0, 0, W, H, gAtm.gradeTop, gAtm.gradeBot);
+        EndBlendMode();
+    }
+    if (gTod == TOD_NIGHT && gStandX0 > 0.0f) {   // ライトのまぶしさ（加算）
+        Vector3 P[LAMP_MAX], F[LAMP_MAX];
+        int n = LampList(cam.position, P, F);
+        Vector3 fwd = Vector3Normalize(Vector3Subtract(cam.target, cam.position));
+        BeginBlendMode(BLEND_ADDITIVE);
+        for (int i = 0; i < n; i++) {
+            Vector3 lp = Vector3Add(P[i], Vector3Scale(Vector3Normalize(F[i]), 0.3f));
+            Vector3 toL = Vector3Subtract(lp, cam.position);
+            if (Vector3DotProduct(fwd, toL) <= 0.0f) continue;
+            float facing = Clamp01(-Vector3DotProduct(Vector3Normalize(F[i]), Vector3Normalize(toL)) * 1.3f);   // 正面から見るほどまぶしい
+            if (facing <= 0.02f) continue;
+            Vector2 sc = GetWorldToScreen(lp, cam);
+            float d = Vector3Length(toL), r = Clamp(900.0f / d, 10.0f, 70.0f) * H / 720.0f;
+            DrawCircleGradient((int)sc.x, (int)sc.y, r * 2.4f, Fade((Color){ 255, 240, 200, 255 }, 0.16f * facing), Fade(BLACK, 0.0f));
+            DrawCircleGradient((int)sc.x, (int)sc.y, r * 0.7f, Fade((Color){ 255, 255, 240, 255 }, 0.8f * facing), Fade(BLACK, 0.0f));
+        }
+        EndBlendMode();
+    }
 }

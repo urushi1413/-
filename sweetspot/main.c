@@ -80,14 +80,14 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
-    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\nname=%s\n",
-            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, gPlayerName);
+    fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
+            s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
     fclose(f);
 }
 static bool LoadSettingsFile(Settings *s)
@@ -113,6 +113,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "guides")) s->guides = iv;  else if (!strcmp(key, "sensitivity")) s->sens = v;
         else if (!strcmp(key, "volume")) s->vol = v;
         else if (!strcmp(key, "language")) s->lang = iv;
+        else if (!strcmp(key, "time_of_day")) s->tod = iv; else if (!strcmp(key, "weather")) s->wx = iv;
     }
     fclose(f);
     return true;
@@ -172,8 +173,7 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
     cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 38.0f; cam.projection = CAMERA_PERSPECTIVE;
     cam.position = (Vector3){ lookX + 0.5f * sinf(t * 0.25f), 1.75f, -HALF_LEN + 3.4f };
     cam.target   = (Vector3){ lookX, 1.05f, -HALF_LEN + 9.0f };
-    ClearBackground((Color){ 150, 190, 230, 255 });   // 奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
-    DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 70, 120, 200, 255 }, (Color){ 190, 215, 240, 255 });
+    DrawSky(cam);   // 空（時間帯と天気）。奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
     BeginMode3D(cam);
     DrawCourt();
     for (int k = 0; k < 2; k++) {
@@ -190,6 +190,7 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
         if (k == 1 && oppScr) *oppScr = s;
     }
     EndMode3D();
+    AtmosOverlay(cam);
 }
 
 int main(void)
@@ -338,10 +339,10 @@ int main(void)
     int   menuFrames = 0;              // メニューを開いてからのフレーム数
     // 設定：前回の設定を読む（なければ今の初期値）
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting };
         if (LoadSettingsFile(&s)) {
             setsToWin = Clamp(s.sets, 1, 3); gWomen = s.women != 0;
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
@@ -351,7 +352,9 @@ int main(void)
             hudLevel = Clamp(s.hud, 0, 3); guideLevel = Clamp(s.guides, 0, 2);
             aimSens = Clamp(s.sens, 0.25f, 3.0f); SfxSetVolume(Clamp(s.vol, 0.0f, 1.0f));
             gLang = s.lang == LANG_EN ? LANG_EN : LANG_JA;
+            gTimeSetting = Clamp(s.tod, 0, TOD_COUNT); gWeatherSetting = Clamp(s.wx, 0, WX_COUNT);
         }
+        AtmosNewMatch();
     }
 
     // 直前のフレームの物理ステップごとのボールの状態。
@@ -414,7 +417,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER };
             static bool nameEdit = false;   // 名前を入力している
             // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
@@ -428,7 +431,7 @@ int main(void)
                 items[n++] = MI_QUIT;
             } else if (menuPage == 1) {
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
-                items[n++] = MI_COURT; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
             } else {
                 items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
@@ -509,6 +512,8 @@ int main(void)
                     case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
+                    case MI_TIME:    gTimeSetting = (gTimeSetting + TOD_COUNT + 1 + change) % (TOD_COUNT + 1); AtmosNewMatch(); break;   // 後ろの画面にすぐ出る
+                    case MI_WEATHER: gWeatherSetting = (gWeatherSetting + WX_COUNT + 1 + change) % (WX_COUNT + 1); AtmosNewMatch(); break;
                     case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
                     case MI_FEED:   proFeed = !proFeed; break;
                     case MI_SENS:   aimSens = Clamp(aimSens + 0.25f * change, 0.25f, 3.0f); break;
@@ -602,6 +607,10 @@ int main(void)
                     case MI_STYLE:   label = TR("Style", "難しさ");           value = style == STYLE_CASUAL ? TR("CASUAL (easy)", "カジュアル（かんたん）") : TR("REAL", "リアル"); break;
                     case MI_COURT:   label = TR("Court", "コート");           value = gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
                                                                        : gSurface == SURF_GRASS ? TR("GRASS (fast, low)", "芝（速く、低く滑る）") : TR("HARD", "ハード"); break;
+                    case MI_TIME:    { static const char *TN[2][TOD_COUNT + 1] = { { "AUTO", "DAY", "EVENING", "NIGHT" }, { "おまかせ", "昼", "夕方", "ナイター" } };
+                                       label = TR("Time of day", "時間帯"); value = TN[gLang == LANG_JA][gTimeSetting]; } break;
+                    case MI_WEATHER: { static const char *WN[2][WX_COUNT + 1] = { { "AUTO", "SUNNY", "CLOUDY" }, { "おまかせ", "晴れ", "くもり" } };
+                                       label = TR("Weather", "天気"); value = WN[gLang == LANG_JA][gWeatherSetting]; } break;
                     case MI_ASSIST:  label = TR("Assist", "手がかり");          value = assistNames[assistLevel]; break;
                     case MI_FEED:    label = TR("Practice feed", "練習の球出し");   value = proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ"); break;
                     case MI_SENS:    label = TR("Mouse sensitivity", "マウスの感度"); value = TextFormat("%.2f", aimSens); break;
@@ -699,11 +708,11 @@ int main(void)
                 rp.cam = ReplayCamera(rp.view, f->ball, rp.cam, rp.first);
                 rp.first = false;
                 BeginDrawing();
-                ClearBackground((Color){ 150, 190, 230, 255 });
-                DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 80, 135, 210, 255 }, (Color){ 200, 222, 242, 255 });   // 空：上ほど濃い青
+                DrawSky(rp.cam);
                 BeginMode3D(rp.cam);
                 DrawReplayFrame(f, rp.cam);
                 EndMode3D();
+                AtmosOverlay(rp.cam);
                 int W = GetScreenWidth(), H = GetScreenHeight();
                 if (fmodf((float)GetTime(), 1.0f) < 0.7f) { DrawRectangle(20, 20, 150, 40, (Color){ 200, 30, 30, 230 }); DrawText(TR("REPLAY", "リプレイ"), 34, 28, 26, RAYWHITE); }
                 if (rp.mode == 1) {
@@ -766,6 +775,7 @@ int main(void)
             P.sliding = false;
             score = (Score){ 0 };
             score.server = rand() % 2;
+            AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
             score.setsToWin = setsToWin;
             ai.tilt = 0.0f;
             winFx = -1.0f;
@@ -1956,8 +1966,7 @@ int main(void)
         // ---- 描画 ----
         UpdateSpeedBoard(speedBoardKmh);   // スピードメーター（数字が変わったときだけ描き直す）
         BeginDrawing();
-        ClearBackground((Color){ 150, 190, 230, 255 });
-        DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 80, 135, 210, 255 }, (Color){ 200, 222, 242, 255 });   // 空：上ほど濃い青
+        DrawSky(cam);   // 空（時間帯と天気）
         BeginMode3D(cam);
             DrawCourt();
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
@@ -2218,6 +2227,7 @@ int main(void)
                 rlDrawRenderBatchActive(); rlEnableDepthMask();
             }
         EndMode3D();
+        AtmosOverlay(cam);   // 時間帯と天気の色合い、ナイターのライト
 
         // ポイントの後：リプレイの案内
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)

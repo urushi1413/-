@@ -898,6 +898,15 @@ typedef struct {
 void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);
 
 // audio.c：効果音（sounds フォルダの録音ファイル）
+// ---- 時間帯と天気（render.c） ----
+enum { TOD_DAY, TOD_EVENING, TOD_NIGHT, TOD_COUNT };
+enum { WX_SUNNY, WX_CLOUDY, WX_COUNT };
+extern int gTimeSetting, gWeatherSetting;   // 設定（0 = おまかせ、1〜 = TOD / WX の番号 + 1）
+extern int gTod, gWx;                       // この試合の時間帯と天気
+void AtmosNewMatch(void);
+const char *AtmosName(void);
+void DrawSky(Camera3D cam);                 // 空（BeginMode3D の前）
+void AtmosOverlay(Camera3D cam);            // 全体の色合いとナイターの光（EndMode3D の直後）
 void  SfxInit(void);
 void  SfxClose(void);
 void  SfxSetVolume(float v);
