@@ -1356,17 +1356,68 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         head.z -= 0.03f * co.headUp; head.y += 0.02f * co.headUp;              // 天を仰ぐ
     }
     DrawCylinderEx(WV(neckB), WV(head), 0.050f, 0.045f, 8, skin);
+    // 顔の向き：肩の向きの 3 割（構え・サーブでもネットの方を見る）。体ごと回るしぐさ（後ろを向く）ではそのまま回る。天を仰ぐ・うつむく
+    float turnC = celeb ? co.turn : 0.0f;
+    float headYaw = (yaw - turnC) * 0.30f + turnC;
+    float pitchH = (celeb ? -0.45f * co.headUp : 0.0f) + 0.35f * a->slouch;   // プラス＝うつむく
+    Vector3 fF = { sinf(headYaw) * cosf(pitchH), -sinf(pitchH), cosf(headYaw) * cosf(pitchH) };   // 顔の前
+    Vector3 rR = { cosf(headYaw), 0.0f, -sinf(headYaw) };                                       // 顔の右
+    Vector3 uU = Vector3CrossProduct(fF, rR);                                                    // 顔の上
+    if (uU.y < 0.0f) uU = Vector3Negate(uU);
+    #define HP(fw, rt, upv) Vector3Add(head, Vector3Add(Vector3Scale(fF, (fw)), Vector3Add(Vector3Scale(rR, (rt)), Vector3Scale(uU, (upv)))))
     DrawSphere(WV(head), 0.105f, skin);
-    DrawSphere(W(head.x, head.y + 0.025f, head.z - 0.022f), 0.103f, hair);
-    if (a->headband.a) DrawCylinderEx(W(head.x, head.y + 0.025f, head.z), W(head.x, head.y + 0.060f, head.z), 0.110f, 0.108f, 14, a->headband);
+    DrawSphere(WV(HP(-0.022f, 0.0f, 0.025f)), 0.103f, hair);
+    if (a->headband.a) DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.025f)), WV(HP(0.0f, 0.0f, 0.060f)), 0.110f, 0.108f, 14, a->headband);
+    {   // ---- 顔：耳・目・眉・鼻・口。しぐさで表情が変わる（吠える＝口を大きく開ける、怒る＝眉を寄せる、喜ぶ＝笑う） ----
+        Color dark = { 35, 28, 25, 255 }, white = { 245, 245, 240, 255 };
+        Color lip = { (unsigned char)(skin.r * 0.62f), (unsigned char)(skin.g * 0.38f), (unsigned char)(skin.b * 0.38f), 255 };
+        Color nose = { (unsigned char)(skin.r * 0.93f), (unsigned char)(skin.g * 0.88f), (unsigned char)(skin.b * 0.86f), 255 };
+        Color brow = { (unsigned char)(hair.r * 0.8f), (unsigned char)(hair.g * 0.8f), (unsigned char)(hair.b * 0.8f), 255 };
+        int ck = celeb ? a->celebKind : CELEB_NONE;
+        // 口の開き（0〜1）と笑い（0〜1）、眉の怒り（0〜1）
+        float open = 0.0f, smile = 0.0f, angry = 0.0f;
+        switch (ck) {
+            case CELEB_ROAR: case CELEB_COMEON: open = 1.0f; angry = 0.4f; break;
+            case CELEB_VAMOS: case CELEB_JUMP_FIST: open = 0.8f; angry = 0.3f; break;
+            case CELEB_FIST: open = 0.5f + 0.4f * sinf(co.e * 9.0f); angry = 0.3f; break;
+            case CELEB_RANT: open = 0.35f + 0.35f * fabsf(sinf(co.e * 11.0f)); angry = 1.0f; break;
+            case CELEB_HANDS_HEAD: open = 0.4f; angry = 0.6f; break;
+            case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_KNEES: open = 0.5f; smile = 1.0f; break;
+            case CELEB_HEART: case CELEB_EAR: case CELEB_RACKET_POINT: smile = 1.0f; break;
+            case CELEB_SHRUG: smile = 0.2f; break;
+            default: break;
+        }
+        if (celeb) { open *= co.k; smile *= co.k; angry *= co.k; }
+        if (a->smashT > 0.0f) { open = 0.6f; angry = 1.0f; }
+        if (swinging && a->swingT < 0.18f) open = fmaxf(open, 0.5f * (1.0f - a->swingT / 0.18f));   // 打つときの声
+        for (int sd = -1; sd <= 1; sd += 2) {
+            DrawSphere(WV(HP(-0.005f, sd * 0.102f, 0.000f)), 0.022f, skin);                         // 耳
+            Vector3 eye = HP(0.088f, sd * 0.036f, 0.018f);
+            DrawSphere(WV(eye), 0.0125f, white);                                                      // 白目
+            DrawSphere(WV(HP(0.098f, sd * 0.036f, 0.018f)), 0.0072f, dark);                          // 黒目
+            float inY = 0.040f - 0.012f * angry + 0.006f * smile, outY = 0.046f + 0.006f * angry;  // 眉：怒ると内側が下がる
+            DrawCylinderEx(WV(HP(0.096f, sd * 0.014f, inY)), WV(HP(0.090f, sd * 0.056f, outY)), 0.0060f, 0.0050f, 5, brow);
+        }
+        DrawCylinderEx(WV(HP(0.098f, 0.0f, 0.010f)), WV(HP(0.122f, 0.0f, -0.018f)), 0.011f, 0.014f, 6, nose);   // 鼻
+        Vector3 mc = HP(0.094f, 0.0f, -0.046f);
+        if (open > 0.15f) {   // 開いた口：縦に長い暗い楕円（球を 2 つ重ねる）
+            float h = 0.006f + 0.016f * open;
+            DrawCylinderEx(WV(HP(0.094f, 0.0f, -0.046f + h)), WV(HP(0.094f, 0.0f, -0.046f - h)), 0.013f + 0.004f * smile, 0.011f, 8, (Color){ 70, 20, 25, 255 });
+        } else {              // 閉じた口：横線。笑うと両端が上がる
+            float lift = 0.010f * smile;
+            DrawCylinderEx(WV(mc), WV(HP(0.090f, 0.024f, -0.046f + lift)), 0.0045f, 0.0040f, 5, lip);
+            DrawCylinderEx(WV(mc), WV(HP(0.090f, -0.024f, -0.046f + lift)), 0.0045f, 0.0040f, 5, lip);
+        }
+    }
     if (a->female) {
         // ポニーテール：頭の後ろから下へ。走ると左右に揺れ、振るとなびく
         float sway = 0.07f * sinf(ph) * move + (swinging ? 0.06f * sinf(a->swingT * 20.0f) : 0.0f);
-        Vector3 pb = { head.x, head.y + 0.05f, head.z - 0.10f };
-        Vector3 pt = { head.x + sway, head.y - 0.20f, head.z - 0.17f - 0.05f * move };
+        Vector3 pb = HP(-0.10f, 0.0f, 0.05f);
+        Vector3 pt = Vector3Add(HP(-0.17f - 0.05f * move, 0.0f, -0.20f), (Vector3){ sway, 0.0f, 0.0f });
         DrawSphere(WV(pb), 0.04f, hair);
         DrawCylinderEx(WV(pb), WV(pt), 0.04f, 0.015f, 8, hair);
     }
+    #undef HP
 
     // ---- ラケットと腕 ----
     // 右利き：ラケットはいつも右手。両手バックは左手を添える。片手バック・スライスは左手を離す
