@@ -1050,16 +1050,16 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
     *hasHand = true;
     Vector3 h, d, f;
     if (a->smashT > 0.0f) {
-        // ラケットを叩きつける：頭の上まで振りかぶって地面へ 5 回続けて。最後は曲がったラケットを見下ろす
+        // ラケットを叩きつける：頭の上まで振りかぶって地面へ、約 1.2 秒おきに 5 回。叩いたら少し止まり、また振りかぶる。最後は曲がったラケットを見下ろす
         const RKey UP   = { 0, { 0.20f, 1.95f, 0.05f }, { 0.05f, 0.55f, -0.83f }, { 1, 0, 0 } };
         const RKey DOWN = { 0, { 0.18f, 0.62f, 0.55f }, { 0.00f, -0.85f, 0.52f }, { 1, 0, 0 } };
         const RKey LOOK = { 0, { 0.25f, 0.95f, 0.32f }, { 0.10f, -0.60f, 0.80f }, { 1, 0, 0 } };
         // 地面に当たる時間は SMASH_HITS（game.h）と同じ
-        const float T[] = { 0.0f, 0.30f, 0.42f, 0.55f, 0.68f, 0.81f, 0.94f, 1.07f, 1.20f, 1.33f, 1.46f, 1.85f };
-        const RKey *K[] = { &READY, &UP, &DOWN, &UP, &DOWN, &UP, &DOWN, &UP, &DOWN, &UP, &DOWN, &LOOK };
-        RKey k[12];
-        for (int i = 0; i < 12; i++) { k[i] = *K[i]; k[i].t = T[i]; }
-        SampleKeys(k, 12, SMASH_TIME - a->smashT, &h, &d, &f);
+        const float T[] = { 0.0f, 0.45f, 0.60f, 0.95f, 1.62f, 1.80f, 2.15f, 2.82f, 3.00f, 3.35f, 4.02f, 4.20f, 4.55f, 5.22f, 5.40f, 5.90f };
+        const RKey *K[] = { &READY, &UP, &DOWN, &DOWN, &UP, &DOWN, &DOWN, &UP, &DOWN, &DOWN, &UP, &DOWN, &DOWN, &UP, &DOWN, &LOOK };
+        RKey k[16];
+        for (int i = 0; i < 16; i++) { k[i] = *K[i]; k[i].t = T[i]; }
+        SampleKeys(k, 16, SMASH_TIME - a->smashT, &h, &d, &f);
         *strokeOut = 0;
     } else if (a->celebT > 0.0f && a->celebKind != CELEB_NONE && a->smashT <= 0.0f) {
         // ポイント後のしぐさ：ラケットを持つ手（体が沈んだ分だけ下げる）

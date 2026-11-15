@@ -1815,8 +1815,8 @@ int main(void)
                 float e0 = smashPrevE, e1 = SMASH_TIME - fmaxf(ai.anim.smashT - simDt, 0.0f);
                 const float hits[SMASH_NHITS] = SMASH_HITS;
                 for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos), k);
-                if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(ai.smashes >= 2 ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング
-                ai.anim.broken = Clamp01((e1 - 0.40f) / 1.0f);
+                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(ai.smashes >= 2 ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング（長いので途中でもう一度）
+                ai.anim.broken = Clamp01((e1 - 0.55f) / 4.9f);   // 叩くたびに曲がっていく
                 smashPrevE = e1;
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
@@ -1842,8 +1842,8 @@ int main(void)
                 float e0 = youSmashPrevE, e1 = SMASH_TIME - fmaxf(P.anim.smashT - simDt, 0.0f);
                 const float hits[SMASH_NHITS] = SMASH_HITS;
                 for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos), k);
-                if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(youSmashes >= 2 ? 1.0f : 0.75f, 0.35f);
-                P.anim.broken = Clamp01((e1 - 0.40f) / 1.0f);
+                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(youSmashes >= 2 ? 1.0f : 0.75f, 0.35f);
+                P.anim.broken = Clamp01((e1 - 0.55f) / 4.9f);
                 youSmashPrevE = e1;
                 P.anim.smashT = fmaxf(P.anim.smashT - simDt, 0.0f);
                 P.vel = (Vector3){ 0 };
