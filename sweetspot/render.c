@@ -1378,8 +1378,30 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Vector3 rR = { cosf(headYaw), 0.0f, -sinf(headYaw) };                                       // 顔の右
     Vector3 uU = Vector3CrossProduct(fF, rR);                                                    // 顔の上
     if (uU.y < 0.0f) uU = Vector3Negate(uU);
-    #define HP(fw, rt, upv) Vector3Add(head, Vector3Add(Vector3Scale(fF, (fw)), Vector3Add(Vector3Scale(rR, (rt)), Vector3Scale(uU, (upv)))))
-    DrawSphere(WV(head), 0.105f, skin);
+    // 顔の形：縦長さ・横幅・あごの張り（下半分の横幅）。顔の部品も髪も、この形に合わせて置く
+    float kH = a->faceH > 0.0f ? a->faceH : 1.0f, kW = a->faceW > 0.0f ? a->faceW : 1.0f, kJ = a->jaw > 0.0f ? a->jaw : 1.0f;
+    #define JAWK(upv) (1.0f + (kJ - 1.0f) * Clamp01(-(upv) / 0.105f * 1.6f))
+    #define HP(fw, rt, upv) Vector3Add(head, Vector3Add(Vector3Scale(fF, (fw)), Vector3Add(Vector3Scale(rR, (rt) * kW * JAWK(upv)), Vector3Scale(uU, (upv) * kH))))
+    {   // 頭：だ円の球（顔の形）
+        const int RG = 10, SL = 14;
+        rlCheckRenderBatchLimit(RG * SL * 6);
+        rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < RG; i++) for (int j = 0; j < SL; j++) {
+            Vector3 P[4], N[4];
+            for (int c = 0; c < 4; c++) {
+                float th = PI * (i + (c >> 1)) / RG, q = 2 * PI * (j + (c & 1)) / SL;
+                float nu = cosf(th), nf = sinf(th) * cosf(q), nr = sinf(th) * sinf(q);
+                Vector3 lp = HP(0.105f * nf, 0.105f * nr, 0.105f * nu);
+                Vector3 ln = Vector3Normalize(Vector3Add(Vector3Scale(fF, nf), Vector3Add(Vector3Scale(rR, nr / (kW * JAWK(0.105f * nu))), Vector3Scale(uU, nu / kH))));
+                P[c] = WV(lp); N[c] = Vector3Normalize(Vector3Subtract(WV(Vector3Add(head, ln)), WV(head)));
+            }
+            LitVertex(P[0], N[0], skin); LitVertex(P[3], N[3], skin); LitVertex(P[2], N[2], skin);
+            LitVertex(P[0], N[0], skin); LitVertex(P[1], N[1], skin); LitVertex(P[3], N[3], skin);
+            LitVertex(P[0], N[0], skin); LitVertex(P[2], N[2], skin); LitVertex(P[3], N[3], skin);   // 裏も（向きで消えないように）
+            LitVertex(P[0], N[0], skin); LitVertex(P[3], N[3], skin); LitVertex(P[1], N[1], skin);
+        }
+        rlEnd();
+    }
     {   // ---- 髪型 ----
         Color hd = { (unsigned char)(hair.r * 0.85f), (unsigned char)(hair.g * 0.85f), (unsigned char)(hair.b * 0.85f), 255 };   // 影になる房
         switch (a->hairStyle) {
@@ -1456,7 +1478,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.065f, 0.065f, 12, a->hatCol);
     }
     {   // ---- 顔：耳・目・眉・鼻・口。しぐさで表情が変わる（吠える＝口を大きく開ける、怒る＝眉を寄せる、喜ぶ＝笑う） ----
-        Color dark = { 35, 28, 25, 255 }, white = { 245, 245, 240, 255 };
+        Color white = { 245, 245, 240, 255 };
         Color lip = { (unsigned char)(skin.r * 0.62f), (unsigned char)(skin.g * 0.38f), (unsigned char)(skin.b * 0.38f), 255 };
         Color nose = { (unsigned char)(skin.r * 0.93f), (unsigned char)(skin.g * 0.88f), (unsigned char)(skin.b * 0.86f), 255 };
         Color brow = { (unsigned char)(hair.r * 0.8f), (unsigned char)(hair.g * 0.8f), (unsigned char)(hair.b * 0.8f), 255 };
@@ -1490,22 +1512,34 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 float open2 = fmodf(tb, 4.1f) < 0.12f ? 0.12f : 1.0f;
                 if (ck == CELEB_RANT || a->smashT > 0.0f) open2 *= 0.75f;   // 怒ると目を細める
                 if (smile > 0.5f) open2 *= 0.70f;                            // 笑うと目が細くなる
-                float ea = 0.0125f, eb = 0.0062f * open2;
-                Vector3 c0 = Vector3Add(head, Vector3Scale(edir, 0.1040f));
+                float ea = 0.0128f, eb = 0.0080f * open2;
+                Vector3 eyeL = Vector3Subtract(eye, head);   // 顔の形に合わせて、頭の表面のすぐ上に置く
+                Vector3 c0 = Vector3Add(head, Vector3Scale(Vector3Normalize(eyeL), Vector3Length(eyeL) + 0.0072f));
                 Vector3 nW = Vector3Subtract(WV(Vector3Add(head, edir)), WV(head));
                 #define TW(v) Vector3Subtract(WV(Vector3Add(head, (v))), WV(head))   // 向きを世界へ
                 Vector3 exW = TW(exL), eyW = TW(eyL);
                 LitEllipseDisc(WV(c0), nW, exW, eyW, ea, eb, 14, white);
                 Vector3 c1 = Vector3Add(c0, Vector3Scale(edir, 0.0008f));
-                LitEllipseDisc(WV(c1), nW, exW, eyW, 0.0058f, fminf(0.0058f, eb * 0.98f), 12, dark);   // 黒目（まぶたからはみ出さない）
-                Vector3 c2 = Vector3Add(Vector3Add(c0, Vector3Scale(edir, 0.0014f)), Vector3Scale(eyL, eb * 0.92f));
-                LitEllipseDisc(WV(c2), nW, exW, eyW, ea * 1.02f, 0.0016f, 12, (Color){ 40, 28, 24, 255 });   // 上のまぶたの線
+                Color iris = a->eyeCol.a ? a->eyeCol : (Color){ 95, 62, 38, 255 };
+                Vector3 ci = Vector3Add(c1, Vector3Scale(eyL, eb * 0.06f));
+                LitEllipseDisc(WV(ci), nW, exW, eyW, 0.0062f, fminf(0.0062f, eb * 0.92f), 14, iris);   // 虹彩（目の色）
+                Vector3 cp = Vector3Add(ci, Vector3Scale(edir, 0.0005f));
+                LitEllipseDisc(WV(cp), nW, exW, eyW, 0.0029f, fminf(0.0029f, eb * 0.5f), 10, (Color){ 15, 12, 12, 255 });   // 瞳
+                if (open2 > 0.5f) {   // 光の点（目が生きて見える）
+                    Vector3 ch = Vector3Add(Vector3Add(cp, Vector3Scale(edir, 0.0004f)), Vector3Add(Vector3Scale(exL, 0.0018f), Vector3Scale(eyL, 0.0020f)));
+                    LitEllipseDisc(WV(ch), nW, exW, eyW, 0.0012f, 0.0012f, 6, (Color){ 255, 255, 255, 255 });
+                }
+                Vector3 c2 = Vector3Add(Vector3Add(c0, Vector3Scale(edir, 0.0016f)), Vector3Scale(eyL, eb * 0.97f));
+                LitEllipseDisc(WV(c2), nW, exW, eyW, ea * 1.0f, 0.0010f, 12, (Color){ 45, 32, 28, 255 });   // 上のまぶたの線（細く）
                 #undef TW
             }
             float inY = 0.040f - 0.012f * angry + 0.006f * smile, outY = 0.046f + 0.006f * angry;  // 眉：怒ると内側が下がる
             DrawCylinderEx(WV(HP(0.096f, sd * 0.014f, inY)), WV(HP(0.090f, sd * 0.056f, outY)), 0.0060f, 0.0050f, 5, brow);
         }
-        DrawCylinderEx(WV(HP(0.098f, 0.0f, 0.010f)), WV(HP(0.122f, 0.0f, -0.018f)), 0.011f, 0.014f, 6, nose);   // 鼻
+        {   // 鼻：選手ごとの長さ（高い鼻は前へ長く出る）
+            float nk = a->noseK > 0.0f ? a->noseK : 1.0f;
+            DrawCylinderEx(WV(HP(0.098f, 0.0f, 0.012f)), WV(HP(0.098f + 0.024f * nk, 0.0f, 0.010f - 0.030f * nk)), 0.010f, 0.012f + 0.003f * nk, 6, nose);
+        }
         if (a->beard > 0.0f) {   // ひげ：あごの線に沿って（無精ひげは肌に近い色、濃いほど髪の色）
             float bk = Clamp01(a->beard);
             Color bc = { (unsigned char)((skin.r + (hair.r - skin.r) * bk) * 0.92f), (unsigned char)((skin.g + (hair.g - skin.g) * bk) * 0.92f), (unsigned char)((skin.b + (hair.b - skin.b) * bk) * 0.92f), 255 };

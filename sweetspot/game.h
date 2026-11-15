@@ -399,6 +399,8 @@ typedef struct {
     int     hairStyle;     // 髪型（HS_*）
     float   beard;         // ひげの濃さ（0 = なし、0.3 = 無精ひげ、0.7 = ひげ）
     int     hat;           // かぶりもの：0 なし、1 キャップ、2 サンバイザー
+    Color   eyeCol;        // 目の色（a == 0 なら茶色）
+    float   faceH, faceW, jaw, noseK;   // 顔の形：縦長さ・横幅・あごの張り・鼻の長さ（1 が標準。0 なら 1）
     Color   hatCol;
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
     bool    serveStance;   // サーブの構え（トスの前）：横向きで、左手にボール

@@ -123,6 +123,7 @@ void ApplyLook(SwingAnim *a, int persona)
         a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
         a->hairStyle = gWomen ? HS_PONY : HS_SHORT; a->beard = 0.0f; a->hat = 0;
+        a->eyeCol = (Color){ 95, 62, 38, 255 }; a->faceH = a->faceW = a->jaw = a->noseK = 1.0f;
         return;
     }
     persona %= PERSONA_COUNT;
@@ -151,6 +152,38 @@ void ApplyLook(SwingAnim *a, int persona)
         a->hairStyle = HAIR[persona].hs; a->beard = HAIR[persona].beard; a->hat = HAIR[persona].hat;
         if (persona == 0) a->hairStyle = gWomen ? HS_PONY : HS_SHORT;
         a->hatCol = (Color){ 248, 248, 250, 255 };
+    }
+    {   // 顔の形と目の色（写真から見た目で。縦長さ・横幅・あごの張り・鼻の長さ）
+        const Color BRN = { 95, 62, 38, 255 }, DBR = { 60, 38, 25, 255 }, HAZ = { 120, 95, 50, 255 },
+                    GRN = { 85, 120, 75, 255 }, BLU = { 70, 115, 165, 255 }, GRY = { 105, 125, 140, 255 };
+        static const struct { float h, w, jaw, nose; int eye; } FACE[PERSONA_COUNT] = {   // 男子（0〜8）
+            { 1.00f, 1.00f, 1.00f, 1.00f, 0 },   // 癖なし
+            { 1.08f, 0.96f, 0.98f, 1.25f, 0 },   // フェデラー：面長、鼻が高い、茶
+            { 1.08f, 0.95f, 0.95f, 1.20f, 3 },   // ジョコビッチ：面長、細いあご、緑がかったヘーゼル
+            { 1.03f, 1.02f, 1.08f, 1.10f, 1 },   // ナダル：四角く張ったあご、こげ茶
+            { 1.09f, 0.95f, 0.95f, 1.05f, 4 },   // マレー：面長、青
+            { 1.04f, 0.99f, 1.05f, 1.00f, 0 },   // アルカラス：しっかりしたあご、茶
+            { 1.07f, 0.93f, 0.92f, 1.10f, 4 },   // シナー：細面、青
+            { 1.12f, 0.92f, 0.92f, 1.20f, 5 },   // メドベデフ：とても面長で細い、灰色がかった青
+            { 1.03f, 1.03f, 1.06f, 1.05f, 0 },   // キルギオス：横幅があり、あごが張る、茶
+        };
+        static const struct { float h, w, jaw, nose; int eye; } F2[PERSONA_COUNT] = {   // 女子（9〜14）と錦織・ズベレフ
+            { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 }, { 0 },
+            { 1.00f, 1.04f, 1.06f, 1.00f, 1 },   // ウィリアムズ：横幅があり、あごが張る、こげ茶
+            { 1.02f, 0.97f, 0.95f, 0.95f, 2 },   // シフィオンテク：卵形、ヘーゼル
+            { 1.03f, 1.00f, 1.04f, 0.95f, 3 },   // サバレンカ：しっかりしたあご、緑がかったヘーゼル
+            { 1.03f, 0.97f, 0.96f, 0.95f, 1 },   // ガウフ：卵形、こげ茶
+            { 1.08f, 0.95f, 0.97f, 1.00f, 3 },   // シャラポワ：面長、緑
+            { 0.99f, 1.00f, 1.00f, 0.90f, 2 },   // バーティ：丸め、ヘーゼル
+            { 1.00f, 1.00f, 0.98f, 0.85f, 1 },   // 錦織：丸め、鼻は小さめ、こげ茶
+            { 1.10f, 0.94f, 0.98f, 1.10f, 4 },   // ズベレフ：面長、青
+        };
+        float h, w, jw, ns; int e;
+        if (persona >= 9) { h = F2[persona].h; w = F2[persona].w; jw = F2[persona].jaw; ns = F2[persona].nose; e = F2[persona].eye; }
+        else { h = FACE[persona].h; w = FACE[persona].w; jw = FACE[persona].jaw; ns = FACE[persona].nose; e = FACE[persona].eye; }
+        const Color EC[6] = { BRN, DBR, HAZ, GRN, BLU, GRY };
+        a->faceH = h; a->faceW = w; a->jaw = jw; a->noseK = ns; a->eyeCol = EC[e];
+        if (persona == 13) a->eyeCol = (Color){ 80, 125, 85, 255 };   // シャラポワは緑がはっきり
     }
     if (gAllWhite) {   // ウィンブルドン：服は白だけ
         a->shorts = (Color){ 245, 245, 248, 255 };
