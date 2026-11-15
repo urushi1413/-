@@ -109,7 +109,16 @@ void StepBall(Ball *b, float dt)
     if (crossed && fabsf(b->pos.x) < NET_POST_X) {
         float clearance = (b->pos.y - BALL_R) - NetHeightAt(b->pos.x);
         if (b->bounces == 0) b->netClearance = clearance;
-        if (clearance < 0.0f) {
+        if (clearance < 0.0f && clearance > -BALL_R * 0.8f) {
+            // 白帯をかすめた：勢いが落ちて少し上へ跳ね、そのまま越える（ネットイン）。AI が先を読めるように乱数は使わない
+            float graze = -clearance / (BALL_R * 0.8f);          // 0 = かすっただけ、1 = 半分くらい当たった
+            b->netCord = true;
+            b->vel.z *= 0.25f - 0.15f * graze;                    // 勢いがほとんど消える（白帯に吸われる）
+            b->vel.x *= 0.5f;
+            b->vel.y = 1.0f + 1.6f * graze;                      // ふわっと上がる
+            b->spin = Vector3Scale(b->spin, 0.4f);
+            b->pos.y = NetHeightAt(b->pos.x) + BALL_R + 0.002f;
+        } else if (clearance < 0.0f) {
             b->hitNet = true;
             b->pos.z = prev.z;
             b->vel.z *= -0.15f;   // ネットに吸われてほぼ止まる

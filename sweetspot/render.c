@@ -220,6 +220,7 @@ void DrawCourt(void)
 // 観客席：コートの両横と奥に段々の席。カメラとコートの間に来る側は描かない（視界をふさがないように）
 // 観客は 1 人ずつ形（頭・髪・目・口・肩・腕・脚）を作り、席ごとに 1 つの 3D モデルにまとめて描く（速い）。
 //   盛り上がったときは、上げた腕（拍手）だけを上に描き足す
+int gUmpSide = -1;   // 審判台とベンチのある側（x の符号）。コートチェンジで入れ替わる
 typedef struct { Vector3 p, f, r; Color shirt, skin; float seed; } Fan;
 #define FAN_MAX 1800
 static Fan gFans[FAN_MAX];
@@ -555,20 +556,32 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
         }
     }
 
-    // 審判台：ネットの横（左）。審判は座って、頭で球を追う
+    // 審判台：ネットの横（gUmpSide の側。コートチェンジのたびに反対側になる）。審判は座って、頭で球を追う
     Color uniform = { 235, 230, 215, 255 }, uniPants = { 40, 45, 70, 255 }, uniCap = { 40, 45, 70, 255 }, skin = { 230, 195, 160, 255 };
+    float fs = -(float)gUmpSide;   // 審判台からコートを向く向き（x）
     {
-        float ux = -(NET_POST_X + 1.0f);
+        float ux = gUmpSide * (NET_POST_X + 1.0f);
         Color metal = { 70, 75, 80, 255 };
         for (int i = 0; i < 4; i++) {
             float lx = ux + ((i & 1) ? 0.40f : -0.40f), lz = (i & 2) ? 0.40f : -0.40f;
             DrawCylinderEx((Vector3){ lx, 0, lz }, (Vector3){ lx, 2.0f, lz * 0.9f }, 0.04f, 0.035f, 6, metal);
         }
-        for (int k = 1; k <= 4; k++) DrawCube((Vector3){ ux - 0.41f, k * 0.42f, 0 }, 0.05f, 0.04f, 0.7f, metal);   // はしご
+        for (int k = 1; k <= 4; k++) DrawCube((Vector3){ ux - 0.41f * fs, k * 0.42f, 0 }, 0.05f, 0.04f, 0.7f, metal);   // はしご
         DrawCube((Vector3){ ux, 2.02f, 0 }, 0.90f, 0.06f, 0.90f, metal);                                    // 台
-        DrawCube((Vector3){ ux + 0.44f, 2.30f, 0 }, 0.05f, 0.50f, 0.90f, wall);                              // 前の囲い
-        DrawCube((Vector3){ ux - 0.30f, 2.45f, 0 }, 0.08f, 0.85f, 0.60f, metal);                             // 背もたれ
-        DrawPerson((Vector3){ ux - 0.12f, 2.05f, 0 }, (Vector3){ 1, 0, 0 }, 1, uniform, uniPants, uniCap, skin, 0.0f, ballPos);
+        DrawCube((Vector3){ ux + 0.44f * fs, 2.30f, 0 }, 0.05f, 0.50f, 0.90f, wall);                         // 前の囲い
+        DrawCube((Vector3){ ux - 0.30f * fs, 2.45f, 0 }, 0.08f, 0.85f, 0.60f, metal);                        // 背もたれ
+        DrawPerson((Vector3){ ux - 0.12f * fs, 2.05f, 0 }, (Vector3){ fs, 0, 0 }, 1, uniform, uniPants, uniCap, skin, 0.0f, ballPos);
+        // 選手のベンチ：審判台の両側。コートを向いて座る。ベンチの横にタオルと飲み物
+        for (int e = -1; e <= 1; e += 2) {
+            float bx = gUmpSide * (NET_POST_X + 1.5f), bz = e * 2.3f;
+            Color seat = { 230, 232, 236, 255 }, frame = { 60, 64, 72, 255 };
+            DrawCube((Vector3){ bx, 0.44f, bz }, 0.50f, 0.06f, 1.4f, seat);
+            DrawCube((Vector3){ bx - 0.24f * fs, 0.75f, bz }, 0.05f, 0.55f, 1.4f, seat);   // 背もたれ
+            for (int k = -1; k <= 1; k += 2) DrawCube((Vector3){ bx, 0.21f, bz + k * 0.62f }, 0.45f, 0.42f, 0.05f, frame);
+            DrawCube((Vector3){ bx + 0.05f * fs, 0.50f, bz + 0.45f * e }, 0.30f, 0.05f, 0.22f, (Color){ 250, 250, 250, 255 });   // タオル
+            for (int k = 0; k < 2; k++)   // 飲み物のボトル
+                DrawCylinder((Vector3){ bx + 0.38f * fs, 0.0f, bz - 0.55f * e + k * 0.12f }, 0.035f, 0.035f, 0.24f, 8, k ? (Color){ 60, 140, 220, 255 } : (Color){ 240, 120, 40, 255 });
+        }
     }
     // 線審：コートのまわりの椅子に座る。アウトのときは、球に一番近い線審が立って右腕を横へ伸ばす
     {
@@ -591,6 +604,7 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
         }
         for (int i = 0; i < nj; i++) {
             if (judges[i].z > camPos.z - 2.5f) continue;   // カメラの手前（すぐ前）は描かない
+            if (Vector3Distance(judges[i], (Vector3){ camPos.x, 0, camPos.z }) < 7.0f) continue;   // 横から見るとき、カメラのすぐ前の線審は描かない
             if ((judges[i].x < -gStandX0 + 1.0f && !showL) || (judges[i].x > gStandX0 - 1.0f && !showR)) continue;
             bool call = i == caller;
             float arm = call ? Clamp01((1.6f - callT) / 0.15f) * Clamp01(callT / 0.3f) : 0.0f;
@@ -605,8 +619,8 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
     // ボールキッズ：ネットの両端にしゃがむ
     {
         Color kid = { 110, 60, 150, 255 }, kidPants = { 40, 40, 50, 255 };
-        DrawPerson((Vector3){ -(NET_POST_X + 0.3f), 0, 0.9f }, (Vector3){ 1, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 225, 185, 150, 255 }, 0.0f, ballPos);
-        DrawPerson((Vector3){ NET_POST_X + 0.6f, 0, -0.6f }, (Vector3){ -1, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 200, 150, 115, 255 }, 0.0f, ballPos);
+        DrawPerson((Vector3){ gUmpSide * (NET_POST_X + 0.3f), 0, 0.9f }, (Vector3){ fs, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 225, 185, 150, 255 }, 0.0f, ballPos);
+        DrawPerson((Vector3){ -gUmpSide * (NET_POST_X + 0.6f), 0, -0.6f }, (Vector3){ -fs, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 200, 150, 115, 255 }, 0.0f, ballPos);
     }
 }
 

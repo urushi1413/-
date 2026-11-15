@@ -375,6 +375,11 @@ int main(void)
     const char *pointMsg = "";
     char  scoreCall[64] = "";          // ポイントの後に大きく出すコール（DEUCE、GAME など）
     bool  needSetup = true;            // 次のポイント（またはセカンドサーブ）の準備をする
+    // コートチェンジ：奇数ゲームの後（セットの終わりも、そのセットのゲーム数が奇数なら）。両選手がベンチへ歩き、
+    //   （1 ゲーム目の後以外は）休み、画面が一瞬暗くなる間に審判台とベンチが反対側になって、自分の位置へ戻る
+    bool  changePending = false, changeSit = false, changeActive = false, changeFlipped = false;
+    float changeT = 0.0f, changeDur = 0.0f;
+    Vector3 coFromP = { 0 }, coFromA = { 0 };
     bool  autopilot = false;           // B：自分側も AI が操作する（観戦モード）
     Opponent bot = { 0 };              // 自分側を操作する AI（座標は 180° 回した世界）
 
@@ -873,6 +878,8 @@ int main(void)
             score = (Score){ 0 };
             score.server = rand() % 2;
             AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
+            gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
+            SfxSetLineJudges(gSurface == SURF_CLAY);   // クレー（ローランドギャロスなど）は電子判定ではなく線審が声でコールする
             score.setsToWin = setsToWin;
             ai.tilt = 0.0f;
             winFx = -1.0f;
@@ -1654,6 +1661,11 @@ int main(void)
         if (!ball.active || ball.lastHitter != HITTER_OPP) { if (!(playerServing && P.sv == SV_TOSS)) { playerGrunt = false; playerGruntTried = false; } }
         if (!ball.active || ball.lastHitter != HITTER_PLAYER) { if (!aiTossing) { aiGrunt = false; aiGruntTried = false; } }
         if (ball.active && ball.hitNet && !prevHitNet) SfxNet(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
+        {   // ネットイン（白帯をかすめて越えた）も、ネットの音（小さめ）
+            static bool prevNetCord = false;
+            if (ball.active && ball.netCord && !prevNetCord) SfxNet(Vector3Length(ball.vel) * 0.6f, Vector3Distance(cam.position, ball.pos));
+            prevNetCord = ball.active && ball.netCord;
+        }
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
         prevAiSliding = ai.sliding;
@@ -1702,7 +1714,14 @@ int main(void)
                 if (ball.result != RESULT_IN) mst[retServer][4]++;
                 retPending = false;
             }
-            if (ball.isServe && !serveJudged && ball.bounces >= 1) {
+            if (ball.isServe && !serveJudged && ball.bounces >= 1 && ball.netCord && ball.result == RESULT_IN) {
+                // レット：サーブがネットに触れて入った。同じ番目のサーブ（1st なら 1st）を打ち直す
+                pointMsg = TL("Let", "レット");
+                TraceLog(LOG_INFO, "LET by %s", hitter == 0 ? "YOU" : "AI");
+                serveJudged = true;   // この球はもう判定しない
+                phase = PH_BETWEEN;
+                phaseTimer = 1.5f;
+            } else if (ball.isServe && !serveJudged && ball.bounces >= 1) {
                 mst[hitter][serveNo == 1 ? 0 : 2]++;
                 if (ball.result == RESULT_IN) mst[hitter][serveNo == 1 ? 1 : 3]++;
                 else if (serveNo == 2) mst[hitter][5]++;
@@ -1786,6 +1805,13 @@ int main(void)
                 int setsBefore = score.nSetsDone;
                 AwardPoint(&score, winner);
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
+                {   // コートチェンジ：このセットのゲーム数が奇数になったら
+                    bool setEndedCO = score.nSetsDone != setsBefore;
+                    if (!score.over && (gamesAfter != gamesBefore || setEndedCO)) {
+                        int gIn = setEndedCO ? score.setScore[score.nSetsDone - 1][0] + score.setScore[score.nSetsDone - 1][1] : score.games[0] + score.games[1];
+                        if (gIn % 2 == 1) { changePending = true; changeSit = !(gIn == 1 && !setEndedCO); }   // 1 ゲーム目の後は座らない
+                    }
+                }
                 if (score.nSetsDone != setsBefore) {
                     int *g = score.setScore[score.nSetsDone - 1];
                     snprintf(scoreCall, sizeof(scoreCall), TL("GAME, SET%s  %s   (%d - %d)", "ゲーム、セット%s  %s   (%d - %d)"), score.over ? TL(" AND MATCH", "アンドマッチ") : "",
@@ -2002,7 +2028,14 @@ int main(void)
                 if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && summaryT > 6.0f))
                     setBreak = false;
             }
-            if (phaseTimer <= 0.0f && !setBreak) {
+            if (phaseTimer <= 0.0f && !setBreak && changePending && !changeActive) {   // コートチェンジを始める
+                changePending = false; changeActive = true; changeFlipped = false;
+                changeT = 0.0f; changeDur = changeSit ? 7.0f : 3.4f;
+                coFromP = P.pos; coFromA = ai.pos;
+                TraceLog(LOG_INFO, "CHANGEOVER start (sit=%d)", changeSit);
+                pointMsg = TL("Changeover", "チェンジコート"); scoreCall[0] = 0;
+            }
+            if (phaseTimer <= 0.0f && !setBreak && !changeActive) {
                 if (phase == PH_POINT_OVER) serveNo = 1;
                 needSetup = true;
                 pointMsg = "";
@@ -2060,8 +2093,39 @@ int main(void)
             if (ai.anim.swingT >= 0.0f) ai.anim.swingT = fminf(ai.anim.swingT + simDt, 5.0f);   // 球出しの振りを進める
         }
 
+        // ---- コートチェンジの動き（ほかの動きの後で位置を上書きする） ----
+        if (changeActive) {
+            changeT += frameDt;
+            if (IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) changeT = fmaxf(changeT, changeDur);   // 飛ばす
+            float mid = changeDur * 0.5f;
+            if (!changeFlipped && changeT >= mid) { changeFlipped = true; gUmpSide = -gUmpSide; }   // 暗い間に入れ替わる
+            Vector3 benchP = { gUmpSide * (NET_POST_X + 0.9f), 0.0f, 2.3f }, benchA = { gUmpSide * (NET_POST_X + 0.9f), 0.0f, -2.3f };
+            Vector3 tp, ta; float k;
+            if (changeT < 1.6f) { k = Smooth01(changeT / 1.6f); tp = Vector3Lerp(coFromP, benchP, k); ta = Vector3Lerp(coFromA, benchA, k); }
+            else if (changeT < changeDur - 1.6f) { tp = benchP; ta = benchA; }
+            else { k = Smooth01((changeT - (changeDur - 1.6f)) / 1.6f); tp = Vector3Lerp(benchP, coFromP, k); ta = Vector3Lerp(benchA, coFromA, k); }
+            if (frameDt > 0.0f) {
+                P.vel = Vector3Scale(Vector3Subtract(tp, P.pos), 1.0f / frameDt); ai.vel = Vector3Scale(Vector3Subtract(ta, ai.pos), 1.0f / frameDt);
+                if (Vector3Length(P.vel) > 8.0f) P.vel = (Vector3){ 0 };   // 暗い間の入れ替わりで跳んだときは走らせない
+                if (Vector3Length(ai.vel) > 8.0f) ai.vel = (Vector3){ 0 };
+            }
+            P.pos = tp; ai.pos = ta;
+            P.anim.runPhase += Vector3Length(P.vel) * frameDt * 2.2f; P.anim.velX = P.vel.x; P.anim.velZ = -P.vel.z;
+            ai.anim.runPhase += Vector3Length(ai.vel) * frameDt * 2.2f; ai.anim.velX = -ai.vel.x; ai.anim.velZ = ai.vel.z;
+            ball.active = false; ball.bounces = 0;
+            if (changeT >= changeDur) {
+                changeActive = false;
+                P.vel = ai.vel = (Vector3){ 0 };
+                if (phase == PH_POINT_OVER) serveNo = 1;
+                needSetup = true; pointMsg = ""; scoreCall[0] = 0;
+            }
+        }
+
         // ---- カメラ ----
-        if (camMode == 0) {        // プレイヤーの後ろ
+        if (changeActive) {        // コートチェンジ：審判台の反対側の高いところから（中継のように）
+            cam.position = (Vector3){ -gUmpSide * 15.0f, 5.5f, 0.0f };
+            cam.target   = (Vector3){ gUmpSide * 2.5f, 0.6f, 0.0f };
+        } else if (camMode == 0) {        // プレイヤーの後ろ
             // 少し高く後ろから：上から見る角度があると、奥行き（ボールまでの距離）が読みやすい
             cam.position = (Vector3){ P.pos.x * 0.6f, 4.6f, P.pos.z + 7.5f };
             cam.target   = (Vector3){ P.pos.x * 0.3f, 0.3f, P.pos.z - 7.0f };
@@ -2338,6 +2402,16 @@ int main(void)
             }
         EndMode3D();
         AtmosOverlay(cam);   // 時間帯と天気の色合い、ナイターのライト
+        if (changeActive) {   // コートチェンジ：入れ替わる間は一瞬暗く。休んでいる間は表示
+            float mid = changeDur * 0.5f, d = fabsf(changeT - mid);
+            if (d < 0.45f) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 1.0f - d / 0.45f));
+            if (changeSit && changeT > 1.6f && changeT < changeDur - 1.6f) {
+                const char *rs = TL("Changeover  -  players rest at the bench", "チェンジコート  -  ベンチで休憩");
+                DrawText(rs, GetScreenWidth() / 2 - MeasureText(rs, 22) / 2, GetScreenHeight() - 120, 22, Fade(RAYWHITE, 0.9f));
+            }
+            const char *sk = TR("Enter: skip", "Enter：飛ばす");
+            DrawText(sk, GetScreenWidth() - MeasureText(sk, 18) - 20, GetScreenHeight() - 40, 18, LIGHTGRAY);
+        }
 
         // ポイントの後：リプレイの案内
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)

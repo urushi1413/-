@@ -346,6 +346,7 @@ typedef struct {
     Vector3 spin;          // 角速度ベクトル（rad/s）。向き＝回転軸、長さ＝回転の速さ
     bool    active;
     bool    hitNet;
+    bool    netCord;       // ネットの白帯をかすめて越えた（ネットイン。サーブならレット）
     int     side;          // 狙った側：-1=相手コート(z<0)、+1=自分のコート(z>0)
     int     shotId;        // 自分の打球の通し番号（プレイ記録で結果と結び付ける）
     bool    touch;         // ロブ・ドロップ（打つ形からは読みにくい）
@@ -910,6 +911,7 @@ enum { TOD_DAY, TOD_EVENING, TOD_NIGHT, TOD_COUNT };
 enum { WX_SUNNY, WX_CLOUDY, WX_COUNT };
 extern int gTimeSetting, gWeatherSetting;   // 設定（0 = おまかせ、1〜 = TOD / WX の番号 + 1）
 extern int gTod, gWx;                       // この試合の時間帯と天気
+extern int gUmpSide;                        // 審判台とベンチのある側（-1 = 自分から見て左）。コートチェンジで入れ替わる
 void AtmosNewMatch(void);
 const char *AtmosName(void);
 void DrawSky(Camera3D cam);                 // 空（BeginMode3D の前）
@@ -950,6 +952,7 @@ void  SfxUpdate(void);
 void  SfxRacketLand(float dist);                 // 投げたラケットが落ちる
 void  SfxBoo(float level, float delay);          // 観客のブーイング
 void  SfxOoh(float level);                       // 観客の「おお〜」
+void  SfxSetLineJudges(bool human);             // 線審が声でアウトをコールする（クレー）
 void  SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay);   // 主審のスコアコール（kind 0 ポイント / 1 ゲーム / 2 セット）
 const char *SfxDir(void);
 

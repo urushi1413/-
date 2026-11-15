@@ -15,7 +15,8 @@ enum {
     S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_CALL_OUT, S_CELEBRATE, S_ANGRY, S_MATCH_WIN,
     S_BOO, S_OOH, S_RACKET_SMASH, S_RACKET_LAND,
     S_CALL_LOVE, S_CALL_15, S_CALL_30, S_CALL_40, S_CALL_ADV_S, S_CALL_ADV_R,
-    S_CALL_GAME_S, S_CALL_GAME_R, S_CALL_SET_S, S_CALL_SET_R, S_CALL_ALL, S_CALL_DEUCE, S_COUNT
+    S_CALL_GAME_S, S_CALL_GAME_R, S_CALL_SET_S, S_CALL_SET_R, S_CALL_ALL, S_CALL_DEUCE,
+    S_CALL_GSM_S, S_CALL_GSM_R, S_CALL_OUT_LINE, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
@@ -24,8 +25,13 @@ static const char *SFX_NAMES[S_COUNT] = {
     "crowd", "applause", "applause_big", "call_fault", "call_out", "celebrate", "angry", "match_win",
     "boo", "ooh", "racket_smash", "racket_land",
     "call_love", "call_15", "call_30", "call_40", "call_adv_server", "call_adv_receiver",
-    "call_game_server", "call_game_receiver", "call_set_server", "call_set_receiver", "call_all", "call_deuce"
+    "call_game_server", "call_game_receiver", "call_set_server", "call_set_receiver", "call_all", "call_deuce",
+    "call_gsm_server", "call_gsm_receiver", "call_out_line"
 };
+// スコアの言い回しごとのコール（call_<サーバーの点>_<レシーバーの点>、例 call_15_0 は「フィフティーン・ラブ」）
+static SfxSlot gCallP[4][4];
+static const int PTS[4] = { 0, 15, 30, 40 };
+static bool gLineJudges = false;   // 線審が声でコールする（クレー：ローランドギャロスなど。電子判定ではない）
 
 // ---- 選手ごとの声 ----
 // 選手の録音（<名前>_grunt_pre など）があればそれを使う。なければ共通の声を、選手ごとの高さ・大きさで鳴らす
@@ -112,6 +118,19 @@ void SfxInit(void)
                 }
                 if (sl->nVar > 0) TraceLog(LOG_INFO, "SFX: voice %s_%s (%d)", who, VOICE_NAMES[vi], sl->nVar);
             }
+        for (int a = 0; a < 4; a++)   // スコアの言い回しのコール
+            for (int b = 0; b < 4; b++) {
+                const char *want = TextFormat("call_%d_%d", PTS[a], PTS[b]);
+                for (unsigned int f = 0; f < files.count; f++) {
+                    if (strcmp(GetFileNameWithoutExt(files.paths[f]), want) != 0) continue;
+                    Wave w = LoadWave(files.paths[f]);
+                    if (w.frameCount == 0) continue;
+                    for (int k = 0; k < POOL; k++) gCallP[a][b].s[0][k] = LoadSoundFromWave(w);
+                    UnloadWave(w);
+                    gCallP[a][b].nVar = 1;
+                    break;
+                }
+            }
         for (int i = 0; i < S_COUNT; i++) {
             for (int v = 1; v <= VARIANTS && gSlot[i].nVar < VARIANTS; v++) {
                 char want[64];
@@ -159,6 +178,8 @@ void SfxClose(void)
         for (int vi = 0; vi < V_COUNT; vi++)
             for (int v = 0; v < gPV[w][vi].nVar; v++)
                 for (int k = 0; k < POOL; k++) UnloadSound(gPV[w][vi].s[v][k]);
+    for (int a = 0; a < 4; a++) for (int b = 0; b < 4; b++)
+        if (gCallP[a][b].nVar) for (int k = 0; k < POOL; k++) UnloadSound(gCallP[a][b].s[0][k]);
     if (gBeepOk) UnloadSound(gBeep);
     CloseAudioDevice();
     gAudioOk = false;
@@ -424,7 +445,13 @@ void SfxMatchWin(void)
 void SfxCallFault(void) { Play(S_CALL_FAULT, -1, 0.85f, 1.0f); }
 
 // 審判のコール「アウト」（ラリー中の球がアウトになったとき）
-void SfxCallOut(void) { Play(S_CALL_OUT, -1, 0.85f, 1.0f); }
+// 線審の声（クレー）か、電子判定の声（スピーカー）か
+void SfxSetLineJudges(bool human) { gLineJudges = human; }
+void SfxCallOut(void)
+{
+    if (gLineJudges && gSlot[S_CALL_OUT_LINE].nVar) Play(S_CALL_OUT_LINE, -1, 0.95f, 1.0f);   // 線審が叫ぶ
+    else Play(S_CALL_OUT, -1, 0.85f, 1.0f);
+}
 
 // 拍手を止める（サーブのトスを上げたら静かに：ポイント中は観客は静かにする決まり）
 void SfxStopApplause(void)
@@ -481,14 +508,19 @@ void SfxOoh(float level)
 //   （call_all / call_deuce があるときだけ）。タイブレークは言わない
 void SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay)
 {
-    if (!gAudioOk || sc->over) return;
+    if (!gAudioOk) return;
     double t = GetTime() + delay;
+    if (sc->over) { Queue(t, winner == server ? S_CALL_GSM_S : S_CALL_GSM_R, 1.0f, 1.0f); return; }   // ゲーム・セット・アンド・マッチ
     const float vol = 1.0f;
     if (kind == 2) { Queue(t, winner == server ? S_CALL_SET_S : S_CALL_SET_R, vol, 1.0f); return; }
     if (kind == 1) { Queue(t, winner == server ? S_CALL_GAME_S : S_CALL_GAME_R, vol, 1.0f); return; }
     if (sc->tiebreak) return;
     int sp = sc->points[server], rp = sc->points[1 - server];
     static const int NUM[4] = { S_CALL_LOVE, S_CALL_15, S_CALL_30, S_CALL_40 };
+    if (sp <= 3 && rp <= 3 && !(sp == 3 && rp == 3) && gCallP[sp][rp].nVar) {   // 言い回しの録音があればそれを
+        if (gQn < QMAX) gQ[gQn++] = (QueuedSfx){ t, -1 - (sp * 4 + rp), 1.0f, 1.0f };   // id がマイナス：言い回しのコール
+        return;
+    }
     if (sp >= 3 && rp >= 3) {
         if (sp > rp) Queue(t, S_CALL_ADV_S, vol, 1.0f);
         else if (rp > sp) Queue(t, S_CALL_ADV_R, vol, 1.0f);
@@ -513,7 +545,11 @@ void SfxUpdate(void)
 {
     double now = GetTime();
     for (int i = 0; i < gQn; ) {
-        if (gQ[i].t <= now) { QueuedSfx q = gQ[i]; gQ[i] = gQ[--gQn]; Play(q.id, -1, q.vol, q.pitch); }
+        if (gQ[i].t <= now) {
+            QueuedSfx q = gQ[i]; gQ[i] = gQ[--gQn];
+            if (q.id < 0) { int k = -1 - q.id; PlaySlotVar(&gCallP[k / 4][k % 4], 0, q.vol, q.pitch); }   // スコアの言い回し
+            else Play(q.id, -1, q.vol, q.pitch);
+        }
         else i++;
     }
 }
