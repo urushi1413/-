@@ -15,7 +15,7 @@ enum {
     S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_CALL_OUT, S_CELEBRATE, S_ANGRY, S_MATCH_WIN,
     S_BOO, S_OOH, S_RACKET_SMASH, S_RACKET_LAND,
     S_CALL_LOVE, S_CALL_15, S_CALL_30, S_CALL_40, S_CALL_ADV_S, S_CALL_ADV_R,
-    S_CALL_GAME_S, S_CALL_GAME_R, S_CALL_SET_S, S_CALL_SET_R, S_COUNT
+    S_CALL_GAME_S, S_CALL_GAME_R, S_CALL_SET_S, S_CALL_SET_R, S_CALL_ALL, S_CALL_DEUCE, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
@@ -24,7 +24,7 @@ static const char *SFX_NAMES[S_COUNT] = {
     "crowd", "applause", "applause_big", "call_fault", "call_out", "celebrate", "angry", "match_win",
     "boo", "ooh", "racket_smash", "racket_land",
     "call_love", "call_15", "call_30", "call_40", "call_adv_server", "call_adv_receiver",
-    "call_game_server", "call_game_receiver", "call_set_server", "call_set_receiver"
+    "call_game_server", "call_game_receiver", "call_set_server", "call_set_receiver", "call_all", "call_deuce"
 };
 
 // ---- 選手ごとの声 ----
@@ -168,11 +168,22 @@ int   SfxLoadedCount(void)  { return gLoaded; }
 bool  SfxDeviceOk(void)     { return gAudioOk; }
 const char *SfxDir(void)    { return gDir; }
 
+// 代わりの音の、さらに代わり（打球音は hit_frame → hit_bad → hit_ok → hit_good とたどる）
+static int NextFallback(int id)
+{
+    switch (id) {
+        case S_HIT_FRAME: return S_HIT_BAD;
+        case S_HIT_BAD:   return S_HIT_OK;
+        case S_HIT_SLICE: return S_HIT_OK;
+        case S_HIT_OK:    return S_HIT_GOOD;
+        default:          return -1;
+    }
+}
 // 鳴らす。ないときは代わりの音を使う（なければ鳴らさない）
 static void Play(int id, int fallback, float vol, float pitch)
 {
     if (!gAudioOk || vol <= 0.001f || gVolume <= 0.0f) return;
-    if (gSlot[id].nVar == 0) { if (fallback >= 0) Play(fallback, -1, vol, pitch); return; }
+    if (gSlot[id].nVar == 0) { if (fallback >= 0) Play(fallback, NextFallback(fallback), vol, pitch); return; }
     SfxSlot *s = &gSlot[id];
     int v = GetRandomValue(0, s->nVar - 1);
     Sound *snd = &s->s[v][s->next];
@@ -242,11 +253,10 @@ void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float di
     else                Play(S_HIT_GOOD, S_HIT_OK, vol, Jitter());
 }
 
-// ラケットを地面に叩きつける音（racket_smash がなければフレームの音を低く、大きく）
+// ラケットを地面に叩きつける音（racket_smash がなければ鳴らさない）
 void SfxRacketSmash(float dist)
 {
-    if (gSlot[S_RACKET_SMASH].nVar) Play(S_RACKET_SMASH, -1, 1.0f * DistVol(dist), Jitter());
-    else Play(S_HIT_FRAME, S_HIT_BAD, 1.0f * DistVol(dist), 0.70f + GetRandomValue(-30, 30) / 1000.0f);
+    Play(S_RACKET_SMASH, -1, 1.0f * DistVol(dist), Jitter());
 }
 // 投げたラケットが地面に落ちて転がる音
 void SfxRacketLand(float dist)
@@ -308,11 +318,18 @@ void SfxSlide(float dist)
 // 観客のざわめき：on の間は鳴らし続ける（毎フレーム呼ぶ）
 void SfxCrowd(bool on, float level)
 {
+    // ざわめきが何種類かあるときは、1 回鳴り終わるたびにランダムに選び直す
+    static int cur = 0;
     if (!gAudioOk || gSlot[S_CROWD].nVar == 0) return;
-    Sound *s = &gSlot[S_CROWD].s[0][0];
+    Sound *s = &gSlot[S_CROWD].s[cur][0];
     if (!on) { if (IsSoundPlaying(*s)) StopSound(*s); return; }
+    if (!IsSoundPlaying(*s)) {
+        cur = GetRandomValue(0, gSlot[S_CROWD].nVar - 1);
+        s = &gSlot[S_CROWD].s[cur][0];
+        SetSoundVolume(*s, 0.25f * level * gVolume);
+        PlaySound(*s);
+    }
     SetSoundVolume(*s, 0.25f * level * gVolume);
-    if (!IsSoundPlaying(*s)) PlaySound(*s);
 }
 
 // ポイントが終わったときの拍手：長いラリーやウィナーほど大きい
@@ -390,7 +407,8 @@ void SfxOoh(float level)
 }
 
 // 主審のスコアコール。kind：0 ポイント、1 ゲーム、2 セット。server：そのゲームのサーバー、winner：取った方
-//   ポイントはサーバーの点を先に言う（「フィフティーン、ラブ」）。同点（〜オール、デュース）とタイブレークは録音がないので言わない
+//   ポイントはサーバーの点を先に言う（「フィフティーン、ラブ」）。同点は「フィフティーン、オール」「デュース」
+//   （call_all / call_deuce があるときだけ）。タイブレークは言わない
 void SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay)
 {
     if (!gAudioOk || sc->over) return;
@@ -400,13 +418,20 @@ void SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay
     if (kind == 1) { Queue(t, winner == server ? S_CALL_GAME_S : S_CALL_GAME_R, vol, 1.0f); return; }
     if (sc->tiebreak) return;
     int sp = sc->points[server], rp = sc->points[1 - server];
+    static const int NUM[4] = { S_CALL_LOVE, S_CALL_15, S_CALL_30, S_CALL_40 };
     if (sp >= 3 && rp >= 3) {
         if (sp > rp) Queue(t, S_CALL_ADV_S, vol, 1.0f);
         else if (rp > sp) Queue(t, S_CALL_ADV_R, vol, 1.0f);
+        else Queue(t, S_CALL_DEUCE, vol, 1.0f);
         return;
     }
-    if (sp == rp) return;
-    static const int NUM[4] = { S_CALL_LOVE, S_CALL_15, S_CALL_30, S_CALL_40 };
+    if (sp == rp) {   // 「フィフティーン、オール」
+        int a = NUM[sp];
+        if (!gSlot[a].nVar || !gSlot[S_CALL_ALL].nVar) return;
+        Queue(t, a, vol, 1.0f);
+        Queue(t + SlotLen(a) + 0.08, S_CALL_ALL, vol, 1.0f);
+        return;
+    }
     int a = NUM[sp > 3 ? 3 : sp], b = NUM[rp > 3 ? 3 : rp];
     if (!gSlot[a].nVar || !gSlot[b].nVar) return;   // 片方だけ言うとおかしいので
     Queue(t, a, vol, 1.0f);

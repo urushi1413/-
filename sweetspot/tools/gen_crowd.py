@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SWEET SPOT — 観客のブーイングと「おお〜」を合成する（録音素材が見つからなかったため）
 #   大勢の声（声の高さ・長さ・始まりを少しずつ変えた「ウー」「オー」）を重ね、会場の響きを足す
-#   使い方: python3 tools/gen_crowd.py   → sounds/boo*.ogg, sounds/ooh*.ogg
+#   使い方: python3 tools/gen_crowd.py   → sounds/ooh*.ogg
 #   必要: numpy, scipy, soundfile
 import os
 import numpy as np
@@ -114,7 +114,7 @@ def ooh(seed, total=2.0, n=60, rise=False):
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     files = {
-        "boo": boo(11), "boo_2": boo(23, 3.6, 80), "boo_3": boo(37, 2.6, 55),
+        # ブーイング（boo）は聞き比べで外した。作り直すときは boo(11) などを足す
         "ooh": ooh(5), "ooh_2": ooh(19, rise=True), "ooh_3": ooh(41, 1.8, 50),
     }
     for name, y in files.items():
