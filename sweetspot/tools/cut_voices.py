@@ -30,20 +30,42 @@ HIT_PEAK = 0.89   # 打った後の声の大きさ（いまの hit_voice と同�
 HIT_MIX = 3.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の 3 分の 1 ほど（遠くの声）
 
 
-def far_away(x, seed):
+# 選手ごとの遠さ（1 = ふつう。大きいほど遠い：響きが多く、声が小さく、こもる）
+FAR = {"alcarazz": 1.8}
+
+
+def far_away(x, seed, amt=1.0):
     """近くで録った声を、コートの向こうで聞こえるように：
          マイクが近いと強くなる低い音を削り、高い音を少し丸め、コートの跳ね返りと響きを足す"""
     rng = np.random.default_rng(seed)
-    y = lp(hp(x, 300), 4800)
-    n = int(0.8 * SR)
+    y = lp(hp(x, 300 * amt ** 0.3), 4800 / amt ** 0.4)
+    n = int((0.8 + 0.3 * (amt - 1)) * SR)
     ir = np.zeros(n)
-    ir[0] = 0.7                                       # 直接届く声は小さめ（遠い）
+    ir[0] = 0.7 / amt                                 # 直接届く声は小さめ（遠い）
     for d, g in ((0.013, 0.45), (0.022, 0.35), (0.034, 0.3), (0.051, 0.22), (0.072, 0.17), (0.095, 0.12)):   # 地面・後ろの壁・客席
-        ir[int(d * SR)] += g * rng.choice([-1, 1])
-    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.16 * SR))
+        ir[int(d * SR)] += g * amt ** 0.5 * rng.choice([-1, 1])
+    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / ((0.16 + 0.06 * (amt - 1)) * SR))
     tail[: int(0.02 * SR)] = 0
-    ir += lp(tail, 3500) * 0.06
+    ir += lp(tail, 3500) * 0.06 * amt
     return fftconvolve(y, ir)[: len(y)]
+
+
+def make_pair(x, s, c, e, seed, amt, ball_idx):
+    """録音 x の s〜e を遠くにして、打った瞬間 c に打球音を重ね、打つ前と後に分ける"""
+    seg = far_away(x[s:e], seed, amt)   # 打つ前と後をまとめて加工（響きがつながるように）
+    cc = c - s
+    goods = sorted(glob.glob(os.path.join(OUT, "hit_good*.wav")))
+    ball = trim(load(goods[ball_idx % len(goods)]))
+    ball = ball / max(np.max(np.abs(ball)), 1e-6) * HIT_MIX * amt * np.max(np.abs(seg[cc:]))   # 遠い選手ほど声が小さい
+    seg[cc:cc + len(ball)] += ball[: len(seg) - cc]
+    pre, hit = seg[:cc].copy(), seg[cc:].copy()
+    g = HIT_PEAK / max(np.max(np.abs(hit)), 1e-6)       # 打つ前と同じ倍率
+    pre, hit = pre * g, hit * g
+    n = int(0.01 * SR)
+    pre[:n] *= np.linspace(0, 1, n)                     # 鳴り始めをなめらかに（つなぎ目は切らない）
+    f = int(0.06 * SR)
+    hit[-f:] *= np.linspace(1, 0, f)
+    return pre, hit
 
 
 def tail_end(x, start):
@@ -65,10 +87,13 @@ def main():
     src = sys.argv[1]
     # いまの共通の声（grunt_pre / hit_voice）はアルカラスの録音なので、アルカラスの 1 つ目にする。
     #   共通の打つ前の声は録音が小さく、ゲームで 4 倍にしていた。選手本人の声は倍率なしで鳴らすので、ここで 4 倍にしておく
+    #   打球音も入った録音なので、全体を遠くにしてから、はっきりした打球音を重ね直す
     pre, _ = sf.read(os.path.join(OUT, "grunt_pre.wav"))
     hit, _ = sf.read(os.path.join(OUT, "hit_voice.wav"))
-    sf.write(os.path.join(OUT, "alcarazz_grunt_pre.wav"), np.clip(pre * 4.0, -1, 1).astype(np.float32), SR, subtype="PCM_16")
-    sf.write(os.path.join(OUT, "alcarazz_hit_voice.wav"), hit.astype(np.float32), SR, subtype="PCM_16")
+    x = np.concatenate([pre * 4.0, hit])
+    pre, hit = make_pair(x, 0, len(pre), len(x), 1, FAR["alcarazz"], 1)
+    sf.write(os.path.join(OUT, "alcarazz_grunt_pre.wav"), np.clip(pre, -1, 1).astype(np.float32), SR, subtype="PCM_16")
+    sf.write(os.path.join(OUT, "alcarazz_hit_voice.wav"), np.clip(hit, -1, 1).astype(np.float32), SR, subtype="PCM_16")
     print(f"alcarazz_grunt_pre         {len(pre) / SR:.2f}s   alcarazz_hit_voice         {len(hit) / SR:.2f}s   (いまの共通の声)")
     count = {"alcarazz_grunt": 1}
     for suffix, base, contact, lead in CUTS:
@@ -80,20 +105,9 @@ def main():
         x = load(path[0])
         c, s = int(contact * SR), int((contact - lead) * SR)
         e = tail_end(x, c)
-        seg = far_away(x[s:e], len(count) + int(contact * 1000))   # 打つ前と後をまとめて加工（響きがつながるように）
-        cc = c - s
-        # 打球音（芯で打った音）を打った瞬間に重ねる
-        goods = sorted(glob.glob(os.path.join(OUT, "hit_good*.wav")))
-        ball = trim(load(goods[int(contact * 1000) % len(goods)]))
-        ball = ball / max(np.max(np.abs(ball)), 1e-6) * HIT_MIX * np.max(np.abs(seg[cc:]))
-        seg[cc:cc + len(ball)] += ball[: len(seg) - cc]
-        pre, hit = seg[:cc].copy(), seg[cc:].copy()
-        g = HIT_PEAK / max(np.max(np.abs(hit)), 1e-6)       # 打つ前と同じ倍率
-        pre, hit = pre * g, hit * g
-        n = int(0.01 * SR)
-        pre[:n] *= np.linspace(0, 1, n)                     # 鳴り始めをなめらかに（つなぎ目は切らない）
-        f = int(0.06 * SR)
-        hit[-f:] *= np.linspace(1, 0, f)
+        who = base.rsplit("_", 1)[0]
+        pre, hit = make_pair(x, s, c, e, len(count) + int(contact * 1000), FAR.get(who, 1.0), int(contact * 1000))
+        g = 1.0
         k = count.get(base, 0) + 1
         count[base] = k
         suf = "" if k == 1 else f"_{k}"
