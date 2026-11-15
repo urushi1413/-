@@ -27,22 +27,22 @@ CUTS = [
     ("djokovic_serve.m4a", "djokovik_serve", 2.221, 0.40),
 ]
 HIT_PEAK = 0.89   # 打った後の声の大きさ（いまの hit_voice と同じ）
-HIT_MIX = 2.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の半分ほど（遠くの声）
+HIT_MIX = 3.0     # 重ねる打球音の大きさ（声のピークに対して）。録音に打球音が入っていないので足す。声は打球音の 3 分の 1 ほど（遠くの声）
 
 
 def far_away(x, seed):
     """近くで録った声を、コートの向こうで聞こえるように：
          マイクが近いと強くなる低い音を削り、高い音を少し丸め、コートの跳ね返りと響きを足す"""
     rng = np.random.default_rng(seed)
-    y = lp(hp(x, 230), 6000)
-    n = int(0.6 * SR)
+    y = lp(hp(x, 300), 4800)
+    n = int(0.8 * SR)
     ir = np.zeros(n)
-    ir[0] = 1.0
-    for d, g in ((0.011, 0.35), (0.019, 0.25), (0.031, 0.2), (0.047, 0.14), (0.068, 0.1)):   # 地面・後ろの壁・客席
+    ir[0] = 0.7                                       # 直接届く声は小さめ（遠い）
+    for d, g in ((0.013, 0.45), (0.022, 0.35), (0.034, 0.3), (0.051, 0.22), (0.072, 0.17), (0.095, 0.12)):   # 地面・後ろの壁・客席
         ir[int(d * SR)] += g * rng.choice([-1, 1])
-    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.11 * SR))
+    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.16 * SR))
     tail[: int(0.02 * SR)] = 0
-    ir += lp(tail, 4000) * 0.035
+    ir += lp(tail, 3500) * 0.06
     return fftconvolve(y, ir)[: len(y)]
 
 

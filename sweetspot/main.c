@@ -311,6 +311,7 @@ int main(void)
 
     // メニュー
     AppState app = APP_TITLE;
+    float bracketWait = 0.0f;          // 組み合わせ表に移ってすぐは入力を受け付けない（移るときの Enter が残っていて、表が一瞬で消えないように）
     static Tournament tour = { 0 };      // 大会
     static char oppShort[24] = "";       // 大会の予選上がりの名前（試合中の表示用）
 #define OPP_SHORT ((ai.persona == 0 && tour.active && oppShort[0]) ? oppShort : PERSONAS[ai.persona].shortName)
@@ -390,6 +391,7 @@ int main(void)
         if (app == APP_BRACKET) {
             SfxCrowd(false, 0.0f);
             bool goKey = IsKeyPressed(KEY_ENTER) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || (autopilot && IsKeyPressed(KEY_SPACE));
+            if (bracketWait > 0.0f) { bracketWait -= GetFrameTime(); goKey = false; }
             if (goKey && TourRevealActive()) { TourRevealSkip(); goKey = false; }   // 結果を見せている途中：飛ばすだけ
             if (goKey) {
                 int op = TourOpponent(&tour);
@@ -535,7 +537,7 @@ int main(void)
                     // 大会を始める：今のツアー（男子・女子）、試合の長さで
                     if (slamSel == SLAM_COUNT) TourStartSeason(&tour, gWomen, setsToWin);
                     else TourStart(&tour, gWomen, slamSel, setsToWin);
-                    app = APP_BRACKET;
+                    app = APP_BRACKET; bracketWait = 0.4f;
                 } else if (it == MI_NAME) { nameEdit = true; while (GetCharPressed() > 0) { } }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
@@ -740,7 +742,7 @@ int main(void)
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
                 { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
-                app = APP_BRACKET; mouseLocked = false; EnableCursor();
+                app = APP_BRACKET; bracketWait = 0.4f; mouseLocked = false; EnableCursor();
                 continue;
             }
             restart = true;
