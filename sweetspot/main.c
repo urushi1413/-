@@ -1113,7 +1113,8 @@ int main(void)
                     int best = -1;
                     for (int h = 0; h < historyCount; h++) {
                         const Ball *hb = &history[h];
-                        if (!hb->active || hb->bounces > 0 || hb->pos.y > SERVE_REACH + SERVE_OVERREACH) continue;
+                        // 届く高さも背の高さで変わる（トスも背が高いほど高い。同じ倍率にしないと、背の高い選手はトスの一番上が届かずに空振りになっていた）
+                        if (!hb->active || hb->bounces > 0 || hb->pos.y > SERVE_REACH * HumanServeHeightK() + SERVE_OVERREACH) continue;
                         if (best < 0 || hb->pos.y > history[best].pos.y) best = h;   // 届く範囲で一番高いところ
                     }
                     P.lastServeType = type;
