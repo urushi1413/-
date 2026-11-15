@@ -1867,9 +1867,9 @@ int main(void)
                 if (ball.pos.y > 0.15f) DrawLine3D(g, ball.pos, Fade(RAYWHITE, 0.45f));       // 高さの線
                 DrawSphere(ball.pos, vr, (Color){ 235, 255, 40, 255 });
                 // 光のふち（ボールの後に描く。先に描くと、ふちの奥行きでボールが隠れる）
-                rlDisableDepthMask();
+                rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
                 if (nearG > 0.01f) DrawSphere(ball.pos, vr * 1.7f, Fade((Color){ 255, 255, 140, 255 }, 0.22f * nearG));
-                rlEnableDepthMask();
+                rlDrawRenderBatchActive(); rlEnableDepthMask();
             }
         EndMode3D();
 

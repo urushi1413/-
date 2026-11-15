@@ -1079,10 +1079,10 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
     // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
     {
-        rlDisableDepthMask();
+        rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
         for (int k = 0; k < 3; k++)
             DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
-        rlEnableDepthMask();
+        rlDrawRenderBatchActive(); rlEnableDepthMask();
     }
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
@@ -1397,7 +1397,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             case HS_FADE:         // 横を刈り上げ（肌が透ける暗い色）、上だけ長い（キルギオス）
             {
                 Color fade = { (unsigned char)((hair.r + skin.r) / 2), (unsigned char)((hair.g + skin.g) / 2), (unsigned char)((hair.b + skin.b) / 2), 255 };
-                DrawSphere(WV(HP(-0.012f, 0.0f, 0.012f)), 0.1065f, fade);
+                DrawSphere(WV(HP(-0.034f, 0.0f, 0.020f)), 0.1000f, fade);   // 顔にかからないよう後ろ寄り
                 DrawSphere(WV(HP(0.005f, 0.0f, 0.072f)), 0.080f, hair);
                 DrawSphere(WV(HP(0.055f, 0.0f, 0.078f)), 0.055f, hair);
             } break;
@@ -1425,7 +1425,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         }
     }
     if (a->headband.a) {   // ヘッドバンド（フェデラー）・バンダナ（ナダル。後ろに結び目の端が垂れる）
-        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.025f)), WV(HP(0.0f, 0.0f, 0.062f)), 0.113f, 0.111f, 14, a->headband);
+        DrawCylinderEx(WV(HP(0.0f, 0.0f, 0.052f)), WV(HP(0.0f, 0.0f, 0.084f)), 0.110f, 0.106f, 14, a->headband);   // 眉の上のおでこ
         if (a->hairStyle == HS_NADAL) {
             float fl = 0.03f * sinf(ph) * move;
             DrawCylinderEx(WV(HP(-0.110f, 0.0f, 0.045f)), WV(Vector3Add(HP(-0.17f, 0.015f, -0.03f), (Vector3){ fl, 0, 0 })), 0.018f, 0.010f, 5, a->headband);
@@ -1474,16 +1474,29 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         DrawCylinderEx(WV(HP(0.098f, 0.0f, 0.010f)), WV(HP(0.122f, 0.0f, -0.018f)), 0.011f, 0.014f, 6, nose);   // 鼻
         if (a->beard > 0.0f) {   // ひげ：あごの線に沿って（無精ひげは肌に近い色、濃いほど髪の色）
             float bk = Clamp01(a->beard);
-            Color bc = { (unsigned char)(skin.r + (hair.r - skin.r) * bk), (unsigned char)(skin.g + (hair.g - skin.g) * bk), (unsigned char)(skin.b + (hair.b - skin.b) * bk), 255 };
-            // 頭の表面のすぐ外に、小さな粒を下あご一面に薄く並べる（口のまわりは空ける）
-            float r0 = 0.014f + 0.004f * bk, dist = 0.105f - 0.62f * r0;
-            for (int iv = 0; iv < 3; iv++) for (int ip = -4; ip <= 4; ip++) {
-                float v = -0.38f - 0.20f * iv, ph2 = ip * 0.36f;
-                if (iv == 0 && abs(ip) <= 1) continue;   // 口
-                if (iv == 0 && abs(ip) == 4) continue;
-                Vector3 d = { cosf(v) * cosf(ph2), cosf(v) * sinf(ph2), sinf(v) };
-                DrawSphere(WV(HP(d.x * dist, d.y * dist, d.z * dist)), r0, bc);
+            Color bc = { (unsigned char)((skin.r + (hair.r - skin.r) * bk) * 0.92f), (unsigned char)((skin.g + (hair.g - skin.g) * bk) * 0.92f), (unsigned char)((skin.b + (hair.b - skin.b) * bk) * 0.92f), 255 };
+            // 頭の表面にぴったり沿う薄い膜（下あご・ほお・あご先）。粒にしない。口のまわりは空ける
+            const float R = 0.1062f;
+            #define BP(v, p) WV(HP(R * cosf(v) * cosf(p), R * cosf(v) * sinf(p), R * sinf(v)))
+            Vector3 hW = WV(head);
+            #define BN(q) Vector3Normalize(Vector3Subtract((q), hW))
+            rlCheckRenderBatchLimit(5 * 18 * 12);   // 描く前に、まとめて描く入れ物に空きを作る（途中であふれると三角がずれる）
+            rlBegin(RL_TRIANGLES);
+            for (int iv = 0; iv < 5; iv++) for (int ip = -9; ip < 9; ip++) {
+                float v0 = -0.40f - 0.16f * iv, v1 = v0 - 0.16f;
+                float p0 = ip * 0.16f, p1 = p0 + 0.16f;
+                if (iv == 0 && p1 > -0.48f && p0 < 0.48f) continue;   // 口
+                if (iv == 0 && (p0 < -1.30f || p1 > 1.30f)) continue;   // もみあげの上は細く
+                Vector3 a0 = BP(v0, p0), a1 = BP(v0, p1), b0 = BP(v1, p0), b1 = BP(v1, p1);
+                // 頭と同じ陰影をつけて、両面に描く（向きで消えないように）
+                LitVertex(a0, BN(a0), bc); LitVertex(b0, BN(b0), bc); LitVertex(a1, BN(a1), bc);
+                LitVertex(a1, BN(a1), bc); LitVertex(b0, BN(b0), bc); LitVertex(b1, BN(b1), bc);
+                LitVertex(a0, BN(a0), bc); LitVertex(a1, BN(a1), bc); LitVertex(b0, BN(b0), bc);
+                LitVertex(a1, BN(a1), bc); LitVertex(b1, BN(b1), bc); LitVertex(b0, BN(b0), bc);
             }
+            rlEnd();
+            #undef BN
+            #undef BP
             if (bk > 0.5f) for (int sd = -1; sd <= 1; sd += 2)   // 口ひげ
                 DrawCylinderEx(WV(HP(0.100f, sd * 0.004f, -0.030f)), WV(HP(0.094f, sd * 0.026f, -0.036f)), 0.006f, 0.005f, 5, bc);
         }
