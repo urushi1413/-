@@ -36,11 +36,13 @@ void ApplyHumanTraits(void)
     const Persona *pp = &PERSONAS[gYouPersona % PERSONA_COUNT];
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     gRiseSkill = fmaxf(pp->risingPref, 0.0f);
-    gErrMul = Clamp(pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // 勝負強い選手は大事なポイントでミスが減る
+    const Mental *mm = &MENTAL[gYouPersona % PERSONA_COUNT];
+    float ck = pp->clutch * gPointImportance + (gDecidingSet ? mm->decider * (0.5f + 0.5f * gPointImportance) : 0.0f);
+    gErrMul = Clamp(pp->errMul * (1.0f - 0.40f * ck)                               // 勝負強い選手は大事なポイントでミスが減る（弱い選手は増える）
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f),   // 得意なコートほどミスが減る
                     0.6f, 1.4f);                                                 // 自分が使うときは 0.6〜1.4 倍に収める
     gServeAdd = pp->serveAdd;
-    gServeErrMul = Clamp(1.0f - 2.0f * pp->serveSkillAdd, 0.6f, 1.4f);
+    gServeErrMul = Clamp(1.0f - 2.0f * pp->serveSkillAdd, 0.6f, 1.4f) * (1.0f + 0.8f * mm->dfNerves * gPointImportance);   // 緊張でサーブがぶれる
     RestoreHumanContact();
 }
 float PlayerRunSpeed(void)

@@ -34,12 +34,12 @@ const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
     // big                                                      set                                   match                              lose                                  win    lose
     { { CELEB_FIST, CELEB_RACKET_UP, 0 },                       { CELEB_ARMS_UP, CELEB_RACKET_UP },   { CELEB_ARMS_UP, CELEB_RACKET_UP }, { 0, 0 },                             0.30f, 0.00f },   // AI
     { { CELEB_FIST, CELEB_FIST, CELEB_RACKET_POINT },           { CELEB_RACKET_UP, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.55f, 0.00f },   // フェデラー
-    { { CELEB_ROAR, CELEB_ROAR, CELEB_RACKET_UP },              { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_HEART, CELEB_ROAR },        { 0, 0 },                             0.75f, 0.00f },   // ジョコビッチ
+    { { CELEB_ROAR, CELEB_EAR, CELEB_RACKET_UP },               { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_HEART, CELEB_ROAR },        { 0, 0 },                             0.75f, 0.00f },   // ジョコビッチ
     { { CELEB_VAMOS, CELEB_VAMOS, CELEB_JUMP_FIST },            { CELEB_JUMP_FIST, CELEB_VAMOS },     { CELEB_KNEES, CELEB_JUMP_FIST },   { 0, 0 },                             0.90f, 0.00f },   // ナダル
     { { CELEB_COMEON, CELEB_COMEON, CELEB_JUMP_FIST },          { CELEB_COMEON, CELEB_ARMS_UP },      { CELEB_ARMS_UP, CELEB_KNEES },     { CELEB_RANT, CELEB_HANDS_HEAD },     0.85f, 0.55f },   // マレー
-    { { CELEB_JUMP_FIST, CELEB_VAMOS, CELEB_RACKET_POINT },     { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.85f, 0.00f },   // アルカラス：跳んで拳、観客をあおる
+    { { CELEB_JUMP_FIST, CELEB_EAR, CELEB_RACKET_POINT },       { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.85f, 0.00f },   // アルカラス：跳んで拳、観客をあおる
     { { CELEB_FIST, CELEB_FIST, 0 },                           { CELEB_FIST, CELEB_RACKET_UP },      { CELEB_ARMS_UP, CELEB_RACKET_UP }, { 0, 0 },                             0.40f, 0.00f },   // シナー：静か
-    { { CELEB_FIST, 0, 0 },                                    { CELEB_RACKET_UP, 0 },               { CELEB_ARMS_UP, 0 },               { CELEB_HANDS_HEAD, CELEB_RANT },     0.20f, 0.30f },   // メドベデフ：あまり喜ばない
+    { { CELEB_SHRUG, CELEB_SHRUG, CELEB_FIST },                 { CELEB_SHRUG, CELEB_RACKET_UP },     { CELEB_SHRUG, CELEB_SHRUG },       { CELEB_HANDS_HEAD, CELEB_RANT },     0.25f, 0.35f },   // メドベデフ：喜ばない（勝っても手を少し広げるだけ）
     { { CELEB_RACKET_POINT, CELEB_ROAR, CELEB_JUMP_FIST },      { CELEB_ROAR, CELEB_RACKET_POINT },   { CELEB_ROAR, CELEB_ARMS_UP },      { CELEB_RANT, CELEB_HANDS_HEAD },     0.70f, 0.60f },   // キルギオス：観客をあおる、すぐ怒る
     { { CELEB_COMEON, CELEB_ROAR, CELEB_FIST },                { CELEB_ROAR, CELEB_ARMS_UP },        { CELEB_ARMS_UP, CELEB_KNEES },     { 0, 0 },                             0.85f, 0.00f },   // ウィリアムズ：カモン！と吠える
     { { CELEB_FIST, CELEB_FIST, CELEB_JUMP_FIST },             { CELEB_JUMP_FIST, CELEB_ARMS_UP },   { CELEB_KNEES, CELEB_ARMS_UP },     { 0, 0 },                             0.60f, 0.00f },   // シフィオンテク
@@ -52,12 +52,56 @@ const CelebStyle CELEB_STYLE[PERSONA_COUNT] = {
 };
 
 // しぐさの長さ
+// サーブ前の儀式・ポイント間のしぐさ・プレッシャー（リサーチより）
+//   ジョコビッチ：ボールを何度もつく（ふつう 10 回前後、大事なポイントで 20 回近く）。勝負強さは一番
+//   ナダル：パンツを引っぱり、肩・鼻・耳を触る儀式。勝負強い
+//   フェデラー：髪を耳にかけ、2〜3 回つくだけで速い
+//   シャラポワ：ポイントの間は後ろを向いてガットを直す
+//   ズベレフ：プレッシャーに弱く、大事なポイントのセカンドでダブルフォールト。グランドスラム決勝で 3 敗
+//   錦織：最終セットの勝率が歴代 3 位（72.5%）
+//   キルギオス：アンダーサーブ、先にセットを取られると気持ちが切れる
+//   サバレンカ・ガウフ：プレッシャーでダブルフォールトが増える時期があった
+//   メドベデフ：あまり喜ばない、判定や観客にいら立って崩れる
+const Mental MENTAL[PERSONA_COUNT] = {
+    //  サーブ前        つく回数    間のしぐさ       DF緊張 最終set 崩れ  切れる アンダー
+    { RIT_BOUNCE,  3,  4, 1,  0,           0.00f, 0.00f, 0.00f, 0.00f, 0.00f, 0.00f },   // 癖なし
+    { RIT_HAIR,    2,  3, 0,  RIT_HAIR,    0.35f, 0.00f, 0.10f, 0.00f, 0.00f, 0.00f },   // フェデラー
+    { RIT_BOUNCE,  8, 13, 6,  0,           0.00f, 0.00f, 0.60f, 0.00f, 0.00f, 0.00f },   // ジョコビッチ
+    { RIT_NADAL,   4,  7, 2,  RIT_NADAL,   0.60f, 0.00f, 0.30f, 0.00f, 0.00f, 0.00f },   // ナダル
+    { RIT_BOUNCE,  3,  5, 2,  0,           0.00f, 0.00f, 0.20f, 0.25f, 0.00f, 0.00f },   // マレー
+    { RIT_BOUNCE,  2,  4, 1,  0,           0.00f, 0.00f, 0.30f, 0.10f, 0.00f, 0.00f },   // アルカラス
+    { RIT_BOUNCE,  2,  3, 0,  0,           0.00f, 0.00f, 0.30f, 0.00f, 0.00f, 0.00f },   // シナー
+    { RIT_BOUNCE,  3,  6, 2,  0,           0.00f, 0.10f, 0.10f, 0.50f, 0.00f, 0.00f },   // メドベデフ
+    { RIT_BOUNCE,  1,  2, 0,  0,           0.00f, 0.00f, 0.00f, 0.50f, 0.40f, 0.06f },   // キルギオス
+    { RIT_BOUNCE,  4,  5, 1,  0,           0.00f, 0.00f, 0.30f, 0.10f, 0.00f, 0.00f },   // ウィリアムズ
+    { RIT_HAIR,    3,  4, 1,  RIT_HAIR,    0.50f, 0.10f, 0.20f, 0.20f, 0.00f, 0.00f },   // シフィオンテク
+    { RIT_BOUNCE,  3,  5, 2,  0,           0.00f, 0.70f, 0.00f, 0.35f, 0.00f, 0.00f },   // サバレンカ
+    { RIT_BOUNCE,  3,  4, 1,  0,           0.00f, 0.60f, 0.10f, 0.30f, 0.00f, 0.00f },   // ガウフ
+    { RIT_STRINGS, 2,  2, 0,  RIT_STRINGS, 0.70f, 0.10f, 0.30f, 0.00f, 0.00f, 0.00f },   // シャラポワ
+    { RIT_BOUNCE,  2,  3, 0,  0,           0.00f, 0.00f, 0.20f, 0.00f, 0.00f, 0.00f },   // バーティ
+    { RIT_BOUNCE,  3,  5, 1,  0,           0.00f, 0.10f, 0.90f, 0.10f, 0.00f, 0.00f },   // 錦織
+    { RIT_BOUNCE,  4,  6, 4,  0,           0.00f, 0.80f, 0.00f, 0.35f, 0.00f, 0.00f },   // ズベレフ
+};
+bool gDecidingSet = false;
+
+float RitualStart(int kind)
+{
+    switch (kind) {
+        case RIT_NADAL:   return 1.95f;
+        case RIT_HAIR:    return 0.80f;
+        case RIT_STRINGS: return 2.10f;
+        default:          return 0.20f;
+    }
+}
+float RitualDuration(int kind, int bounces) { return RitualStart(kind) + bounces * RIT_BOUNCE_T + (bounces > 0 ? 0.25f : 0.10f); }
+
 float CelebDuration(int kind)
 {
     switch (kind) {
         case CELEB_KNEES: return 3.2f;
         case CELEB_HEART: return 2.6f;
         case CELEB_RANT:  return 1.9f;
+        case CELEB_EAR:   return 1.8f;
         case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_RACKET_POINT: case CELEB_HANDS_HEAD: return 1.9f;
         default: return CELEB_TIME;
     }
@@ -67,27 +111,27 @@ float CelebDuration(int kind)
 const Persona PERSONAS[PERSONA_COUNT] = {
     //  name               short       左利き 片手  速さ   反応    ﾀｲﾐﾝｸﾞ 位置  強気   ｻｰﾌﾞ  安定   ｺｰｽ    回転  ﾊﾞｯｸｽﾗｲｽ ﾛﾌﾞ ﾄﾞﾛｯﾌﾟ ﾈｯﾄ  S&V   ﾊﾞｯｸ狙い ﾘﾀｰﾝ  ﾎﾞﾚｰ  ﾗｲｼﾞﾝｸﾞ ｽﾗｲｽ ﾌﾞﾚ   勝負強さ ｺｰﾄ(ﾊｰﾄﾞ,ｸﾚｰ,芝)
     { "AI",              "AI",       false, false, 0.00f,  0.00f, 1.00f, 1.00f, 0.00f,  0.0f, 0.00f,  0.00f, 1.00f, 0.00f, 0.35f, 0.00f, 1.0f, -1.0f, 0.00f, 0.0f, 0.00f, 0.00f, 0.00f, 1.00f, 0.00f, { 0.00f,  0.00f,  0.00f }, { 70, 90, 200, 255 } },
-    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.25f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.20f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
+    { "Rogerr Federerr", "FEDERERR", false, true,  0.10f, -0.01f, 0.59f, 0.63f, 0.05f, 8.0f, 0.09f, -0.06f, 0.90f, 0.25f, 0.30f, 0.08f, 1.6f,  0.20f, 0.20f, 0.3f, 0.60f, 0.80f, 1.00f, 0.82f, 0.30f, { -0.06f, -0.26f, 0.10f }, { 200, 40, 50, 255 } },
     { "Novac Djokovik",  "DJOKOVIK", false, false, 0.35f, -0.05f, 0.62f, 0.62f, 0.00f, 4.0f, 0.10f, -0.03f, 1.05f, 0.08f, 0.30f, 0.04f, 0.7f,  0.03f, 0.25f, 0.9f, 0.30f, 0.40f, 0.20f, 0.70f, 1.00f, { -0.10f, -0.14f, -0.22f }, { 40, 60, 140, 255 } },
-    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.20f, { -0.22f, 0.40f, -0.15f }, { 240, 140, 40, 255 } },
-    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.20f, { -0.16f, -0.30f, -0.24f }, { 30, 150, 140, 255 } },
+    { "Rafa Nadar",      "NADAR",    true,  false, 0.40f, -0.03f, 0.42f, 0.45f, 0.05f, -8.0f, 0.08f,  0.00f, 1.60f, 0.05f, 0.30f, 0.03f, 0.8f,  0.03f, 0.40f, 0.4f, 0.20f, 0.00f, 0.00f, 0.85f, 0.85f, { -0.22f, 0.40f, -0.15f }, { 240, 140, 40, 255 } },
+    { "Andie Murraye",   "MURRAYE",  false, false, 0.30f, -0.04f, 0.45f, 0.48f, 0.00f, 2.0f, 0.07f, -0.02f, 1.00f, 0.25f, 0.40f, 0.06f, 0.6f,  0.05f, 0.20f, 0.7f, 0.35f, 0.20f, 0.50f, 0.85f, 0.40f, { -0.16f, -0.30f, -0.24f }, { 30, 150, 140, 255 } },
     // ---- 男子（追加）----
-    { "Carlos Alcarazz", "ALCARAZZ", false, false, 0.45f, -0.05f, 0.56f, 0.56f, 0.15f, 6.0f, 0.07f, -0.03f, 1.25f, 0.08f, 0.30f, 0.12f, 1.2f,  0.05f, 0.25f, 0.6f, 0.45f, 0.30f, 0.30f, 0.90f, 0.50f, { -0.06f, -0.04f, -0.08f }, { 60, 170, 200, 255 } },
-    { "Jannik Sinnerr",  "SINNERR",  false, false, 0.30f, -0.04f, 0.55f, 0.55f, 0.12f, 6.0f, 0.08f, -0.03f, 0.95f, 0.03f, 0.25f, 0.02f, 0.6f,  0.02f, 0.20f, 0.9f, 0.25f, 0.50f, 0.00f, 0.80f, 0.40f, { 0.00f, -0.16f, -0.14f }, { 30, 90, 70, 255 } },
+    { "Carlos Alcarazz", "ALCARAZZ", false, false, 0.45f, -0.05f, 0.56f, 0.56f, 0.15f, 6.0f, 0.07f, -0.03f, 1.25f, 0.08f, 0.30f, 0.12f, 1.2f,  0.05f, 0.25f, 0.6f, 0.45f, 0.30f, 0.30f, 0.90f, 0.70f, { -0.06f, -0.04f, -0.08f }, { 60, 170, 200, 255 } },
+    { "Jannik Sinnerr",  "SINNERR",  false, false, 0.30f, -0.04f, 0.55f, 0.55f, 0.12f, 6.0f, 0.08f, -0.03f, 0.95f, 0.03f, 0.25f, 0.02f, 0.6f,  0.02f, 0.20f, 0.9f, 0.25f, 0.50f, 0.00f, 0.80f, 0.65f, { 0.00f, -0.16f, -0.14f }, { 30, 90, 70, 255 } },
     { "Daniil Medvedeb", "MEDVEDEB", false, false, 0.38f, -0.03f, 0.55f, 0.56f, 0.05f, 6.0f, 0.08f, -0.02f, 0.85f, 0.02f, 0.40f, 0.02f, 0.5f,  0.00f, 0.20f, 0.5f, 0.20f, -0.40f, 0.00f, 0.70f, 0.30f, { 0.14f, -0.16f, -0.06f }, { 90, 140, 200, 255 } },
-    { "Nick Kirgios",    "KIRGIOS",  false, false, 0.10f, -0.02f, 0.75f, 0.80f, 0.30f, 18.0f, 0.12f, -0.08f, 1.00f, 0.15f, 0.35f, 0.10f, 1.0f,  0.10f, 0.20f, 0.2f, 0.45f, 0.40f, 0.30f, 1.05f, 0.00f, { 0.02f, -0.18f, 0.12f }, { 25, 25, 30, 255 } },
+    { "Nick Kirgios",    "KIRGIOS",  false, false, 0.10f, -0.02f, 0.75f, 0.80f, 0.30f, 18.0f, 0.12f, -0.08f, 1.00f, 0.15f, 0.35f, 0.10f, 1.0f,  0.10f, 0.20f, 0.2f, 0.45f, 0.40f, 0.30f, 1.05f, -0.20f, { 0.02f, -0.18f, 0.12f }, { 25, 25, 30, 255 } },
     // ---- 女子 ----
-    { "Serenah Williamz", "WILLIAMZ", false, false, 0.15f, -0.02f, 0.60f, 0.62f, 0.25f, 20.0f, 0.10f, -0.06f, 0.95f, 0.05f, 0.25f, 0.03f, 0.8f, 0.05f, 0.25f, 0.8f, 0.35f, 0.30f, 0.00f, 0.85f, 0.60f, { 0.00f, -0.20f, 0.04f }, { 230, 60, 140, 255 }, true },
-    { "Iga Swiontek",     "SWIONTEK", false, false, 0.35f, -0.04f, 0.55f, 0.56f, 0.12f, 4.0f, 0.08f, -0.03f, 1.45f, 0.03f, 0.25f, 0.03f, 0.6f, 0.02f, 0.25f, 0.8f, 0.25f, 0.40f, 0.00f, 0.80f, 0.35f, { -0.24f, 0.30f, -0.30f }, { 90, 110, 160, 255 }, true },
-    { "Aryna Sabalenco",  "SABALENCO", false, false, 0.15f, -0.02f, 0.60f, 0.62f, 0.30f, 12.0f, 0.05f, -0.05f, 1.00f, 0.03f, 0.20f, 0.04f, 0.7f, 0.02f, 0.20f, 0.7f, 0.30f, 0.30f, 0.00f, 1.00f, 0.30f, { 0.02f, -0.15f, -0.10f }, { 240, 240, 240, 255 }, true },
-    { "Coco Gauph",       "GAUPH",    false, false, 0.45f, -0.06f, 0.60f, 0.58f, 0.00f, 8.0f, 0.06f, -0.03f, 1.05f, 0.05f, 0.35f, 0.03f, 0.7f, 0.02f, 0.20f, 0.6f, 0.30f, 0.10f, 0.00f, 0.88f, 0.30f, { -0.06f, -0.10f, -0.12f }, { 250, 180, 40, 255 }, true },
-    { "Maria Sharapowa",  "SHARAPOWA", false, false, -0.05f, -0.02f, 0.58f, 0.60f, 0.25f, 6.0f, 0.06f, -0.04f, 0.90f, 0.02f, 0.20f, 0.03f, 0.6f, 0.02f, 0.20f, 0.8f, 0.25f, 0.40f, 0.00f, 0.95f, 0.50f, { -0.08f, 0.10f, -0.15f }, { 255, 190, 210, 255 }, true },
-    { "Ash Bartie",       "BARTIE",   false, false, 0.25f, -0.04f, 0.58f, 0.58f, 0.05f, 6.0f, 0.08f, -0.04f, 1.05f, 0.60f, 0.30f, 0.08f, 1.3f, 0.10f, 0.25f, 0.5f, 0.60f, 0.40f, 0.90f, 0.85f, 0.30f, { -0.06f, -0.15f, 0.10f }, { 40, 120, 200, 255 }, true },
+    { "Serenah Williamz", "WILLIAMZ", false, false, 0.15f, -0.02f, 0.60f, 0.62f, 0.25f, 20.0f, 0.10f, -0.06f, 0.95f, 0.05f, 0.25f, 0.03f, 0.8f, 0.05f, 0.25f, 0.8f, 0.35f, 0.30f, 0.00f, 0.85f, 0.90f, { 0.00f, -0.20f, 0.04f }, { 230, 60, 140, 255 }, true },
+    { "Iga Swiontek",     "SWIONTEK", false, false, 0.35f, -0.04f, 0.55f, 0.56f, 0.12f, 4.0f, 0.08f, -0.03f, 1.45f, 0.03f, 0.25f, 0.03f, 0.6f, 0.02f, 0.25f, 0.8f, 0.25f, 0.40f, 0.00f, 0.80f, 0.50f, { -0.24f, 0.30f, -0.30f }, { 90, 110, 160, 255 }, true },
+    { "Aryna Sabalenco",  "SABALENCO", false, false, 0.15f, -0.02f, 0.60f, 0.62f, 0.30f, 12.0f, 0.05f, -0.05f, 1.00f, 0.03f, 0.20f, 0.04f, 0.7f, 0.02f, 0.20f, 0.7f, 0.30f, 0.30f, 0.00f, 1.00f, 0.00f, { 0.02f, -0.15f, -0.10f }, { 240, 240, 240, 255 }, true },
+    { "Coco Gauph",       "GAUPH",    false, false, 0.45f, -0.06f, 0.60f, 0.58f, 0.00f, 8.0f, 0.06f, -0.03f, 1.05f, 0.05f, 0.35f, 0.03f, 0.7f, 0.02f, 0.20f, 0.6f, 0.30f, 0.10f, 0.00f, 0.88f, 0.20f, { -0.06f, -0.10f, -0.12f }, { 250, 180, 40, 255 }, true },
+    { "Maria Sharapowa",  "SHARAPOWA", false, false, -0.05f, -0.02f, 0.58f, 0.60f, 0.25f, 6.0f, 0.06f, -0.04f, 0.90f, 0.02f, 0.20f, 0.03f, 0.6f, 0.02f, 0.20f, 0.8f, 0.25f, 0.40f, 0.00f, 0.95f, 0.80f, { -0.08f, 0.10f, -0.15f }, { 255, 190, 210, 255 }, true },
+    { "Ash Bartie",       "BARTIE",   false, false, 0.25f, -0.04f, 0.58f, 0.58f, 0.05f, 6.0f, 0.08f, -0.04f, 1.05f, 0.60f, 0.30f, 0.08f, 1.3f, 0.10f, 0.25f, 0.5f, 0.60f, 0.40f, 0.90f, 0.85f, 0.40f, { -0.06f, -0.15f, 0.10f }, { 40, 120, 200, 255 }, true },
     // ---- 男子（追加 2）----
     //   錦織：足が速く反応も速い。上がり際で早く打つ。リターンとバックハンドがうまい。サーブは遅め。ハードが得意
     { "Kei Nishikoli",   "NISHIKOLI", false, false, 0.30f, -0.04f, 0.60f, 0.58f, 0.10f, -6.0f, 0.03f, -0.02f, 1.10f, 0.05f, 0.30f, 0.06f, 0.8f,  0.02f, 0.20f, 0.9f, 0.30f, 0.70f, 0.00f, 0.92f, 0.20f, { -0.02f, -0.15f, -0.12f }, { 60, 60, 70, 255 } },
     //   ズベレフ：サーブがとても速い。両手バックが強い。ベースラインの後ろで粘る。クレーとハードが得意
-    { "Sascha Zverew",   "ZVEREW",    false, false, 0.25f, -0.03f, 0.57f, 0.57f, 0.10f, 15.0f, 0.08f, -0.05f, 1.05f, 0.03f, 0.25f, 0.02f, 0.6f,  0.02f, 0.25f, 0.6f, 0.20f, 0.10f, 0.00f, 0.85f, 0.15f, { 0.04f, 0.10f, -0.06f }, { 120, 180, 230, 255 } },
+    { "Sascha Zverew",   "ZVEREW",    false, false, 0.25f, -0.03f, 0.57f, 0.57f, 0.10f, 15.0f, 0.08f, -0.05f, 1.05f, 0.03f, 0.25f, 0.02f, 0.6f,  0.02f, 0.25f, 0.6f, 0.20f, 0.10f, 0.00f, 0.85f, -0.60f, { 0.04f, 0.10f, -0.06f }, { 120, 180, 230, 255 } },
 };
 
 // 強さに選手の癖を足した、実際の能力
@@ -120,10 +164,18 @@ AiLevel EffLevel(const Opponent *ai)
     #undef BOOSTMUL
     L.serveMargin   = fmaxf(0.15f, L.serveMargin + p->serveMarginAdd);
     // 勝負強さ：大事なポイントほど、タイミングが安定し、反応が速く、サーブがぶれない
-    float k = p->clutch * gPointImportance;
+    const Mental *mm = &MENTAL[ai->persona % PERSONA_COUNT];
+    float k = p->clutch * gPointImportance + (gDecidingSet ? mm->decider * (0.5f + 0.5f * gPointImportance) : 0.0f);
+    k = Clamp(k, -1.0f, 1.2f);
     L.timingSigmaMs *= 1.0f - 0.50f * k;
     L.reaction      = fmaxf(0.10f, L.reaction - 0.05f * k);
     L.serveSkill    = Clamp(L.serveSkill + 0.06f * k, 0.3f, 0.97f);
+    // 気持ちが崩れている：タイミングと立ち位置がぶれ、足が止まる
+    float tl = Clamp01(ai->tilt);
+    L.timingSigmaMs *= 1.0f + 0.45f * tl;
+    L.posErr        *= 1.0f + 0.35f * tl;
+    L.speed         -= 0.35f * tl;
+    L.serveSkill     = Clamp(L.serveSkill - 0.05f * tl, 0.3f, 0.97f);
     // ラケットを叩きつけた後：吹っ切れて集中する
     float r = Clamp01(ai->rage);
     L.timingSigmaMs *= 1.0f - RAGE_TIMING * r;
@@ -442,7 +494,8 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
         float lapse = LEVEL_LAPSE[ai->level % 3] * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
-                    * (1.0f - RAGE_LAPSE * Clamp01(ai->rage));
+                    * (1.0f - RAGE_LAPSE * Clamp01(ai->rage))
+                    * (1.0f + 1.2f * Clamp01(ai->tilt));   // 気持ちが崩れていると凡ミスが増える
         if (sAttack) lapse = fmaxf(lapse, AI_LAPSE_ATTACK_MIN);   // 決めにいく球は、ミスの少ない選手でも外すことがある
         if (RandRange(0.0f, 1.0f) < lapse) { sLapse = true; gErrMul = fmaxf(gErrMul, 1.0f) * AI_LAPSE_ERR; }   // 打ち損じは、うまい選手でも普通の選手と同じくらいぶれる
         else if (sAttack) gErrMul *= AI_ATTACK_ERR;   // 決めにいく球は、少しだけ力む
@@ -490,6 +543,37 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     return true;
 }
 
+// アンダーサーブ：下から短く、逆回転と横回転をかけてネットのすぐ先に落とす（相手がベースラインの後ろにいるとき）
+Ball AiServeUnderarm(Opponent *ai, bool deuce)
+{
+    const Persona *pp = &PERSONAS[ai->persona % PERSONA_COUNT];
+    Vector3 me = { deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
+    ai->pos = Rot180(me);
+    Vector3 contact = { me.x + (pp->lefty ? -0.45f : 0.45f), 0.45f, me.z - 0.30f };
+    float x0, x1;
+    ServiceBox(me.x, -1, &x0, &x1);
+    Vector3 target = { 0.5f * (x0 + x1) + RandRange(-0.6f, 0.6f), 0.0f, -RandRange(1.6f, 2.6f) };
+    float kmh = RandRange(55.0f, 70.0f);
+    Vector3 spin = { -900.0f, pp->lefty ? -1200.0f : 1200.0f, 0.0f };   // 逆回転と横回転：弾んでから止まって横へ逃げる
+    Vector3 dir; float pitch;
+    SolveServe(contact, target, kmh / 3.6f, spin, &dir, &pitch);
+    dir = Vector3RotateByAxisAngle(dir, (Vector3){ 0, 1, 0 }, RandNormal() * 1.0f * DEG2RAD);
+    Ball b = MakeServeBall(contact, dir, kmh / 3.6f, pitch + RandNormal() * 0.4f * DEG2RAD, spin);
+    b.boxX0 = x0; b.boxX1 = x1;
+    b.lastHitter = HITTER_OPP;
+    // 見た目：下からすくい上げる（低いフォア）
+    ai->anim.lastContact = (Contact){ .overhead = false, .forehand = true, .quality = 0.9f, .height = 0.45f };
+    ai->anim.smash = false; ai->anim.slice = true;
+    ai->anim.contactLocal = (Vector3){ contact.x - me.x, contact.y, me.z - contact.z };
+    ai->anim.swingT = 0.0f;
+    ai->lastKmh = kmh;
+    ai->lastServe = true;
+    ai->planned = false;
+    ai->lastTargetX = target.x;
+    ai->netRush = false;
+    return RotBall(b);
+}
+
 // AI のサーブ。deuce: デュースサイドから打つ。first: ファーストサーブ
 Ball AiServe(Opponent *ai, bool deuce, bool first)
 {
@@ -506,6 +590,7 @@ Ball AiServe(Opponent *ai, bool deuce, bool first)
     float q = Clamp01(1.0f - hErr / SERVE_TOL_H) * Clamp01(1.0f - Vector2Length(off) / TOSS_TOL);
     // 強さごとの安定感（低いほどぶれて、フォルトが増える）。セカンドは安全に入れにいくので、ぶれは小さい
     q *= first ? lv->serveSkill : lv->serveSkill + (1.0f - lv->serveSkill) * 0.65f;
+    if (!first) q *= 1.0f - 0.45f * MENTAL[ai->persona % PERSONA_COUNT].dfNerves * gPointImportance;   // 大事なポイントのセカンドで腕が縮む
     Vector3 contact = { me.x + (pp->lefty ? -0.25f : 0.25f) + off.x, SERVE_IDEAL_H * (1.0f + HeightDelta(ai->persona) / 185.0f) - hErr, me.z - 0.35f + off.y };   // 背の高い選手ほど高い打点から打つ   // 左利きは左でトス
 
     ServeType t;

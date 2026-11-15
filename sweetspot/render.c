@@ -738,9 +738,27 @@ static int VolleyKeys(Vector3 cl, float sgn, RKey *k)
 // ---- ポイント後のしぐさ ----
 // 両手（ラケットを持つ手とその向き、もう片方の手）と体（沈み込み・前傾・跳ぶ・膝上げ・膝つき・顔の向き）を時間で決める。
 // 手の高さは立っているとき（腰 0.88m）の値。体が沈んだ分は描くときに下げる
-typedef struct { Vector3 rh, rd, lh; float hipDrop, lean, jump, liftL, liftR, kneel, headUp, headShake, k, e; } CelebOut;
+typedef struct { Vector3 rh, rd, lh; float hipDrop, lean, jump, liftL, liftR, kneel, headUp, headShake, k, e; float turn; bool ballOn; Vector3 ball; } CelebOut;
 static float Pulse(float e, float c, float w) { float x = (e - c) / w; return (x > -1.0f && x < 1.0f) ? 0.5f + 0.5f * cosf(x * PI) : 0.0f; }
 float Smooth01(float x) { x = Clamp01(x); return x * x * (3.0f - 2.0f * x); }
+// ボールをつく：左手を腰の前で上下させ、球は手と地面を往復する。つき終わったら手に持つ
+static void BounceBall(float e0, int n, Vector3 *lh, Vector3 *rh, Vector3 *rd, CelebOut *t)
+{
+    float hb = 0.98f;
+    *rh = V3(0.34f, 0.98f, 0.12f); *rd = V3(0.20f, -0.50f, 0.84f);
+    t->lean = 0.16f; t->hipDrop = 0.0f; t->turn = 0.55f; t->ballOn = true;
+    float u = e0 / RIT_BOUNCE_T;
+    if (e0 < 0.0f || u >= (float)n) {   // つく前・つき終わった後は手に持つ
+        *lh = V3(-0.02f, hb, 0.38f);
+        t->ball = V3(lh->x, lh->y - 0.04f, lh->z + 0.02f);
+        return;
+    }
+    float f = u - floorf(u);
+    *lh = V3(-0.02f, hb + 0.05f * cosf(2.0f * PI * f) - 0.03f, 0.38f);   // 押し出して、戻ってくる球を迎える
+    float y = (hb - 0.04f) - (hb - 0.04f - BALL_R) * sinf(PI * f);
+    t->ball = V3(-0.02f, y, 0.40f);
+}
+
 bool CelebPose(const SwingAnim *a, CelebOut *o)
 {
     if (a->celebT <= 0.0f || a->celebKind == CELEB_NONE || a->smashT > 0.0f) return false;
@@ -816,9 +834,64 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
             lh = Vector3Lerp(V3(-0.06f, 1.36f, 0.30f), V3(-0.40f, 1.60f, 0.65f), th);
             t.headUp = 0.3f; t.lean = 0.05f * th;
         } break;
+        case CELEB_EAR:          // 耳に手を当てて「もっと聞かせて」と観客をあおる
+            lh = V3(-0.17f, 1.62f, -0.02f); rh = V3(0.48f, 1.28f, 0.22f); rd = V3(0.30f, 0.80f, 0.50f);
+            t.lean = -0.06f; t.headUp = 0.35f; t.turn = 0.25f * sinf(e * 2.2f);
+            break;
+        case CELEB_SHRUG:        // 両手を小さく広げるだけ（喜ばない）
+            rh = V3(0.40f, 1.02f, 0.28f); rd = V3(0.40f, -0.40f, 0.82f); lh = V3(-0.40f, 1.02f, 0.28f);
+            t.headShake = 0.25f;
+            break;
+        case RIT_BOUNCE:
+            BounceBall(e - RitualStart(RIT_BOUNCE), a->ritBounces, &lh, &rh, &rd, &t);
+            break;
+        case RIT_NADAL: {        // パンツを引っぱる → 肩 → 反対の肩 → 鼻 → 耳 → 鼻 → 反対の耳 → ボールをつく
+            static const Vector3 P[6] = { { -0.19f, 1.44f, 0.08f }, { 0.17f, 1.44f, 0.10f }, { 0.0f, 1.60f, 0.15f },
+                                          { -0.10f, 1.62f, 0.02f }, { 0.0f, 1.60f, 0.15f }, { 0.10f, 1.62f, 0.02f } };
+            if (e < 0.55f) {     // 後ろのパンツを 2 回引っぱる
+                float tug = Pulse(e, 0.18f, 0.12f) + Pulse(e, 0.40f, 0.12f);
+                lh = V3(-0.10f, 0.84f - 0.05f * tug, -0.17f); t.lean = 0.10f; t.turn = 0.3f;
+                rh = V3(0.34f, 0.98f, 0.12f); rd = V3(0.20f, -0.50f, 0.84f);
+            } else if (e < RitualStart(RIT_NADAL) - 0.1f) {
+                float u = (e - 0.55f) / 0.22f; int i = (int)u; if (i > 5) i = 5;
+                float f = Smooth01((u - i) / 0.5f);
+                Vector3 from = i == 0 ? V3(-0.10f, 0.84f, -0.17f) : P[i - 1];
+                lh = Vector3Lerp(from, P[i], f);
+                rh = V3(0.34f, 0.98f, 0.12f); rd = V3(0.20f, -0.50f, 0.84f); t.headUp = -0.2f; t.turn = 0.3f;
+            } else BounceBall(e - RitualStart(RIT_NADAL), a->ritBounces, &lh, &rh, &rd, &t);
+            if (a->ritBounces == 0 && e >= RitualStart(RIT_NADAL) - 0.1f) { lh = lh0; t.ballOn = false; }
+            if (e < RitualStart(RIT_NADAL) - 0.1f) t.ballOn = false;
+        } break;
+        case RIT_HAIR: {         // 右、左の順に髪を耳にかける → ボールをつく
+            if (e < 0.75f) {
+                float s1 = Smooth01(e / 0.18f) * (1.0f - Smooth01((e - 0.32f) / 0.10f));
+                float s2 = Smooth01((e - 0.38f) / 0.15f) * (1.0f - Smooth01((e - 0.62f) / 0.12f));
+                float sw = 0.04f * sinf(e * 18.0f);
+                lh = Vector3Lerp(lh0, V3(0.10f, 1.66f, 0.02f + sw), s1);
+                lh = Vector3Lerp(lh, V3(-0.10f, 1.66f, 0.02f + sw), s2);
+                rh = V3(0.34f, 0.98f, 0.12f); rd = V3(0.20f, -0.50f, 0.84f); t.turn = 0.3f;
+                t.ballOn = false;
+            } else if (a->ritBounces > 0) BounceBall(e - RitualStart(RIT_HAIR), a->ritBounces, &lh, &rh, &rd, &t);
+        } break;
+        case RIT_STRINGS: {      // 後ろを向いて、ラケットの面を見ながらガットを直す → 振り向いてボールをつく
+            float back = Smooth01(e / 0.35f) * (1.0f - Smooth01((e - 1.65f) / 0.35f));
+            if (e < 1.95f) {
+                rh = V3(0.06f, 1.12f, 0.30f); rd = Vector3Normalize(V3(0.0f, 0.55f, 0.83f));
+                Vector3 hd = Vector3Add(rh, Vector3Scale(rd, 0.42f));
+                lh = V3(hd.x + 0.04f * sinf(e * 9.0f), hd.y, hd.z - 0.02f);
+                t.headUp = -0.5f; t.turn = PI * back; t.ballOn = false;
+            } else if (a->ritBounces > 0) BounceBall(e - RitualStart(RIT_STRINGS), a->ritBounces, &lh, &rh, &rd, &t);
+        } break;
         default: return false;
     }
+    o->turn = t.turn * k; o->ballOn = t.ballOn; o->ball = t.ball;
     o->rh = Vector3Lerp(rh0, rh, k); o->rd = Vector3Normalize(Vector3Lerp(rd0, rd, k)); o->lh = Vector3Lerp(lh0, lh, k);
+    if (o->turn != 0.0f) {   // 体ごと回す：手・ラケット・ボールも肩と同じだけ回す
+        float c = cosf(o->turn), s = sinf(o->turn);
+        #define ROTY(v) (v) = V3((v).x * c + (v).z * s, (v).y, -(v).x * s + (v).z * c)
+        ROTY(o->rh); ROTY(o->rd); ROTY(o->lh); ROTY(o->ball);
+        #undef ROTY
+    }
     o->hipDrop = t.hipDrop * k; o->lean = t.lean * k; o->jump = t.jump * k; o->liftL = t.liftL * k; o->liftR = t.liftR * k;
     o->kneel = t.kneel * k; o->headUp = t.headUp * k; o->headShake = t.headShake * k; o->k = k; o->e = e;
     return true;
@@ -1108,6 +1181,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     CelebOut co = { 0 };
     bool celeb = CelebPose(a, &co);
     if (celeb) { hipY += KNEE_BEND * co.k; hipY -= co.hipDrop + 0.42f * co.kneel; leanV.z += co.lean; pos.y += co.jump; }   // しぐさの間は膝を伸ばす
+    if (celeb) { yaw += co.turn; hipYaw += co.turn * 0.8f; }   // 横を向く・後ろを向く（シャラポワ）
     leanV.z += 0.12f * a->slouch;              // 背中を丸める
     // よろめき：打った方へ体が流れて傾き、腰が落ちる（立て直すにつれて戻る）
     float stg = (!swinging || a->swingT > 0.12f) ? a->staggerK : 0.0f;
@@ -1405,6 +1479,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
     Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));
     DrawRacketBent(WV(hand), dW, nW, frame, a->broken);
+    if (celeb && co.ballOn) DrawSphere(W(co.ball.x, co.ball.y, co.ball.z), BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });   // 儀式：ボールをつく
     if (a->holdBall) DrawSphere(W(otherHand.x, otherHand.y + 0.02f, otherHand.z + 0.03f), BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });   // サーブ前：左手にボール
     #undef W
     #undef WV

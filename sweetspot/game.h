@@ -107,7 +107,29 @@ typedef struct {
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
 enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT,
-       CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART, CELEB_COUNT };
+       CELEB_HANDS_HEAD, CELEB_RACKET_UP, CELEB_RACKET_POINT, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_KNEES, CELEB_HEART,
+       CELEB_EAR,       // 耳に手を当てて観客をあおる（ジョコビッチ、アルカラス）
+       CELEB_SHRUG,     // 両手を小さく広げるだけ（メドベデフ：喜ばない）
+       RIT_BOUNCE,      // サーブ前：ボールをつく（回数は ritBounces）
+       RIT_NADAL,       // ナダルの儀式：パンツを引っぱり、肩・鼻・耳を触ってから、ボールをつく
+       RIT_HAIR,        // 髪を耳にかけてから、ボールをつく（フェデラー、シフィオンテク）
+       RIT_STRINGS,     // 後ろを向いてガットを直してから、ボールをつく（シャラポワ）
+       CELEB_COUNT };
+#define RIT_BOUNCE_T 0.42f   // ボールを 1 回つく長さ（秒）
+float RitualStart(int kind);              // 儀式のうち、ボールをつき始めるまでの時間
+float RitualDuration(int kind, int bounces);
+// 選手の気持ちの癖：サーブ前の儀式、ポイント間のしぐさ、プレッシャーへの強さ（リサーチより）
+typedef struct {
+    int   serveRit, bMin, bMax, bBig;   // サーブ前の儀式と、ボールをつく回数（大事なポイントでは bBig 回増える）
+    int   betweenRit; float betweenChance;   // ポイントの間のしぐさ（自分が打たないとき）
+    float dfNerves;    // 大事なポイントのセカンドサーブでぶれる（ダブルフォールト）
+    float decider;     // 最終セットでの強さ（錦織）
+    float tilt;        // 大事なポイントやセットを落とすと崩れる量
+    float tank;        // セットを先に取られると気持ちが切れる量（キルギオス）
+    float underarm;    // ファーストサーブでアンダーサーブを打つ割合（相手が下がっているとき）
+} Mental;
+extern const Mental MENTAL[];
+extern bool gDecidingSet;   // 最終セット
 #define SMASH_TIME       2.2f    // ラケットを叩きつける見た目の長さ（秒）
 #define RAGE_TIMING      0.35f   // 怒りが最大のとき：タイミングのばらつきがこれだけ減る
 #define RAGE_POS         0.30f   //   立ち位置のずれが減る
@@ -369,6 +391,7 @@ typedef struct {
     float   celebT;        // ポイント後のしぐさの残り時間（0 ならしていない）
     int     celebKind;     // しぐさの種類（CELEB_*）
     float   celebDur;      // しぐさの長さ（秒）
+    int     ritBounces;    // 儀式でボールをつく回数（0 ならつかない）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     bool    female;        // 女子（スカートとポニーテール）
     float   smashT;        // ラケットを叩きつけている残り時間（0 ならしていない）
@@ -492,6 +515,7 @@ typedef struct {
     int     smashes;       // この試合で叩きつけた回数（2 回目からはポイントペナルティ）
     int     rageSet;       // 最後に叩きつけたセット（+1。0 はまだ）
     float   planH;         // 打つ予定の打点の高さ（スマッシュの構えを見せるため）
+    float   tilt;          // 気持ちが崩れている量（0〜1）。ポイントごとに弱まる
 } Opponent;
 
 typedef struct {
@@ -750,6 +774,7 @@ Vector3 ReturnPos(bool deuce, bool second);
 void AiPlan(Opponent *ai, const Ball *worldBall);
 ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Vector3 meAi, float *charge, Vector3 *target);
 bool AiSwing(Opponent *ai, Ball *ball, Vector3 player);
+Ball AiServeUnderarm(Opponent *ai, bool deuce);   // アンダーサーブ（キルギオス）
 Ball AiServe(Opponent *ai, bool deuce, bool first);
 void AiUpdate(Opponent *ai, const Ball *ball, float dt);
 const char *PointName(int p);

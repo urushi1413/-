@@ -202,7 +202,8 @@ int main(void)
     bool  playerGruntTried = false, aiGruntTried = false, botGruntTried = false;   // この球で、打つ前の声をもう鳴らしたか
     bool  playerFoot = false, aiFoot = false;   // この球で、フットワークの音をもう鳴らしたか
     bool  aiTossing = false;           // AI がトスを上げている
-    float aiTossT = 0.0f;         // Tab の 2 回目：試合の統計
+    float aiTossT = 0.0f;
+    bool  aiUnderarm = false;          // アンダーサーブ         // Tab の 2 回目：試合の統計
 
     // 試合
     Opponent ai = { 0 };
@@ -564,6 +565,7 @@ int main(void)
             score = (Score){ 0 };
             score.server = rand() % 2;
             score.setsToWin = setsToWin;
+            ai.tilt = 0.0f;
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -592,6 +594,7 @@ int main(void)
                 if (rvGame || setPt)                      gPointImportance = 1.0f;   // ブレーク／セット／マッチポイント
                 else if (score.tiebreak || (score.points[0] >= 2 && score.points[1] >= 2)) gPointImportance = 0.5f;   // 30-30、デュース、タイブレーク
                 else                                      gPointImportance = 0.0f;
+                gDecidingSet = score.setsToWin > 1 && score.sets[0] == score.setsToWin - 1 && score.sets[1] == score.setsToWin - 1;   // 最終セット
             }
             bool deuce = DeuceCourt(&score);
             deuceSide = deuce;
@@ -621,6 +624,16 @@ int main(void)
                 ai.standPos = ai.pos;
                 phaseTimer = RandRange(1.2f, 2.2f);   // 構えてからトスまで（毎回同じリズムだと読めてしまう）
                 aiTossing = false;
+                {   // サーブ前の儀式：選手ごと（ジョコビッチは何度もつく、ナダルは肩・鼻・耳を触る…）。大事なポイントほど長い
+                    const Mental *mm = &MENTAL[ai.persona % PERSONA_COUNT];
+                    int nb = GetRandomValue(mm->bMin, mm->bMax) + (gPointImportance >= 0.5f ? mm->bBig : 0);
+                    if (serveNo == 2 && mm->serveRit != RIT_BOUNCE) nb = GetRandomValue(1, 3);   // セカンドは短く
+                    int kind = serveNo == 2 && mm->serveRit == RIT_STRINGS ? RIT_BOUNCE : mm->serveRit;
+                    ai.anim.celebKind = kind; ai.anim.ritBounces = nb;
+                    ai.anim.celebDur = RitualDuration(kind, nb); ai.anim.celebT = ai.anim.celebDur;
+                    ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
+                    phaseTimer = ai.anim.celebDur + RandRange(0.15f, 0.45f);
+                }
             }
             phase = PH_SERVE;
             serveJudged = false;
@@ -640,7 +653,7 @@ int main(void)
             if (phaseTimer <= 0.0f) {
                 ball = FlipSides(AiServe(&bot, DeuceCourt(&score), serveNo == 1));
                 SfxServe(bot.anim.lastContact.quality, bot.lastKmh, false, Vector3Distance(cam.position, ball.pos));
-                ai.anim.splitT = SPLIT_TIME;
+                ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                 MLogShot(mlPoint, ++mlShot, false, "SERVE", bot.lastKmh, bot.anim.lastContact.quality, false, false, false, false, P.pos, ball.pos.y, ai.pos, Vector3Length(ai.vel));
                 rallyHits = 1;
                 P.pos = Rot180(bot.pos);
@@ -875,7 +888,7 @@ int main(void)
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
                         SfxServe(q, P.lastServeKmh, playerGrunt, Vector3Distance(cam.position, ball.pos));
-                        ai.anim.splitT = SPLIT_TIME;
+                        ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, "SERVE", P.lastServeKmh, q, false, false, false, false, P.pos, hb.pos.y, ai.pos, Vector3Length(ai.vel));
                         playerGrunt = false;
                         rallyHits = 1;
@@ -940,8 +953,16 @@ int main(void)
             // サーブのモーション：構え → トスを上げる（ラケットを担ぐ）→ 一番上を少し過ぎたところで打つ
             if (!aiTossing) {
                 phaseTimer -= simDt;
-                if (phaseTimer <= 0.0f) {
+                aiUnderarm = false;
+                if (phaseTimer <= 0.0f && serveNo == 1 && P.pos.z > HALF_LEN + 1.2f &&
+                    RandRange(0.0f, 1.0f) < MENTAL[ai.persona % PERSONA_COUNT].underarm) {
+                    // アンダーサーブ（キルギオス）：相手がベースラインのずっと後ろにいるときに、トスを上げずに下から
+                    aiUnderarm = true; aiTossing = true; aiTossT = AI_TOSS_HIT_T;
+                    ai.anim.celebT = 0.0f;
+                    snprintf(toast, sizeof(toast), "%s", TR("UNDERARM SERVE!", "アンダーサーブ！")); toastT = 2.0f;
+                } else if (phaseTimer <= 0.0f) {
                     aiTossing = true; aiTossT = 0.0f;
+                    ai.anim.celebT = 0.0f;
                     SfxStopApplause();
                     bool dc = DeuceCourt(&score);
                     Vector3 me = { dc ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
@@ -964,7 +985,7 @@ int main(void)
             if (aiTossing && aiTossT >= AI_TOSS_HIT_T) {
                 aiTossing = false;
                 ai.anim.windup = 0.0f;
-                ball = AiServe(&ai, DeuceCourt(&score), serveNo == 1);
+                ball = aiUnderarm ? AiServeUnderarm(&ai, DeuceCourt(&score)) : AiServe(&ai, DeuceCourt(&score), serveNo == 1);
                 SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
                 P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // レシーバーのスプリットステップ
                 MLogShot(mlPoint, ++mlShot, true, "SERVE", ai.lastKmh, ai.anim.lastContact.quality, false, false, false, false, ai.pos, ball.pos.y, P.pos, Vector3Length(P.vel));
@@ -1158,7 +1179,7 @@ int main(void)
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
-                        ai.anim.splitT = SPLIT_TIME;
+                        ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, SHOTS[type].name, P.lastKmh, c.quality, false, false, c.volley, c.isReturn, P.pos, c.height, ai.pos, Vector3Length(ai.vel));
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
                                DefensiveVoice(&c, type, P.pos.z, swingCharge), Vector3Distance(cam.position, ball.pos));
@@ -1250,7 +1271,7 @@ int main(void)
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
                     ms[0].shots++; ms[0].speedSum += bot.lastKmh;
-                    ai.anim.splitT = SPLIT_TIME;
+                    ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                     MLogShot(mlPoint, ++mlShot, false, SHOTS[bot.lastType].name, bot.lastKmh, bot.lastQ, bot.lastAttack, bot.lastLapse, bot.anim.lastContact.volley, bot.anim.lastContact.isReturn, P.pos, bot.anim.lastContact.height, ai.pos, Vector3Length(ai.vel));
                     SfxHit(bot.anim.lastContact.quality, bot.lastKmh, IsSliceShot(bot.lastType), botGrunt,
                            DefensiveVoice(&bot.anim.lastContact, bot.lastType, P.pos.z, 0.5f), Vector3Distance(cam.position, ball.pos));
@@ -1479,6 +1500,18 @@ int main(void)
                         if (RandRange(0.0f, 1.0f) < ch) { kind = PICK(cs->lose); SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
                     }
                     #undef PICK
+                    {   // 気持ち：大事なポイント・セットを落とすと崩れる（ポイントごとに戻る）。先にセットを取られると切れる（キルギオス）
+                        const Mental *mm = &MENTAL[ai.persona % PERSONA_COUNT];
+                        ai.tilt *= 0.80f;
+                        if (winner == 0 && (gPointImportance >= 1.0f || setEnded2)) ai.tilt = fminf(1.0f, ai.tilt + mm->tilt);
+                        if (mm->tank > 0.0f && score.sets[0] > score.sets[1]) ai.tilt = fmaxf(ai.tilt, mm->tank);
+                        // ポイントの間のしぐさ（ナダルの儀式、シャラポワは後ろを向いてガットを直す、髪を耳にかける）
+                        if (kind == CELEB_NONE && mm->betweenRit && !score.over && RandRange(0.0f, 1.0f) < mm->betweenChance) {
+                            ai.anim.celebKind = mm->betweenRit; ai.anim.ritBounces = 0;
+                            ai.anim.celebDur = RitualDuration(mm->betweenRit, 0); ai.anim.celebT = ai.anim.celebDur;
+                            ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
+                        }
+                    }
                     if (kind != CELEB_NONE) {
                         ai.anim.celebKind = kind; ai.anim.celebDur = CelebDuration(kind); ai.anim.celebT = ai.anim.celebDur;
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
@@ -1615,7 +1648,7 @@ int main(void)
             // サーブの構え（トスの前）：横向きに立ち、左手にボール
             P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY;
             bot.anim.serveStance = bot.anim.holdBall = false;
-            ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over;
+            ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over && ai.anim.celebT <= 0.0f;
             DrawFigure(P.pos, true, youShirt, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_MATCH)
