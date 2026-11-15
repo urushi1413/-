@@ -1537,7 +1537,7 @@ int main(void)
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
         prevAiSliding = ai.sliding;
-        SfxCrowd(mode == MODE_MATCH, 1.0f);
+        SfxCrowd(mode == MODE_MATCH, (phase == PH_PLAY || phase == PH_SERVE) ? 0.55f : 1.0f);   // ポイント中は観客は静か
         SfxUpdate();
         // フットワークの音（自分）：打つ 0.6 秒ほど前に、まだ動いて位置を合わせていたら「キュッ」を 2〜3 回
         if (!ball.active || ball.lastHitter != HITTER_OPP) playerFoot = false;
@@ -1601,6 +1601,7 @@ int main(void)
                 } else {
                     winner = 1 - hitter;
                     pointMsg = TL("Double fault", "ダブルフォールト");
+                    SfxOoh(0.45f + 0.4f * gPointImportance);   // ダブルフォールト：観客がどよめく
                     if (ball.result == RESULT_OUT) { lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
                     SfxCallFault();
                     endKind = 4;
@@ -1610,6 +1611,8 @@ int main(void)
                     winner = 1 - hitter;
                     endKind = 3;
                     if (ball.result == RESULT_OUT) { SfxCallOut(); lineCallPos = ball.firstBounce; lineCallT = 1.6f; }
+                    if ((ball.result == RESULT_OUT && ball.outBy < 0.15f) || rallyHits >= 8)   // 惜しいアウト・長いラリーのミス：観客の「おお〜」
+                        SfxOoh(0.55f + 0.05f * fminf(rallyHits, 8) + (ball.outBy < 0.05f ? 0.2f : 0.0f));
                     pointMsg = (ball.result == RESULT_NET) ? (hitter == 0 ? TL("Your error (net)", "自分のミス（ネット）") : TL("AI error (net)", "相手のミス（ネット）"))
                                                            : (hitter == 0 ? TL("Your error (out)", "自分のミス（アウト）") : TL("AI error (out)", "相手のミス（アウト）"));
                     if (ball.result == RESULT_OUT) {   // どれだけ外れたか
@@ -1672,6 +1675,8 @@ int main(void)
                 else if (gamesAfter != gamesBefore || (score.points[0] == 0 && score.points[1] == 0))
                     snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s   (%d - %d)", "ゲーム %s   (%d - %d)"), winner == 0 ? YouName() : OPP_SHORT, score.games[0], score.games[1]);
                 else                              snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
+                // 主審のスコアコール（拍手が少し落ち着いてから）
+                SfxScoreCall(&score, server, winner, score.nSetsDone != setsBefore ? 2 : (gamesAfter != gamesBefore ? 1 : 0), 1.1f);
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
                 // ---- 追い込まれた選手がラケットを叩きつける（ジョコビッチ）。叩きつけた後はしばらく強くなる ----
@@ -1810,6 +1815,7 @@ int main(void)
                 float e0 = smashPrevE, e1 = SMASH_TIME - fmaxf(ai.anim.smashT - simDt, 0.0f);
                 const float hits[3] = { 0.52f, 0.90f, 1.26f };
                 for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos));
+                if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(ai.smashes >= 2 ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング
                 ai.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
                 smashPrevE = e1;
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
@@ -1836,6 +1842,7 @@ int main(void)
                 float e0 = youSmashPrevE, e1 = SMASH_TIME - fmaxf(P.anim.smashT - simDt, 0.0f);
                 const float hits[3] = { 0.52f, 0.90f, 1.26f };
                 for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos));
+                if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(youSmashes >= 2 ? 1.0f : 0.75f, 0.35f);
                 P.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
                 youSmashPrevE = e1;
                 P.anim.smashT = fmaxf(P.anim.smashT - simDt, 0.0f);
@@ -1848,8 +1855,9 @@ int main(void)
                 {   // 怒りのしぐさの音：投げたラケットが地面に当たる、球をかっ飛ばす
                     float e0 = ai.anim.celebDur - ai.anim.celebT, e1 = e0 + simDt;
                     float dist = Vector3Distance(cam.position, ai.pos);
-                    if (ai.anim.celebKind == CELEB_THROW && e0 < 0.97f && e1 >= 0.97f) SfxRacketSmash(dist);
-                    if (ai.anim.celebKind == CELEB_SWAT && e0 < 0.68f && e1 >= 0.68f) SfxHit(0.95f, 150.0f, false, false, false, dist);
+                    if (ai.anim.celebKind == CELEB_THROW && e0 < 0.97f && e1 >= 0.97f) { SfxRacketLand(dist); SfxBoo(0.6f, 0.3f); }
+                    if (ai.anim.celebKind == CELEB_SWAT && e0 < 0.68f && e1 >= 0.68f) { SfxHit(0.95f, 150.0f, false, false, false, dist); SfxBoo(0.5f, 0.5f); }
+                    if (ai.anim.celebKind == CELEB_RANT && ai.anim.walkT > 0.0f && e0 < 1.2f && e1 >= 1.2f) SfxBoo(0.35f, 0.0f);   // 審判に詰め寄る：小さなブーイング
                 }
                 ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };

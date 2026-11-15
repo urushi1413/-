@@ -913,6 +913,10 @@ void  SfxAngry(int who, float dist);
 void  SfxStopApplause(void);
 void  SfxFootwork(int n, float dist);
 void  SfxUpdate(void);
+void  SfxRacketLand(float dist);                 // 投げたラケットが落ちる
+void  SfxBoo(float level, float delay);          // 観客のブーイング
+void  SfxOoh(float level);                       // 観客の「おお〜」
+void  SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay);   // 主審のスコアコール（kind 0 ポイント / 1 ゲーム / 2 セット）
 const char *SfxDir(void);
 
 #endif

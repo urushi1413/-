@@ -1,0 +1,32 @@
+SWEET SPOT 効果音の出典
+
+■ Kenney「Impact Sounds」 — CC0（パブリックドメイン）
+  https://kenney.nl/assets/impact-sounds
+  hit_frame, bounce_hard, bounce_clay, bounce_grass, net, racket_smash, racket_land
+  （tools/build_sounds.py で切り出し・フィルタ・重ね合わせ）
+
+■ Gregor Quendel「Free Crowd Cheering Sounds」 — CC-BY 4.0
+  https://opengameart.org/content/free-crowd-cheering-sounds
+  crowd, applause_big_2, match_win, match_win_2
+  Sounds by Gregor Quendel (https://www.gregorquendel.com), licensed under CC BY 4.0.
+
+■ Aimee Smith「Announcer Voice Pack (Sports, Female)」 — CC-BY 4.0
+  https://opengameart.org/content/announcer-voice-pack-sports-female
+  call_love, call_15, call_30, call_40, call_adv_server, call_adv_receiver,
+  call_game_server, call_game_receiver, call_set_server, call_set_receiver
+  Voice clips recorded and performed by Aimee Smith (www.aimeesmithva.com), licensed under CC BY 4.0.
+
+■「Applause in a large hall or church」 — CC0
+  https://opengameart.org/content/applause-in-a-large-hall-or-church
+  applause_2, applause_3
+
+■「Air whoosh」 — CC0
+  https://opengameart.org/content/air-whoosh
+  whiff
+
+■ 合成（tools/gen_crowd.py）
+  boo, boo_2, boo_3, ooh, ooh_2, ooh_3  — 大勢の声を合成して重ねたもの
+
+■ hit_ok, hit_bad, hit_slice — hit_good を元に tools/build_sounds.py で音色を変えたもの
+
+CC-BY の音を使って配布するときは、この出典を一緒に載せること。
