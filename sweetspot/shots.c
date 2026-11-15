@@ -45,7 +45,8 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     c.overhead = bp.y > OVERHEAD_MIN_H;
 
     // 届くか
-    if (bp.y > OVERHEAD_MAX_H) { c.miss = MISS_HIGH; return c; }
+    if (bp.y > JUMP_MAX_H) { c.miss = MISS_HIGH; return c; }
+    c.jumpHit = bp.y > OVERHEAD_MAX_H;   // 届かない高さ：自動で大きく跳ぶ
     if (bp.y < 0.06f)          { c.miss = MISS_LOW;  return c; }
     if (gCasual) reachBonus += CASUAL_REACH;
     reachBonus += gReachAdd;   // 背の高い選手ほど遠くまで届く
@@ -74,6 +75,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         float ox = fabsf(dx) - OVERHEAD_SIDE, oz = dz - OVERHEAD_FWD;
         float otol = bp.y < OVERHEAD_IDEAL_H ? OVERHEAD_TOL_H_LOW : OVERHEAD_TOL_H;
         c.qTiming = Clamp(1.0f - fabsf(bp.y - OVERHEAD_IDEAL_H) / (otol * hk * gTimingTolMul), 0.10f, 1.0f);
+        if (c.jumpHit) c.qTiming = fmaxf(c.qTiming, 0.35f) * 0.85f;   // 跳んで打つ球：高さのずれは跳んで合わせるが、空中なので少し不安定
         c.qDist   = Clamp(1.0f - sqrtf(ox * ox + oz * oz) / (OVERHEAD_TOL_R * tk), 0.10f, 1.0f);
         c.qHeight = 1.0f;
     } else {

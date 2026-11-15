@@ -328,7 +328,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
         t += PHYS_DT;
         if (i % 2 != 0 || q.pos.z <= 0.0f) continue;
         bool volley = q.bounces == 0;
-        if (volley && !(atNet && q.pos.z > 0.3f && q.pos.y > 0.3f && q.pos.y < OVERHEAD_MAX_H)) continue;
+        if (volley && !(atNet && q.pos.z > 0.3f && q.pos.y > 0.3f && q.pos.y < JUMP_MAX_H)) continue;
         if (!volley && q.bounces != 1) continue;
         Vector3 stand;
         float cost;

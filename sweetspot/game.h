@@ -216,7 +216,8 @@ extern bool gDecidingSet;   // 最終セット
 #define OVERHEAD_IDEAL_H 2.55f   // 頭上の理想の打点
 #define OVERHEAD_TOL_H   0.70f
 #define OVERHEAD_TOL_H_LOW 1.20f // 理想より低い頭上の球（2m 前後）は、少し低くても叩ける
-#define OVERHEAD_MAX_H   3.05f   // ジャンプして届く高さ
+#define OVERHEAD_MAX_H   3.05f   // ふつうに跳んで届く高さ
+#define JUMP_MAX_H       3.45f   // 思い切り跳べば届く高さ（届かない高い球は自動で大きく跳ぶ。当たりは難しい）
 #define OVERHEAD_FWD     0.45f   // 頭上の理想の打点：体より少し前、少し右
 #define OVERHEAD_SIDE    0.30f
 #define OVERHEAD_TOL_R   0.90f
@@ -347,6 +348,7 @@ typedef struct {
     bool  forehand;
     bool  overhead;    // 頭上で打った（スマッシュ・ハイボレー）
     bool  dive;        // 飛びついて打った
+    bool  jumpHit;     // 届かない高さの球に大きく跳んで打った
     float angleDeg;    // 上から見たボールの向き（真横 0°、正面 90°）
     float fwdErr;      // プラス＝早い（ボールがまだ前）、マイナス＝遅い（食い込まれた）
     float timeErrMs;   // fwdErr を時間に直したもの（参考表示用）

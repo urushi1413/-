@@ -1218,6 +1218,12 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         } else hipY -= 0.06f * Clamp01(a->windup);
         stanceK *= 0.25f;   // 足は前後に開かない（オープンスタンス）
     }
+    // 肩より高い球をストロークで打つとき：跳びながら打つ（高い打点に合わせる。ジャンピングフォア・バック）
+    if (swinging && stroke != 2 && !a->lastContact.volley && !lasso && a->contactLocal.y > 1.45f) {
+        float hk2 = Clamp01((a->contactLocal.y - 1.45f) / 0.35f);
+        float u3 = Clamp01((a->swingT + 0.02f) / 0.26f);
+        pos.y += 0.20f * hk2 * sinf(PI * u3);
+    }
     // スプリットステップ：相手が打つのに合わせて小さく跳び、足を広げて膝を曲げて着地する
     float splitWide = 0.0f;
     if (a->splitT > 0.0f && !swinging && stroke != 2 && !a->serveStance && a->downT <= 0.0f) {
@@ -1249,7 +1255,10 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         if (swinging) {
             ohU = Clamp01(a->swingT / SWING_TIME);
             ohAir = sinf(PI * Clamp01(ohU * 1.6f));
-            jump = (a->contactLocal.y > 2.55f ? 0.30f : 0.14f) * ohAir;
+            // 高い球ほど高く跳ぶ。届かない高さ（3.05m 超）は思い切り跳ぶ（最大 0.6m）
+            float jh = a->contactLocal.y > OVERHEAD_MAX_H ? Clamp(0.30f + (a->contactLocal.y - OVERHEAD_MAX_H) * 0.8f, 0.30f, 0.62f)
+                     : (a->contactLocal.y > 2.55f ? 0.30f : 0.14f);
+            jump = jh * ohAir;
             hipY = 0.90f;
             leanV = (Vector3){ 0.0f, 0.0f, -0.08f + 0.25f * ohU };
         } else {
