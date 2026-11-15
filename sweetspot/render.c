@@ -1490,8 +1490,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 HAIRBLOB(HP(-0.060f, 0.0f, 0.110f), 0.062f, hair);
                 HAIRBLOB(HP(-0.045f, 0.030f, 0.118f), 0.040f, hd);
                 break;
-            case HS_PONY:         // ポニーテール（下で描く）：頭は後ろにまとめる
-                HAIRBLOB(HP(-0.022f, 0.0f, 0.025f), 0.106f, hair);
+            case HS_PONY:         // ポニーテール（下で描く）：頭は後ろにまとめる。キャップのときは帽子からはみ出す後ろ髪だけ
+                if (a->hat == 1) HAIRBLOB(HP(-0.045f, 0.0f, 0.010f), 0.088f, hair);
+                else HAIRBLOB(HP(-0.022f, 0.0f, 0.025f), 0.106f, hair);
                 break;
             default:              // 短髪：前髪が少しある
                 HAIRBLOB(HP(-0.022f, 0.0f, 0.027f), 0.106f, hair);
@@ -1499,7 +1500,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 break;
         }
     }
-    if (a->headband.a) {   // ヘッドバンド（フェデラー）・バンダナ（ナダル。後ろに結び目の端が垂れる）
+    if (a->headband.a && a->hat != 1) {   // ヘッドバンド（フェデラー）・バンダナ（ナダル。後ろに結び目の端が垂れる）
         HEADBAND(0.050f, 0.084f, 0.108f, a->headband);   // 眉の上のおでこ
         if (a->hairStyle == HS_NADAL) {
             float fl = 0.03f * sinf(ph) * move;
@@ -1507,14 +1508,52 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(WV(HP(-0.110f, 0.0f, 0.045f)), WV(Vector3Add(HP(-0.16f, -0.020f, -0.05f), (Vector3){ fl, 0, 0 })), 0.016f, 0.008f, 5, a->headband);
         }
     }
-    if (a->hat == 1) {     // キャップ（シフィオンテク）：頭頂を覆い、つばが前へ
-        HAIRBLOB(HP(-0.005f, 0.0f, 0.045f), 0.112f, a->hatCol);
-        Vector3 bc = HP(0.135f, 0.0f, 0.040f);
-        DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.070f, 0.070f, 12, a->hatCol);
-    } else if (a->hat == 2) {   // サンバイザー（シャラポワ）：額のバンドとつば
-        HEADBAND(0.035f, 0.065f, 0.110f, a->hatCol);
-        Vector3 bc = HP(0.130f, 0.0f, 0.040f);
-        DrawCylinderEx(WV(Vector3Subtract(bc, Vector3Scale(uU, 0.004f))), WV(Vector3Add(bc, Vector3Scale(uU, 0.004f))), 0.065f, 0.065f, 12, a->hatCol);
+    if (a->hat) {
+        // つば：おでこから前へ出る半月形。先が少し下がる。頭の形（横幅）に沿う
+        #define BRIM(ub, rin, ext, col) do { \
+            Color bcol = (col), under = { (unsigned char)(bcol.r * 0.80f), (unsigned char)(bcol.g * 0.80f), (unsigned char)(bcol.b * 0.80f), 255 }; \
+            rlCheckRenderBatchLimit(16 * 12); rlBegin(RL_TRIANGLES); \
+            for (int bi = 0; bi < 16; bi++) { \
+                float q0 = -1.10f + 2.2f * bi / 16, q1 = -1.10f + 2.2f * (bi + 1) / 16; \
+                Vector3 i0 = Vector3Add(Vector3Scale(fF, (rin) * cosf(q0)), Vector3Scale(rR, (rin) * kW * sinf(q0))); \
+                Vector3 i1 = Vector3Add(Vector3Scale(fF, (rin) * cosf(q1)), Vector3Scale(rR, (rin) * kW * sinf(q1))); \
+                float e0 = (ext) * powf(cosf(q0), 1.4f), e1 = (ext) * powf(cosf(q1), 1.4f); \
+                Vector3 o0 = Vector3Add(i0, Vector3Add(Vector3Scale(Vector3Normalize(i0), e0), Vector3Scale(uU, -0.30f * e0))); \
+                Vector3 o1 = Vector3Add(i1, Vector3Add(Vector3Scale(Vector3Normalize(i1), e1), Vector3Scale(uU, -0.30f * e1))); \
+                Vector3 bU = Vector3Scale(uU, (ub) * kH); \
+                Vector3 I0 = WV(Vector3Add(Vector3Add(head, i0), bU)), I1 = WV(Vector3Add(Vector3Add(head, i1), bU)); \
+                Vector3 O0 = WV(Vector3Add(Vector3Add(head, o0), bU)), O1 = WV(Vector3Add(Vector3Add(head, o1), bU)); \
+                Vector3 up = uW, dn = Vector3Negate(uW); \
+                LitVertex(I0, up, bcol); LitVertex(O1, up, bcol); LitVertex(O0, up, bcol); LitVertex(I0, up, bcol); LitVertex(I1, up, bcol); LitVertex(O1, up, bcol); \
+                LitVertex(I0, dn, under); LitVertex(O0, dn, under); LitVertex(O1, dn, under); LitVertex(I0, dn, under); LitVertex(O1, dn, under); LitVertex(I1, dn, under); \
+            } rlEnd(); } while (0)
+        if (a->hat == 1) {     // キャップ（シフィオンテク）：頭の上半分だけを覆う丸い山（おでこの高さで切れる）＋つば
+            const int RG = 6, SL = 16;
+            float rf = 0.100f, rr = 0.100f * kW, ru = 0.072f * kH;   // 山は低め（ヘルメットに見えないように）
+            Vector3 cb = HP(-0.008f, 0.0f, 0.058f);   // 山のふち（眉のすぐ上）
+            rlCheckRenderBatchLimit(RG * SL * 12);
+            rlBegin(RL_TRIANGLES);
+            for (int i = 0; i < RG; i++) for (int j = 0; j < SL; j++) {
+                Vector3 Pp[4], Nn[4];
+                for (int c = 0; c < 4; c++) {
+                    float th = 0.5f * PI * (i + (c >> 1)) / RG, q = 2 * PI * (j + (c & 1)) / SL;   // 上半分だけ
+                    float nu = cosf(th), nf = sinf(th) * cosf(q), nr = sinf(th) * sinf(q);
+                    Vector3 lp = Vector3Add(cb, Vector3Add(Vector3Scale(fF, rf * nf), Vector3Add(Vector3Scale(rR, rr * nr), Vector3Scale(uU, ru * nu))));
+                    Pp[c] = WV(lp);
+                    Nn[c] = Vector3Normalize(Vector3Add(Vector3Scale(fW, nf / rf), Vector3Add(Vector3Scale(rW, nr / rr), Vector3Scale(uW, nu / ru))));
+                }
+                LitVertex(Pp[0], Nn[0], a->hatCol); LitVertex(Pp[3], Nn[3], a->hatCol); LitVertex(Pp[2], Nn[2], a->hatCol);
+                LitVertex(Pp[0], Nn[0], a->hatCol); LitVertex(Pp[1], Nn[1], a->hatCol); LitVertex(Pp[3], Nn[3], a->hatCol);
+                LitVertex(Pp[0], Nn[0], a->hatCol); LitVertex(Pp[2], Nn[2], a->hatCol); LitVertex(Pp[3], Nn[3], a->hatCol);
+                LitVertex(Pp[0], Nn[0], a->hatCol); LitVertex(Pp[3], Nn[3], a->hatCol); LitVertex(Pp[1], Nn[1], a->hatCol);
+            }
+            rlEnd();
+            BRIM(0.058f, 0.094f, 0.068f, a->hatCol);
+        } else {               // サンバイザー（シャラポワ）：おでこのバンド＋つば（頭の上は開いている）
+            HEADBAND(0.056f, 0.080f, 0.094f, a->hatCol);
+            BRIM(0.058f, 0.094f, 0.056f, a->hatCol);
+        }
+        #undef BRIM
     }
     {   // ---- 顔：耳・目・眉・鼻・口。しぐさで表情が変わる（吠える＝口を大きく開ける、怒る＝眉を寄せる、喜ぶ＝笑う） ----
         Color white = { 245, 245, 240, 255 };
