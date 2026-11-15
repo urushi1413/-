@@ -57,6 +57,20 @@ void LitSphereEx(Vector3 c, float r, int rings, int slices, Color col)
     }
     rlEnd();
 }
+// 楕円の円板（顔に貼る目など）：中心 c、面の向き n、横 ex・縦 ey の半径 a・b。両面に描く
+static void LitEllipseDisc(Vector3 c, Vector3 n, Vector3 ex, Vector3 ey, float a, float b, int seg, Color col)
+{
+    rlCheckRenderBatchLimit(seg * 6);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < seg; i++) {
+        float t0 = 2 * PI * i / seg, t1 = 2 * PI * (i + 1) / seg;
+        Vector3 p0 = Vector3Add(c, Vector3Add(Vector3Scale(ex, a * cosf(t0)), Vector3Scale(ey, b * sinf(t0))));
+        Vector3 p1 = Vector3Add(c, Vector3Add(Vector3Scale(ex, a * cosf(t1)), Vector3Scale(ey, b * sinf(t1))));
+        LitVertex(c, n, col); LitVertex(p0, n, col); LitVertex(p1, n, col);
+        LitVertex(c, n, col); LitVertex(p1, n, col); LitVertex(p0, n, col);
+    }
+    rlEnd();
+}
 // 箱（面ごとに明るさを変える）
 void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
 {
@@ -1466,12 +1480,27 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         for (int sd = -1; sd <= 1; sd += 2) {
             DrawSphere(WV(HP(-0.005f, sd * 0.102f, 0.000f)), 0.022f, skin);                         // 耳
             Vector3 eye = HP(0.088f, sd * 0.036f, 0.018f);
-            {   // 目：顔の表面に貼りつけた薄い円板（白目 → 黒目）。飛び出さない
-                Vector3 ed = Vector3Normalize(Vector3Subtract(eye, head));
-                Vector3 e0 = Vector3Add(head, Vector3Scale(ed, 0.1035f));
-                Vector3 e1 = Vector3Add(e0, Vector3Scale(ed, 0.0020f)), e2 = Vector3Add(e1, Vector3Scale(ed, 0.0012f));
-                DrawCylinderEx(WV(e0), WV(e1), 0.0115f, 0.0110f, 10, white);
-                DrawCylinderEx(WV(e1), WV(e2), 0.0062f, 0.0060f, 8, dark);
+            {   // 目：顔に貼りつけた横長のアーモンド形。黒目は上下いっぱい（白目は左右だけ見える）、上にまぶたの線。ときどき瞬きする
+                Vector3 edir = Vector3Normalize(Vector3Subtract(eye, head));
+                Vector3 exL = Vector3Normalize(Vector3Subtract(rR, Vector3Scale(edir, Vector3DotProduct(rR, edir))));
+                Vector3 eyL = Vector3CrossProduct(exL, edir);
+                if (Vector3DotProduct(eyL, uU) < 0.0f) eyL = Vector3Negate(eyL);
+                // 瞬き：選手ごとにずらして、4 秒ほどに 1 回、0.12 秒だけ閉じる
+                float tb = (float)GetTime() + 0.37f * skin.r + 0.11f * hair.g;
+                float open2 = fmodf(tb, 4.1f) < 0.12f ? 0.12f : 1.0f;
+                if (ck == CELEB_RANT || a->smashT > 0.0f) open2 *= 0.75f;   // 怒ると目を細める
+                if (smile > 0.5f) open2 *= 0.70f;                            // 笑うと目が細くなる
+                float ea = 0.0125f, eb = 0.0062f * open2;
+                Vector3 c0 = Vector3Add(head, Vector3Scale(edir, 0.1040f));
+                Vector3 nW = Vector3Subtract(WV(Vector3Add(head, edir)), WV(head));
+                #define TW(v) Vector3Subtract(WV(Vector3Add(head, (v))), WV(head))   // 向きを世界へ
+                Vector3 exW = TW(exL), eyW = TW(eyL);
+                LitEllipseDisc(WV(c0), nW, exW, eyW, ea, eb, 14, white);
+                Vector3 c1 = Vector3Add(c0, Vector3Scale(edir, 0.0008f));
+                LitEllipseDisc(WV(c1), nW, exW, eyW, 0.0058f, fminf(0.0058f, eb * 0.98f), 12, dark);   // 黒目（まぶたからはみ出さない）
+                Vector3 c2 = Vector3Add(Vector3Add(c0, Vector3Scale(edir, 0.0014f)), Vector3Scale(eyL, eb * 0.92f));
+                LitEllipseDisc(WV(c2), nW, exW, eyW, ea * 1.02f, 0.0016f, 12, (Color){ 40, 28, 24, 255 });   // 上のまぶたの線
+                #undef TW
             }
             float inY = 0.040f - 0.012f * angry + 0.006f * smile, outY = 0.046f + 0.006f * angry;  // 眉：怒ると内側が下がる
             DrawCylinderEx(WV(HP(0.096f, sd * 0.014f, inY)), WV(HP(0.090f, sd * 0.056f, outY)), 0.0060f, 0.0050f, 5, brow);
