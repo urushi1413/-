@@ -405,6 +405,8 @@ typedef struct {
     int     celebKind;     // しぐさの種類（CELEB_*）
     float   celebDur;      // しぐさの長さ（秒）
     int     ritBounces;    // 儀式でボールをつく回数（0 ならつかない）
+    float   walkT;         // 抗議：審判の方へ歩く時間（その間は歩くだけ、着いてから文句を言う）
+    float   faceYaw;       // 抗議：審判の方を向く角度（体から見て。右がプラス）
     float   slouch;        // 背中を丸めてうつむく（0〜1。マレーのポイント間）
     bool    female;        // 女子（スカート）
     int     hairStyle;     // 髪型（HS_*）
@@ -665,6 +667,8 @@ const RFrame *Highlight(int k, int *n, const char **caption);
 Camera3D ReplayCamera(int view, Vector3 ball, Camera3D prev, bool first);
 void DrawReplayFrame(const RFrame *f, Camera3D cam);
 void DrawCourt(void);
+void InitBoards(void);              // 奥の壁の看板とスピードメーターを作る（ウィンドウを開いた後に 1 回）
+void UpdateSpeedBoard(int kmh);     // スピードメーターの数字（最後のサーブの速さ）
 
 // 試合の記録（matchlog.csv）
 void MLogOpen(void);

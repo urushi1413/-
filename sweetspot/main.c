@@ -193,6 +193,7 @@ int main(void)
     InitWindow(1280, 720, "SWEET SPOT");
     SfxInit();
     UiFontInit();   // 日本語フォント
+    InitBoards();   // 奥の壁の看板とスピードメーター
     SetTargetFPS(60);
     srand((unsigned)GetTime() ^ 0x5eed);
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
@@ -228,6 +229,10 @@ int main(void)
     Vector3 feederPos = { 0.0f, 0.0f, -HALF_LEN - 0.6f };   // 練習で球を出す相手の立ち位置
     bool  feedSwing = false; Ball feedNext = { 0 };          // 球出しの振り：振り始めたら、当たる瞬間に球を出す
     float winFx = -1.0f;
+    int   youSmashes = 0; float youSmashPrevE = 0.0f;
+    int   speedBoardKmh = 0;             // 奥の壁のスピードメーター（最後のサーブ）
+    Vector3 protestTo = { 0 };           // 抗議で歩いていく先（審判台の前）
+#define PROTEST_WALK 2.0f                // 審判の方へ歩く速さ（m/s）                // 自分がラケットを叩きつけた回数（2 回目からポイントペナルティ）
     float sweetT = 9.0f; Vector3 sweetPos = { 0 }; float sweetQ = 0.0f;   // いい当たりの演出（経過時間・位置・強さ）
 #define SWEET_Q 0.80f   // これ以上の当たりで演出を出す             // 試合に勝った演出の経過時間（-1 = なし）
     Vector3 trail[TRAIL_N];
@@ -737,6 +742,7 @@ int main(void)
             score.setsToWin = setsToWin;
             ai.tilt = 0.0f;
             winFx = -1.0f;
+            youSmashes = 0;
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -1067,6 +1073,7 @@ int main(void)
                         P.anim.swingT = 0.0f;
                         gCasual = (style == STYLE_CASUAL);
                         ball = HitServe(hb.pos, target, type, P.charge, q, x0, x1, &P.lastServeKmh);
+                        speedBoardKmh = (int)roundf(P.lastServeKmh);
                         SfxServe(q, P.lastServeKmh, playerGrunt, Vector3Distance(cam.position, ball.pos));
                         ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, "SERVE", P.lastServeKmh, q, false, false, false, false, P.pos, hb.pos.y, ai.pos, Vector3Length(ai.vel));
@@ -1167,6 +1174,7 @@ int main(void)
                 aiTossing = false;
                 ai.anim.windup = 0.0f;
                 ball = aiUnderarm ? AiServeUnderarm(&ai, DeuceCourt(&score)) : AiServe(&ai, DeuceCourt(&score), serveNo == 1);
+                speedBoardKmh = (int)roundf(ai.lastKmh);
                 SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
                 P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // レシーバーのスプリットステップ
                 MLogShot(mlPoint, ++mlShot, true, "SERVE", ai.lastKmh, ai.anim.lastContact.quality, false, false, false, false, ai.pos, ball.pos.y, P.pos, Vector3Length(P.vel));
@@ -1699,6 +1707,15 @@ int main(void)
                     }
                     if (kind != CELEB_NONE) {
                         ai.anim.celebKind = kind; ai.anim.celebDur = CelebDuration(kind); ai.anim.celebT = ai.anim.celebDur;
+                        ai.anim.walkT = 0.0f; ai.anim.faceYaw = 0.0f;
+                        if (kind == CELEB_RANT) {   // 抗議：審判台の前まで歩いていき、審判の方を向いて文句を言う
+                            protestTo = (Vector3){ -(NET_POST_X + 1.0f) + 1.5f, 0.0f, -1.6f };   // 審判台はネットの左横。相手のコート側に立つ
+                            float d = Vector3Distance(ai.pos, protestTo);
+                            ai.anim.walkT = fminf(d / PROTEST_WALK, 3.2f);
+                            ai.anim.celebDur += ai.anim.walkT + 0.6f; ai.anim.celebT = ai.anim.celebDur;
+                            Vector3 tu = { -(NET_POST_X + 1.0f) - protestTo.x, 0.0f, 0.0f - protestTo.z };   // 審判の向き（世界）
+                            ai.anim.faceYaw = atan2f(-tu.x, tu.z);   // AI の体から見て（右＝世界の -x、前＝世界の +z）
+                        }
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
@@ -1767,6 +1784,31 @@ int main(void)
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
             }
+            // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。1 回目は警告、2 回目からポイントペナルティ ----
+            if (IsKeyPressed(KEY_X) && !score.over && P.anim.smashT <= 0.0f && !botControls) {
+                youSmashes++;
+                P.anim.smashT = SMASH_TIME; P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.anim.celebT = 0.0f;
+                youSmashPrevE = 0.0f;
+                phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.2f);
+                const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : TR("YOU", "自分");
+                if (youSmashes == 1) {
+                    snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES THE RACKET!\nCode violation, racket abuse. Warning.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告"), nm);
+                } else {
+                    AwardPoint(&score, 1);   // ポイントペナルティ：相手のポイント
+                    snprintf(rageMsg, sizeof(rageMsg), TR("%s SMASHES THE RACKET!\nCode violation, racket abuse. Point penalty.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ"), nm);
+                }
+                rageMsgT = SMASH_TIME + 2.5f;
+                SfxAngry(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
+            }
+            if (P.anim.smashT > 0.0f) {   // 叩きつけている間：地面に当たるたびに音、ラケットが曲がる
+                float e0 = youSmashPrevE, e1 = SMASH_TIME - fmaxf(P.anim.smashT - simDt, 0.0f);
+                const float hits[3] = { 0.52f, 0.90f, 1.26f };
+                for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos));
+                P.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
+                youSmashPrevE = e1;
+                P.anim.smashT = fmaxf(P.anim.smashT - simDt, 0.0f);
+                P.vel = (Vector3){ 0 };
+            }
             if (P.anim.celebT > 0.0f)   P.anim.celebT = fmaxf(P.anim.celebT - simDt, 0.0f);
             if (bot.anim.celebT > 0.0f) bot.anim.celebT = fmaxf(bot.anim.celebT - simDt, 0.0f);
             if (ai.anim.smashT <= 0.0f && ai.anim.celebT > 0.0f) {
@@ -1780,6 +1822,17 @@ int main(void)
                 ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
+                if (ai.anim.celebKind == CELEB_RANT && ai.anim.walkT > 0.0f && ai.anim.celebDur - ai.anim.celebT < ai.anim.walkT) {
+                    // 審判の方へ歩く
+                    Vector3 d = Vector3Subtract(protestTo, ai.pos); d.y = 0.0f;
+                    float dl = Vector3Length(d);
+                    if (dl > 0.05f) {
+                        ai.vel = Vector3Scale(d, fminf(PROTEST_WALK, dl / simDt) / dl);
+                        ai.pos = Vector3Add(ai.pos, Vector3Scale(ai.vel, simDt));
+                        ai.anim.velX = -ai.vel.x; ai.anim.velZ = ai.vel.z;   // AI は +z 向き
+                        ai.anim.runPhase += Vector3Length(ai.vel) * simDt * 2.2f;
+                    }
+                }
             }
             else if (phase == PH_POINT_OVER && ai.anim.smashT <= 0.0f) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
             if (phaseTimer <= 0.0f && setBreak) {
@@ -1861,6 +1914,7 @@ int main(void)
         }
 
         // ---- 描画 ----
+        UpdateSpeedBoard(speedBoardKmh);   // スピードメーター（数字が変わったときだけ描き直す）
         BeginDrawing();
         ClearBackground((Color){ 150, 190, 230, 255 });
         DrawRectangleGradientV(0, 0, GetScreenWidth(), GetScreenHeight(), (Color){ 80, 135, 210, 255 }, (Color){ 200, 222, 242, 255 });   // 空：上ほど濃い青
@@ -2241,7 +2295,7 @@ int main(void)
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText(TR("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  M mute  Esc menu", "WASD 移動  マウス 狙い  左クリック トップ  右クリック スライス  Space＋クリック フラット  Shift＋クリック ロブ  Ctrl＋クリック ドロップ  Q かがむ  M 消音  Esc メニュー"), 20, y, 16, LIGHTGRAY); y += 18;
+        DrawText(TR("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  X smash racket  M mute  Esc menu", "WASD 移動  マウス 狙い  左クリック トップ  右クリック スライス  Space＋クリック フラット  Shift＋クリック ロブ  Ctrl＋クリック ドロップ  Q かがむ  X ラケット破壊  M 消音  Esc メニュー"), 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else

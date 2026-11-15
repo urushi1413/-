@@ -441,6 +441,63 @@ static void DrawPerson(Vector3 base, Vector3 f, int pose, Color shirt, Color pan
     #undef AT
 }
 
+// ---- 奥の壁の看板とスピードメーター ----
+//   看板は架空の広告（実在の会社ではない）。スピードメーターは最後のサーブの速さを電光で出す
+#define AD_COUNT 4
+static RenderTexture2D gAdRT[AD_COUNT], gSpeedRT;
+static bool gBoardsOk = false;
+static int  gSpeedShown = -1;
+void InitBoards(void)
+{
+    static const char *NAME[AD_COUNT] = { "ACE WATER", "TOPSPIN BANK", "DEUCE MOTORS", "SLICE AIRWAYS" };
+    static const char *SUB[AD_COUNT]  = { "stay cool on court", "spin your savings", "drive to the net", "fly over the net" };
+    static const Color BG[AD_COUNT] = { { 20, 110, 190, 255 }, { 200, 40, 50, 255 }, { 30, 30, 35, 255 }, { 240, 240, 245, 255 } };
+    static const Color FG[AD_COUNT] = { { 255, 255, 255, 255 }, { 255, 230, 120, 255 }, { 120, 220, 255, 255 }, { 20, 60, 140, 255 } };
+    for (int i = 0; i < AD_COUNT; i++) {
+        gAdRT[i] = LoadRenderTexture(512, 128);
+        BeginTextureMode(gAdRT[i]);
+        ClearBackground(BG[i]);
+        int lang = gLang; gLang = LANG_EN;   // 看板は英語の字（ドット絵の字）で
+        DrawText(NAME[i], 256 - MeasureText(NAME[i], 54) / 2, 18, 54, FG[i]);
+        DrawText(SUB[i], 256 - MeasureText(SUB[i], 24) / 2, 86, 24, Fade(FG[i], 0.8f));
+        gLang = lang;
+        EndTextureMode();
+        SetTextureFilter(gAdRT[i].texture, TEXTURE_FILTER_BILINEAR);
+    }
+    gSpeedRT = LoadRenderTexture(512, 128);
+    gBoardsOk = true;
+    UpdateSpeedBoard(0);
+}
+// スピードメーターの数字を書き直す（描画の前に呼ぶ）。kmh が 0 なら「---」
+void UpdateSpeedBoard(int kmh)
+{
+    if (!gBoardsOk || kmh == gSpeedShown) return;
+    gSpeedShown = kmh;
+    BeginTextureMode(gSpeedRT);
+    ClearBackground((Color){ 12, 12, 14, 255 });
+    int lang = gLang; gLang = LANG_EN;
+    Color led = { 255, 200, 40, 255 };
+    DrawText("SERVE SPEED", 256 - MeasureText("SERVE SPEED", 22) / 2, 8, 22, Fade(led, 0.8f));
+    const char *v = kmh > 0 ? TextFormat("%d KM/H", kmh) : "---";
+    DrawText(v, 256 - MeasureText(v, 70) / 2, 40, 70, led);
+    gLang = lang;
+    EndTextureMode();
+}
+// 奥の壁（z = zWall、コート側を向く面）に絵を貼る。描画用のテクスチャは上下が逆なので、縦の座標を反転する
+static void WallQuad(Texture2D tex, float cx, float w, float zWall, float y0, float y1)
+{
+    rlSetTexture(tex.id);
+    rlBegin(RL_QUADS);
+    rlColor4ub(255, 255, 255, 255);
+    rlNormal3f(0.0f, 0.0f, 1.0f);
+    rlTexCoord2f(0.0f, 0.0f); rlVertex3f(cx - w * 0.5f, y0, zWall);
+    rlTexCoord2f(1.0f, 0.0f); rlVertex3f(cx + w * 0.5f, y0, zWall);
+    rlTexCoord2f(1.0f, 1.0f); rlVertex3f(cx + w * 0.5f, y1, zWall);
+    rlTexCoord2f(0.0f, 1.0f); rlVertex3f(cx - w * 0.5f, y1, zWall);
+    rlEnd();
+    rlSetTexture(0);
+}
+
 void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vector3 callPos, float callT)
 {
     BuildFans();
@@ -460,6 +517,12 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
     if (showB) {
         float w = 2.0f * gStandX0;
         DrawCube((Vector3){ 0, 0.6f, -(gStandZ0 - 0.1f) }, w, 1.2f, 0.2f, wall);
+        if (gBoardsOk) {   // 壁の看板（左右に 2 枚ずつ）と真ん中のスピードメーター
+            float zf = -(gStandZ0 - 0.21f);
+            const float AX[AD_COUNT] = { -8.55f, -4.30f, 4.30f, 8.55f };
+            for (int i = 0; i < AD_COUNT; i++) WallQuad(gAdRT[i].texture, AX[i], 4.1f, zf, 0.08f, 1.12f);
+            WallQuad(gSpeedRT.texture, 0.0f, 4.1f, zf, 0.08f, 1.12f);
+        }
         for (int row = 0; row < STAND_ROWS; row++)
             DrawCube((Vector3){ 0, (0.75f + row * STAND_RISE) * 0.5f, -(gStandZ0 + 0.5f + row * STAND_STEP) },
                      w, 0.75f + row * STAND_RISE, STAND_STEP, row % 2 ? step : step2);
@@ -799,7 +862,12 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
 {
     if (a->celebT <= 0.0f || a->celebKind == CELEB_NONE || a->smashT > 0.0f) return false;
     float dur = a->celebDur > 0.0f ? a->celebDur : CELEB_TIME;
-    float e = dur - a->celebT, k = Clamp01(e / 0.18f) * Clamp01(a->celebT / 0.30f);
+    float e = dur - a->celebT;
+    if (a->celebKind == CELEB_RANT && a->walkT > 0.0f) {   // 抗議：審判の前に着くまでは、ふつうに歩く
+        e -= a->walkT;
+        if (e < 0.0f) return false;
+    }
+    float k = Clamp01(e / 0.18f) * Clamp01(a->celebT / 0.30f);
     Vector3 rh0 = { 0.32f, 0.88f, 0.12f }, rd0 = { 0.15f, -0.55f, 0.82f }, lh0 = { -0.28f, 1.18f, 0.15f };
     Vector3 rh = rh0, rd = rd0, lh = lh0;
     CelebOut t = { 0 };
@@ -832,6 +900,7 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
             rh = Vector3Lerp(V3(0.60f, 1.38f + bob, 0.32f), V3(0.30f, 0.92f, 0.08f), b); rd = Vector3Lerp(V3(0.55f, 0.55f, 0.62f), rd0, b);
             lh = Vector3Lerp(V3(-0.60f, 1.38f + bob, 0.32f), V3(-0.30f, 0.92f, 0.08f), b);
             t.lean = 0.12f + 0.08f * b; t.headShake = 1.0f - b;
+            t.turn = a->faceYaw;   // 審判の方を向く
         } break;
         case CELEB_HANDS_HEAD:   // 頭を抱える（信じられない）
             rh = V3(0.13f, 1.76f, -0.04f); rd = V3(0.35f, 0.55f, -0.75f); lh = V3(-0.13f, 1.76f, -0.04f);
