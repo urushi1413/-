@@ -240,7 +240,7 @@ int main(void)
     bool hlPending = false;              // 前のポイントをハイライトに取っておく
     char hlCap[80] = { 0 };
     float hlScore = 0.0f;
-    struct { bool on; int mode, clip, idx; float t, acc; Camera3D cam; bool first; } rp = { 0 };   // mode 0 = 今のポイント、1 = ハイライト
+    struct { bool on; int mode, clip, idx; float t, acc; Camera3D cam; bool first; int view; } rp = { 0 };   // mode 0 = 今のポイント、1 = ハイライト
     int   menuSel = 0;
     float aimSens = 1.0f;          // マウス感度（倍率）
     bool  forceRestart = false;    // メニューでモードや AI を変えたら、戻ったときにやり直す
@@ -328,7 +328,7 @@ int main(void)
             items[n++] = MI_PLAY;
             if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
             items[n++] = MI_MODE; items[n++] = MI_SETS; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI; items[n++] = MI_STYLE; items[n++] = MI_COURT; items[n++] = MI_ASSIST;
-            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_CAMERA; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG;
+            items[n++] = MI_FEED; items[n++] = MI_SENS; items[n++] = MI_AIM; items[n++] = MI_SOUND; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG;
             if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
             items[n++] = MI_QUIT;
             const char *assistNames[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING + SPOT", "タイミング＋立つ場所") };
@@ -465,7 +465,7 @@ int main(void)
             continue;
         }
 
-        if (IsKeyPressed(KEY_C)) camMode = (camMode + 1) % 3;
+        camMode = 0;   // プレイ中は後ろからのカメラだけ（カメラの切り替えはリプレイのときに C）
         if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), TR("SCREEN INFO: %s  (F1)", "画面の表示：%s（F1）"), HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), TR("GUIDES: %s  (F2)", "ガイド：%s（F2）"), GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
@@ -494,9 +494,10 @@ int main(void)
                     rp.clip++; rp.idx = 0; rp.t = 0.0f; rp.acc = 0.0f; rp.first = true;
                 } else rp.on = false;
             }
+            if (IsKeyPressed(KEY_C)) { rp.view = (rp.view + 1) % REPLAY_VIEWS; rp.first = true; }   // C：リプレイのカメラを切り替える
             if (n > 0) {
                 const RFrame *f = &fr[rp.idx < n ? rp.idx : n - 1];
-                rp.cam = ReplayCamera(f->ball, rp.cam, rp.first);
+                rp.cam = ReplayCamera(rp.view, f->ball, rp.cam, rp.first);
                 rp.first = false;
                 BeginDrawing();
                 ClearBackground((Color){ 150, 190, 230, 255 });
@@ -513,7 +514,9 @@ int main(void)
                 int cw = MeasureText(cap, 30);
                 DrawRectangle(W / 2 - cw / 2 - 20, H - 120, cw + 40, 50, Fade(BLACK, 0.65f));
                 DrawText(cap, W / 2 - cw / 2, H - 110, 30, RAYWHITE);
-                const char *hint = rp.mode == 1 ? TR("Enter: next   Esc: stop", "Enter：次   Esc：やめる") : TR("Enter / R: back", "Enter / R：戻る");
+                const char *vn[REPLAY_VIEWS] = { TR("SIDE (TV)", "横から（中継）"), TR("BEHIND YOU", "自分の後ろから"), TR("FOLLOW BALL", "ボールを追う"), TR("BEHIND OPPONENT", "相手の後ろから") };
+                const char *hint = rp.mode == 1 ? TextFormat(TR("Enter: next   Esc: stop   C: camera (%s)", "Enter：次   Esc：やめる   C：カメラ（%s）"), vn[rp.view])
+                                                : TextFormat(TR("Enter / R: back   C: camera (%s)", "Enter / R：戻る   C：カメラ（%s）"), vn[rp.view]);
                 DrawText(hint, W / 2 - MeasureText(hint, 18) / 2, H - 50, 18, LIGHTGRAY);
                 EndDrawing();
             }
@@ -2000,9 +2003,9 @@ int main(void)
         y += 20;
         DrawText(TR("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  M mute  Esc menu", "WASD 移動  マウス 狙い  左クリック トップ  右クリック スライス  Space＋クリック フラット  Shift＋クリック ロブ  Ctrl＋クリック ドロップ  Q かがむ  M 消音  Esc メニュー"), 20, y, 16, LIGHTGRAY); y += 18;
         if (mode == MODE_MATCH)
-            DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   C cam  T slow", "G モード：試合   1/2/3 AI の強さ：%s   C カメラ  T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
+            DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else
-            DrawText(TextFormat(TR("G mode: %s   V feed: %s   F feed  C cam  T slow", "G モード：%s   V 球出し：%s   F 球出し  C カメラ  T スロー"), ModeName(mode), proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ")),
+            DrawText(TextFormat(TR("G mode: %s   V feed: %s   F feed  T slow", "G モード：%s   V 球出し：%s   F 球出し  T スロー"), ModeName(mode), proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ")),
                      20, y, 16, LIGHTGRAY);
         }
 
@@ -2148,10 +2151,6 @@ int main(void)
             DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
         }
         if (slowMo) DrawText(TR("SLOW x0.25", "スロー x0.25"), GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
-        if (hudLevel == 0) {
-            const char *camNames[3] = { TR("BEHIND", "後ろから"), TR("SIDE VIEW", "横から"), TR("FOLLOW BALL", "ボールを追う") };
-            DrawText(TextFormat(TR("Camera: %s (C)", "カメラ：%s（C）"), camNames[camMode]), 20, GetScreenHeight() - 30, 18, camMode == 0 ? LIGHTGRAY : ORANGE);
-        }
         if (botControls) DrawText(TR("AUTOPILOT (B)", "自動操作（B）"), GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
         if (hudLevel == 0) DrawText(TR("Tab: stats", "Tab：成績"), GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
         if (hudLevel == 0) {

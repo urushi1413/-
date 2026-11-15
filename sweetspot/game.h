@@ -650,7 +650,8 @@ const RFrame *RecClip(int *n);
 void RecSaveHighlight(long start, const char *caption, float score);
 int  HighlightCount(void);
 const RFrame *Highlight(int k, int *n, const char **caption);
-Camera3D ReplayCamera(Vector3 ball, Camera3D prev, bool first);
+#define REPLAY_VIEWS 4   // リプレイのカメラ：横（中継）、自分の後ろ、ボールを追う、相手の後ろ
+Camera3D ReplayCamera(int view, Vector3 ball, Camera3D prev, bool first);
 void DrawReplayFrame(const RFrame *f, Camera3D cam);
 void DrawCourt(void);
 

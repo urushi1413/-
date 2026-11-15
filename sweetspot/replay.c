@@ -74,15 +74,34 @@ const RFrame *Highlight(int k, int *n, const char **caption)
 }
 
 // テレビ中継のような横からのカメラ。球を追う
-Camera3D ReplayCamera(Vector3 ball, Camera3D prev, bool first)
+Camera3D ReplayCamera(int view, Vector3 ball, Camera3D prev, bool first)
 {
     Camera3D c = { 0 };
     c.up = (Vector3){ 0, 1, 0 };
     c.fovy = 34.0f;
     c.projection = CAMERA_PERSPECTIVE;
-    // 横の観客席の外から、コート全体が入るように（球の方へ少しずつ振る）
-    Vector3 pos = { 24.0f, 7.5f, Clamp(ball.z * 0.45f, -6.0f, 6.0f) };
-    Vector3 tgt = { 0.0f, 0.8f, Clamp(ball.z * 0.75f, -9.0f, 9.0f) };
+    Vector3 pos, tgt;
+    switch (view) {
+        case 1:   // 自分の後ろの高いところから（中継のメインカメラ）
+            pos = (Vector3){ ball.x * 0.25f, 7.0f, HALF_LEN + 12.0f };
+            tgt = (Vector3){ ball.x * 0.35f, 0.5f, -2.0f };
+            c.fovy = 40.0f;
+            break;
+        case 2:   // ボールを追う（近く）
+            pos = Vector3Add(ball, (Vector3){ 3.5f, 1.6f, 5.0f });
+            tgt = ball;
+            c.fovy = 45.0f;
+            break;
+        case 3:   // 相手の後ろの高いところから
+            pos = (Vector3){ -ball.x * 0.25f, 7.0f, -(HALF_LEN + 12.0f) };
+            tgt = (Vector3){ ball.x * 0.35f, 0.5f, 2.0f };
+            c.fovy = 40.0f;
+            break;
+        default:  // 横の観客席の外から、コート全体が入るように（球の方へ少しずつ振る）
+            pos = (Vector3){ 24.0f, 7.5f, Clamp(ball.z * 0.45f, -6.0f, 6.0f) };
+            tgt = (Vector3){ 0.0f, 0.8f, Clamp(ball.z * 0.75f, -9.0f, 9.0f) };
+            break;
+    }
     if (first) { c.position = pos; c.target = tgt; return c; }
     c.position = Vector3Lerp(prev.position, pos, 0.08f);
     c.target = Vector3Lerp(prev.target, tgt, 0.12f);
