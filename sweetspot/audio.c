@@ -12,13 +12,13 @@ typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
 enum {
     S_HIT_GOOD, S_HIT_OK, S_HIT_BAD, S_HIT_FRAME, S_HIT_SLICE, S_HIT_VOICE, S_HIT_VOICE_SOFT, S_GRUNT_PRE, S_SERVE,
     S_BOUNCE_HARD, S_BOUNCE_CLAY, S_BOUNCE_GRASS, S_NET, S_WHIFF, S_SQUEAK, S_SLIDE,
-    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_CALL_OUT, S_CELEBRATE, S_ANGRY, S_COUNT
+    S_CROWD, S_APPLAUSE, S_APPLAUSE_BIG, S_CALL_FAULT, S_CALL_OUT, S_CELEBRATE, S_ANGRY, S_MATCH_WIN, S_COUNT
 };
 // sounds フォルダに置くファイルの名前（拡張子なし）
 static const char *SFX_NAMES[S_COUNT] = {
     "hit_good", "hit_ok", "hit_bad", "hit_frame", "hit_slice", "hit_voice", "hit_voice_soft", "grunt_pre", "serve",
     "bounce_hard", "bounce_clay", "bounce_grass", "net", "whiff", "squeak", "slide",
-    "crowd", "applause", "applause_big", "call_fault", "call_out", "celebrate", "angry"
+    "crowd", "applause", "applause_big", "call_fault", "call_out", "celebrate", "angry", "match_win"
 };
 
 // ---- 選手ごとの声 ----
@@ -308,6 +308,16 @@ void SfxPointEnd(int rallyHits, bool winner)
     float k = Clamp01((rallyHits - 2) / 10.0f) + (winner ? 0.35f : 0.0f);
     if (k < 0.6f) Play(S_APPLAUSE, S_APPLAUSE_BIG, 0.35f + 0.6f * k, 1.0f);
     else          Play(S_APPLAUSE_BIG, S_APPLAUSE, 0.5f + 0.4f * Clamp01(k), 1.0f);
+}
+
+// 試合に勝った：大歓声（match_win の録音があればそれも重ねる。拍手もいつもより大きく）
+void SfxMatchWin(void)
+{
+    if (!gAudioOk) return;
+    PlaySlot(&gSlot[S_MATCH_WIN], 2.0f, 1.0f);
+    PlaySlot(&gSlot[S_APPLAUSE_BIG], 2.0f, 1.0f);
+    PlaySlot(&gSlot[S_APPLAUSE_BIG], 1.6f, 0.96f);   // 少し高さを変えて重ね、人数を多く聞かせる
+    PlaySlot(&gSlot[S_APPLAUSE], 1.5f, 1.04f);
 }
 
 // 審判のコール「フォルト」

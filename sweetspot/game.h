@@ -877,6 +877,7 @@ void  SfxNet(float speed, float dist);
 void  SfxSlide(float dist);
 void  SfxCrowd(bool on, float level);
 void  SfxPointEnd(int rallyHits, bool winner);
+void  SfxMatchWin(void);   // 試合に勝ったときの大歓声
 int   SfxLoadedCount(void);
 bool  SfxDeviceOk(void);
 void  SfxTest(void);

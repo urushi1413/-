@@ -151,6 +151,9 @@ int main(void)
 
     Ball ball = { 0 };
     float feedTimer = 1.0f;          // 0 になったら次の球を出す
+    Vector3 feederPos = { 0.0f, 0.0f, -HALF_LEN - 0.6f };   // 練習で球を出す相手の立ち位置
+    bool  feedSwing = false; Ball feedNext = { 0 };          // 球出しの振り：振り始めたら、当たる瞬間に球を出す
+    float winFx = -1.0f;             // 試合に勝った演出の経過時間（-1 = なし）
     Vector3 trail[TRAIL_N];
     int trailCount = 0;
     float trailTimer = 0.0f;
@@ -569,6 +572,7 @@ int main(void)
             score.server = rand() % 2;
             score.setsToWin = setsToWin;
             ai.tilt = 0.0f;
+            winFx = -1.0f;
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -1512,6 +1516,9 @@ int main(void)
                         if (RandRange(0.0f, 1.0f) < ch) { kind = PICK(cs->lose); SfxAngry(ai.persona, Vector3Distance(cam.position, ai.pos)); }
                     }
                     #undef PICK
+                    if (score.over && winner == 0) {   // 自分の勝ち：相手はがっかり（喜ばない）
+                        kind = ai.persona == 7 ? CELEB_SHRUG : CELEB_HANDS_HEAD;
+                    }
                     {   // 気持ち：大事なポイント・セットを落とすと崩れる（ポイントごとに戻る）。先にセットを取られると切れる（キルギオス）
                         const Mental *mm = &MENTAL[ai.persona % PERSONA_COUNT];
                         ai.tilt *= 0.80f;
@@ -1529,6 +1536,19 @@ int main(void)
                         ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
+                }
+                // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
+                if (score.over && winner == 0) {
+                    SwingAnim *pa = &P.anim;   // 試合が終わると、自動操作でも自分の姿（P.anim）を描く
+                    static const int WIN[4] = { CELEB_KNEES, CELEB_ARMS_UP, CELEB_JUMP_FIST, CELEB_RACKET_UP };
+                    int wk = WIN[GetRandomValue(0, 3)];
+                    pa->celebKind = wk; pa->celebDur = CelebDuration(wk) + 0.8f; pa->celebT = pa->celebDur;
+                    pa->swingT = -1.0f; pa->windup = 0.0f;
+                    SfxCelebrate(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));   // 自分の喜ぶ声（sounds/you_celebrate など）
+                    SfxMatchWin();      // 大歓声（sounds/match_win があれば重ねる）
+                    crowdExcite = 1.0f;
+                    winFx = 0.0f;
+                    phaseTimer = fmaxf(phaseTimer, 4.5f);   // 喜ぶ間は統計を出さない
                 }
                 // ---- 試合の記録 ----
                 {
@@ -1581,13 +1601,15 @@ int main(void)
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
             }
-            else if (ai.anim.celebT > 0.0f) {
+            if (P.anim.celebT > 0.0f)   P.anim.celebT = fmaxf(P.anim.celebT - simDt, 0.0f);
+            if (bot.anim.celebT > 0.0f) bot.anim.celebT = fmaxf(bot.anim.celebT - simDt, 0.0f);
+            if (ai.anim.smashT <= 0.0f && ai.anim.celebT > 0.0f) {
                 // 喜ぶ・怒る間はその場で
                 ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
             }
-            else if (phase == PH_POINT_OVER) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
+            else if (phase == PH_POINT_OVER && ai.anim.smashT <= 0.0f) AiUpdate(&ai, &ball, simDt);   // 打ち終わったら戻る
             if (phaseTimer <= 0.0f && setBreak) {
                 // セット間：統計を出して待つ（オートパイロットなら 6 秒で進む）
                 summaryT += frameDt;
@@ -1616,19 +1638,41 @@ int main(void)
                              (ball.lastHitter == HITTER_OPP && ball.bounces >= 2);
             if (rallyOver) {
                 feedTimer -= frameDt;
+                // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
+                float lead = mode == MODE_RETURN ? AI_TOSS_HIT_T * 0.5f : SWING_LEAD;
+                if (!feedSwing && feedTimer <= lead) {
+                    feedNext = mode == MODE_RETURN ? MachineServe() : MachineFeed(proFeed);
+                    feedSwing = true;
+                    ai.anim = (SwingAnim){ .swingT = 0.0f };
+                    if (mode == MODE_RETURN) {   // サーブ：頭上で打つ（打点の右後ろに立つ）
+                        feederPos = (Vector3){ feedNext.pos.x + 0.25f, 0.0f, feedNext.pos.z - 0.35f };
+                        ai.anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = 0.9f };
+                        ai.anim.contactLocal = (Vector3){ 0.25f, feedNext.pos.y, 0.35f };
+                    } else {                     // ストローク：フォアで打つ（球は体の右＝世界の -x 側）
+                        feederPos = (Vector3){ feedNext.pos.x + 0.70f, 0.0f, feedNext.pos.z - 0.30f };
+                        ai.anim.lastContact = (Contact){ .forehand = true, .quality = 0.8f, .height = feedNext.pos.y };
+                        ai.anim.contactLocal = (Vector3){ 0.70f, feedNext.pos.y, 0.30f };
+                        ai.anim.slice = feedNext.spin.x < 0.0f;
+                    }
+                    ai.anim.swingT = fmaxf(0.0f, (mode == MODE_RETURN ? 0.0f : SWING_LEAD) - feedTimer);
+                    ai.pos = feederPos;
+                }
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
-                        ball = MachineServe();
+                        ball = feedSwing ? feedNext : MachineServe();
                         P.pos = ReturnPos(true, false);   // リターンの構え位置へ
                         P.vel = (Vector3){ 0 };
                     } else {
-                        ball = MachineFeed(proFeed);
+                        ball = feedSwing ? feedNext : MachineFeed(proFeed);
                     }
+                    feedSwing = false;
                     trailColor = Fade(LIGHTGRAY, 0.6f);
                     trailCount = 0;
                     feedTimer = 1.2f;
+                    P.anim.splitT = SPLIT_TIME;
                 }
             }
+            if (ai.anim.swingT >= 0.0f) ai.anim.swingT = fminf(ai.anim.swingT + simDt, 5.0f);   // 球出しの振りを進める
         }
 
         // ---- カメラ ----
@@ -1663,6 +1707,11 @@ int main(void)
             ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over && ai.anim.celebT <= 0.0f;
             DrawFigure(P.pos, true, youShirt, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
+            if (mode == MODE_RALLY || mode == MODE_RETURN) {   // 練習：球を出す相手を描く（選んでいる相手の選手）
+                ai.anim.lefty = false; ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
+                ApplyLook(&ai.anim, ai.persona);
+                DrawFigure(feederPos, false, PersonaShirt(ai.persona), &ai.anim, 0.0f);
+            }
             if (mode == MODE_MATCH)
             {
                 ai.anim.lefty = PERSONAS[ai.persona].lefty;          // 構えやポイントの間も、いつも選手の利き手で描く
@@ -2076,6 +2125,22 @@ int main(void)
                 DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT);
             else if (showSummary)
                 DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT);
+            // ---- 試合に勝った：紙吹雪と勝利の文字 ----
+            if (winFx >= 0.0f && score.over) {
+                winFx += frameDt;
+                int W = GetScreenWidth(), H = GetScreenHeight();
+                static const Color CF[6] = { { 250, 70, 70, 255 }, { 255, 210, 60, 255 }, { 90, 200, 255, 255 }, { 120, 230, 120, 255 }, { 255, 140, 220, 255 }, { 255, 255, 255, 255 } };
+                float alC = phaseTimer > 0.0f ? 1.0f : 0.75f;
+                for (int i = 0; i < 140; i++) {
+                    float r1 = fmodf(sinf(i * 12.9898f) * 43758.5453f, 1.0f), r2 = fmodf(sinf(i * 78.233f) * 12345.678f, 1.0f);
+                    r1 = fabsf(r1); r2 = fabsf(r2);
+                    float sp = 70.0f + 110.0f * r2;
+                    float y = fmodf(r1 * (H + 60) + winFx * sp, (float)(H + 60)) - 30.0f;
+                    float x = r2 * W + 35.0f * sinf(winFx * (1.5f + r1 * 2.0f) + i);
+                    float rot = winFx * (90.0f + 200.0f * r1) + i * 37.0f;
+                    DrawRectanglePro((Rectangle){ x, y, 12.0f, 6.0f }, (Vector2){ 6.0f, 3.0f }, rot, Fade(CF[i % 6], alC));
+                }
+            }
         }
 
         // 統計（Tab）
