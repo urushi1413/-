@@ -94,6 +94,8 @@ typedef struct {
 #define VOLLEY_PITCH_ERR 0.55f   // ボレーの上下のぶれの倍率（面を固めて当てる）
 #define CROUCH_LIFT      0.30f   // しゃがむと、低い球をこれだけ高い球として打てる（腰を落として目線と面を下げる）
 #define CROUCH_SPEED     0.60f   // しゃがんでいる間の走る速さの割合
+#define TOUCH_READ_DELAY 0.20f  // ロブ・ドロップに AI が反応するまでの遅れ（打つ形が普通のストロークと同じで読めない）。強い AI ほど短い
+#define BACKPEDAL_SLOW   0.32f  // AI が後ろ（ネットと反対）へ走るときに遅くなる割合（向きを変えて走るので）
 #define AI_LAPSE_EASY    0.220f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
 #define AI_LAPSE_NORMAL  0.090f
 #define AI_LAPSE_PRO     0.060f
@@ -327,6 +329,7 @@ typedef struct {
     bool    hitNet;
     int     side;          // 狙った側：-1=相手コート(z<0)、+1=自分のコート(z>0)
     int     shotId;        // 自分の打球の通し番号（プレイ記録で結果と結び付ける）
+    bool    touch;         // ロブ・ドロップ（打つ形からは読みにくい）
     int     bounces;
     float   netClearance;  // ネット上を通過したときの余裕（m）。マイナスならネットに当たった
     float   peakAfterFirstBounce;

@@ -672,6 +672,10 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         ai->swung = false;
         // サーブはトスとフォームで読める（スプリットステップ）ので、反応は半分
         if (ball->lastHitter == HITTER_PLAYER) ai->seeTimer = ball->isServe ? lv->reaction * 0.5f : lv->reaction;
+        if (ball->lastHitter == HITTER_PLAYER && ball->touch) {   // ロブ・ドロップ：打つ形からは読めないので、気づくのが遅れる
+            static const float READ[3] = { 1.3f, 1.0f, 0.95f };
+            ai->seeTimer += TOUCH_READ_DELAY * READ[ai->level % 3];
+        }
         if (ball->lastHitter == HITTER_PLAYER && ai->staggerT > 0.0f) ai->seeTimer += ai->staggerT * STAGGER_REACT;   // よろめいていると一歩目が遅れる
         else ai->standPos = ai->netRush ? AiNetPos(ai) : AiHomeFor(ai);   // 自分が打った後：ネットに詰めるか、戻る
     }
@@ -695,6 +699,11 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
     if (ai->staggerT > 0.0f) ai->staggerT -= dt;
     ai->anim.staggerK = ai->staggerTotal > 0.0f ? fmaxf(ai->staggerT, 0.0f) / ai->staggerTotal * ai->staggerS : 0.0f;
     lvE.speed *= smul;
+    {   // 後ろへ下がる（ロブを追う）ときは、体の向きを変えて走るので遅い
+        Vector3 d0 = Vector3Subtract(ai->standPos, ai->pos);
+        float l0 = sqrtf(d0.x * d0.x + d0.z * d0.z);
+        if (l0 > 0.3f && d0.z < 0.0f) lvE.speed *= 1.0f - BACKPEDAL_SLOW * (-d0.z / l0);   // AI のコートは z<0、後ろは -z
+    }
     if (ball->lastHitter == HITTER_PLAYER && !ai->planned && !ai->leaving && !ai->swung && ball->active) {
         ai->seeTimer -= dt;
         if (ai->seeTimer <= 0.0f) AiPlan(ai, ball);

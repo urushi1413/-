@@ -273,6 +273,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
             b.spin = Vector3RotateByAxisAngle(sp0, (Vector3){ 0, 1, 0 }, rot);
         }
     }
+    b.touch = (type == SHOT_DROP || type == SHOT_SLICE_LOB || type == SHOT_TOP_LOB);   // ロブ・ドロップは読みにくい
     return b;
 }
 
