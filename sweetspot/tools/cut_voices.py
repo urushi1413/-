@@ -140,7 +140,7 @@ def make_roar(src):
     e = (np.nonzero(env > 0.05 * env.max())[0][-1] + 2) * w   # 叫び終わるところまで全部（約 2.3 秒）
     x = np.concatenate([x[:e], np.zeros(int(1.2 * SR))])      # 響きが残る分
     y = far_away(x, 77, 1.0)
-    y = y / np.max(np.abs(y)) * 0.62                          # 叫び声は打球音より少し小さく（遠く）
+    y = y / np.max(np.abs(y)) * 0.85                          # 叫び声は大きく（打球音と同じくらい）
     n = len(head) + len(y) - int(0.03 * SR)
     out = np.zeros(n)
     out[: len(head)] += head * np.r_[np.ones(len(head) - int(0.03 * SR)), np.linspace(1, 0, int(0.03 * SR))]

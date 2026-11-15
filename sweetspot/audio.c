@@ -358,7 +358,7 @@ void SfxHitRoar(int who, float dist)
     SfxSlot *s = PSlot(who, V_ROAR);
     if (!gAudioOk || !s->nVar) return;
     int v = GetRandomValue(0, s->nVar - 1);
-    PlaySlotVar(s, v, 1.1f * VoiceDistVol(dist) * VOICE_GAIN, 1.0f);
+    PlaySlotVar(s, v, 1.4f * VoiceDistVol(dist) * VOICE_GAIN, 1.0f);   // 雄叫びは大きく
     gVoiceUntil = GetTime() + VarLen(s, v);   // 叫んでいる間は、ほかの声を出さない
 }
 bool SfxServePreBy(int who, float dist) { return StartPre(who, true, dist); }
