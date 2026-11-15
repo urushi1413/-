@@ -255,6 +255,28 @@ static Color MixColor(Color a, Color b, float k)
                     (unsigned char)(a.b + (b.b - a.b) * k), (unsigned char)(a.a + (b.a - a.a) * k) };
 }
 
+// 大会の案内（優勝・負け・次の試合）
+const char *TourEndMessage(const Tournament *t)
+{
+    const char *msg;
+    if (t->champion) {
+        if (t->season && t->slam < SLAM_COUNT - 1) msg = TextFormat(TR("CHAMPION!   Enter: next slam (%s)", "優勝！   Enter：次の大会（%s）"), SLAM_NAME[t->slam + 1]);
+        else if (t->season && t->seasonTitles == SLAM_COUNT) msg = TR("CALENDAR GRAND SLAM!!   Enter: back to title", "年間グランドスラム達成！！   Enter：タイトルに戻る");
+        else if (t->season) msg = TextFormat(TR("CHAMPION!   Season: %d of 4 slams   Enter: back to title", "優勝！   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), t->seasonTitles);
+        else msg = TR("CHAMPION!   Enter: back to title", "優勝！   Enter：タイトルに戻る");
+    } else if (t->playerOut) {
+        if (t->season && t->slam < SLAM_COUNT - 1)
+            msg = TextFormat(TR("You lost in the %s.   Enter: next slam (%s)", "%sで負けた   Enter：次の大会（%s）"), TourRoundName(t->outRound), SLAM_NAME[t->slam + 1]);
+        else if (t->season)
+            msg = TextFormat(TR("You lost in the %s.   Season: %d of 4 slams   Enter: back to title", "%sで負けた   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), TourRoundName(t->outRound), t->seasonTitles);
+        else
+            msg = TextFormat(TR("You lost in the %s.   Enter: back to title", "%sで負けた   Enter：タイトルに戻る"), TourRoundName(t->outRound));
+    } else {
+        msg = TextFormat(TR("Next: %s vs %s   -   Enter: play", "次：%s  対 %s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t));
+    }
+    return msg;
+}
+
 void TourDraw(const Tournament *t, int W, int H, float time)
 {
     ClearBackground(SlamColor(t->slam));
@@ -359,22 +381,7 @@ void TourDraw(const Tournament *t, int W, int H, float time)
         DrawText(sk, W / 2 - MeasureText(sk, 22) / 2, H - 56, 22, LIGHTGRAY);
         return;
     }
-    const char *msg;
-    if (t->champion) {
-        DrawTrophy(W - 150, H - 250, 0.8f, time);
-        if (t->season && t->slam < SLAM_COUNT - 1) msg = TextFormat(TR("CHAMPION!   Enter: next slam (%s)", "優勝！   Enter：次の大会（%s）"), SLAM_NAME[t->slam + 1]);
-        else if (t->season && t->seasonTitles == SLAM_COUNT) msg = TR("CALENDAR GRAND SLAM!!   Enter: back to title", "年間グランドスラム達成！！   Enter：タイトルに戻る");
-        else if (t->season) msg = TextFormat(TR("CHAMPION!   Season: %d of 4 slams   Enter: back to title", "優勝！   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), t->seasonTitles);
-        else msg = TR("CHAMPION!   Enter: back to title", "優勝！   Enter：タイトルに戻る");
-    } else if (t->playerOut) {
-        if (t->season && t->slam < SLAM_COUNT - 1)
-            msg = TextFormat(TR("You lost in the %s.   Enter: next slam (%s)", "%sで負けた   Enter：次の大会（%s）"), TourRoundName(t->outRound), SLAM_NAME[t->slam + 1]);
-        else if (t->season)
-            msg = TextFormat(TR("You lost in the %s.   Season: %d of 4 slams   Enter: back to title", "%sで負けた   シーズン：4 大会中 %d 大会   Enter：タイトルに戻る"), TourRoundName(t->outRound), t->seasonTitles);
-        else
-            msg = TextFormat(TR("You lost in the %s.   Enter: back to title", "%sで負けた   Enter：タイトルに戻る"), TourRoundName(t->outRound));
-    } else {
-        msg = TextFormat(TR("Next: %s vs %s   -   Enter: play", "次：%s  対 %s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t));
-    }
+    if (t->champion) DrawTrophy(W - 150, H - 250, 0.8f, time);
+    const char *msg = TourEndMessage(t);
     DrawText(msg, W / 2 - MeasureText(msg, 24) / 2, H - 56, 24, accent);
 }

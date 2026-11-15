@@ -212,6 +212,56 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
     AtmosOverlay(cam);
 }
 
+// 優勝の表彰：コートの真ん中で、自分の選手がその大会のトロフィーを頭の上に掲げる。カメラはまわりをゆっくり回る
+static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm)
+{
+    int W = GetScreenWidth(), H = GetScreenHeight();
+    Vector3 pos = { 0.0f, 0.0f, -SERVICE_Z - 1.0f };
+    Camera3D cam = { 0 };
+    cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 40.0f; cam.projection = CAMERA_PERSPECTIVE;
+    float a = 0.55f * sinf(tm * 0.22f);   // 正面から左右へゆっくり回り込む
+    cam.position = (Vector3){ pos.x + sinf(a) * 5.6f, 1.35f, pos.z - cosf(a) * 5.6f };
+    cam.target = (Vector3){ pos.x, 1.45f, pos.z };
+    DrawSky(cam);
+    BeginMode3D(cam);
+    DrawCourt();
+    DrawStadium(cam.position, (Vector3){ 0, -10, 0 }, 1.0f, tm, (Vector3){ 0 }, 0.0f);
+    SwingAnim an = { 0 }; an.swingT = -1.0f;
+    ApplyLook(&an, youP ? youP : -1);
+    an.lefty = PERSONAS[youP].lefty; an.oneHanded = PERSONAS[youP].oneHanded;
+    an.celebKind = CELEB_TROPHY; an.celebDur = 10000.0f; an.celebT = an.celebDur - (tm + 2.0f);
+    DrawFigure(pos, true, youShirt, &an, 0.0f);
+    // トロフィー：両手の間（手は頭の上、少しだけ前）。手の上げ下げに合わせる
+    float sc = an.scale > 0.0f ? an.scale : 1.0f;   // 背の高さで手の高さも変わる
+    float e = tm + 2.0f, hy = (2.02f + 0.06f * sinf(e * 1.6f)) * sc;
+    float th = TrophyHeight(t->slam, t->women);
+    Vector3 base = { pos.x, hy + 0.03f - 0.30f * th, pos.z - 0.06f * sc };
+    if (t->slam == 2 && t->women) base.y = hy - 0.5f * th;   // 大皿は真ん中を持つ
+    DrawTrophy3D(t->slam, t->women, base, tm * 0.6f);
+    EndMode3D();
+    AtmosOverlay(cam);
+    // 紙吹雪
+    for (int i = 0; i < 90; i++) {
+        float x = fmodf(i * 97.3f + sinf(tm * 0.7f + i) * 40.0f, (float)W);
+        float y = fmodf(i * 53.0f + tm * (70.0f + (i % 9) * 18.0f), (float)H + 40.0f) - 20.0f;
+        Color c = (Color[]){ RED, YELLOW, SKYBLUE, GREEN, PINK, ORANGE, RAYWHITE }[i % 7];
+        float w = 6.0f + 4.0f * fabsf(sinf(tm * 3.0f + i));
+        DrawRectanglePro((Rectangle){ x, y, w, 5 }, (Vector2){ w / 2, 2.5f }, tm * 120.0f + i * 40.0f, c);
+    }
+    // 文字
+    const char *ch = TR("CHAMPION", "優勝");
+    DrawText(ch, W / 2 - MeasureText(ch, 72) / 2 + 4, 34 + 4, 72, Fade(BLACK, 0.5f));
+    DrawText(ch, W / 2 - MeasureText(ch, 72) / 2, 34, 72, (Color){ 255, 215, 70, 255 });
+    const char *nm = TextFormat("%s  -  %s  -  %s", TourName(t->slam), t->women ? TR("WOMEN'S SINGLES", "女子シングルス") : TR("MEN'S SINGLES", "男子シングルス"),
+                                youP ? PERSONAS[youP].name : YouName());
+    DrawText(nm, W / 2 - MeasureText(nm, 24) / 2, 118, 24, RAYWHITE);
+    const char *msg = TourEndMessage(t);
+    DrawRectangle(0, H - 74, W, 74, Fade(BLACK, 0.45f));
+    DrawText(msg, W / 2 - MeasureText(msg, 24) / 2, H - 62, 24, YELLOW);
+    const char *tab = TR("Tab: draw", "Tab：組み合わせ表");
+    DrawText(tab, W / 2 - MeasureText(tab, 16) / 2, H - 28, 16, LIGHTGRAY);
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
@@ -429,8 +479,15 @@ int main(void)
                     tour.active = false; app = APP_TITLE; menuSel = 0;
                 }
             }
+            // 優勝したら、結果を見せ終わってから表彰の場面（Tab で組み合わせ表と切り替え）
+            static bool showDraw = false;
+            if (IsKeyPressed(KEY_TAB)) showDraw = !showDraw;
+            if (!tour.champion) showDraw = false;
             BeginDrawing();
-            TourDraw(&tour, GetScreenWidth(), GetScreenHeight(), (float)GetTime());
+            if (tour.champion && !TourRevealActive() && !showDraw)
+                DrawCeremony(&tour, gYouPersona, gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 }, (float)GetTime());
+            else
+                TourDraw(&tour, GetScreenWidth(), GetScreenHeight(), (float)GetTime());
             EndDrawing();
             continue;
         }

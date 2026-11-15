@@ -132,6 +132,7 @@ enum { CELEB_NONE, CELEB_FIST, CELEB_VAMOS, CELEB_ROAR, CELEB_COMEON, CELEB_RANT
        RIT_NADAL,       // ナダルの儀式：パンツを引っぱり、肩・鼻・耳を触ってから、ボールをつく
        RIT_HAIR,        // 髪を耳にかけてから、ボールをつく（フェデラー、シフィオンテク）
        RIT_STRINGS,     // 後ろを向いてガットを直してから、ボールをつく（シャラポワ）
+       CELEB_TROPHY,    // 優勝：トロフィーを頭の上に掲げる（ラケットは足もとに置く）
        CELEB_COUNT };
 #define RIT_BOUNCE_T 0.42f
 // 髪型
@@ -701,6 +702,9 @@ const char *TourOpponentName(const Tournament *t);
 int  TourSlamSurface(int slam);
 void TourRecordPlayerMatch(Tournament *t, bool playerWon, const Score *s);
 void TourDraw(const Tournament *t, int W, int H, float time);
+const char *TourEndMessage(const Tournament *t);   // 大会が終わったときの案内（優勝・負け・次の大会）
+void DrawTrophy3D(int slam, bool women, Vector3 base, float spin);   // 実在のトロフィーを参考にした形（base は一番下）
+float TrophyHeight(int slam, bool women);
 void TourBeginReveal(const Tournament *t, int fromRound);   // ほかの試合の結果を 1 試合ずつ見せ始める
 bool TourRevealActive(void);
 void TourRevealSkip(void);

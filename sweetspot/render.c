@@ -926,6 +926,12 @@ bool CelebPose(const SwingAnim *a, CelebOut *o)
             rh = V3(0.40f, 1.05f, -0.05f); rd = V3(0.30f, -0.30f, -0.90f);
             t.headUp = 0.6f;
         } break;
+        case CELEB_TROPHY: {     // 優勝：トロフィーを頭の上に掲げる。ゆっくり上げ下げする。ラケットは足もとに置く
+            float bob = 0.06f * sinf(e * 1.6f);
+            rh = V3(0.17f, 2.02f + bob, 0.06f); rd = V3(0.0f, 1.0f, 0.0f); lh = V3(-0.17f, 2.02f + bob, 0.06f);
+            t.lean = -0.05f; t.headUp = 1.0f;
+            t.racketGone = true; t.rkPos = V3(0.45f, 0.03f, 0.35f); t.rkDir = V3(0.2f, 0.0f, 0.98f); t.rkNrm = V3(0.0f, 1.0f, 0.0f);
+        } break;
         case CELEB_ARMS_UP:      // 両手を高く上げる（V 字）
             rh = V3(0.48f, 1.95f, 0.02f); rd = V3(0.35f, 0.88f, -0.15f); lh = V3(-0.48f, 1.95f, 0.02f);
             t.lean = -0.06f; t.headUp = 1.0f;
@@ -1718,7 +1724,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             case CELEB_RANT: open = 0.35f + 0.35f * fabsf(sinf(co.e * 11.0f)); angry = 1.0f; break;
             case CELEB_THROW: case CELEB_SWAT: open = 0.55f; angry = 1.0f; break;
             case CELEB_HANDS_HEAD: open = 0.4f; angry = 0.6f; break;
-            case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_KNEES: open = 0.5f; smile = 1.0f; break;
+            case CELEB_ARMS_UP: case CELEB_RACKET_UP: case CELEB_KNEES: case CELEB_TROPHY: open = 0.5f; smile = 1.0f; break;
             case CELEB_HEART: case CELEB_EAR: case CELEB_RACKET_POINT: smile = 1.0f; break;
             case CELEB_SHRUG: smile = 0.2f; break;
             default: break;
@@ -2124,5 +2130,120 @@ void AtmosOverlay(Camera3D cam)
             GlowCircle(sc.x, sc.y, r * 0.7f, Fade((Color){ 255, 255, 240, 255 }, 0.8f * facing), Fade(BLACK, 0.0f));
         }
         EndBlendMode();
+    }
+}
+
+// ================= トロフィー（実在のものを参考にした形） =================
+// 回転体（ろくろで作るような形）を、高さごとの半径の表から作る。金属らしく、回ると光の筋が動くように陰をつける
+static Vector3 gTrophyLight = { 0.5f, 0.6f, 0.62f };
+static Color MetalShade(Color c, Vector3 n)
+{
+    float l = 0.45f + 0.35f * fmaxf(Vector3DotProduct(n, Vector3Normalize(gTrophyLight)), 0.0f) + 0.45f * powf(fabsf(n.x), 6.0f) + 0.15f * fmaxf(n.y, 0.0f);
+    return (Color){ (unsigned char)fminf(c.r * l, 255), (unsigned char)fminf(c.g * l, 255), (unsigned char)fminf(c.b * l, 255), 255 };
+}
+static void MV(Vector3 p, Vector3 n, Color c) { Color s = MetalShade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z); }
+// r[i], y[i]：下から順の半径と高さ（m）。spin：回す角度
+static void Lathe(Vector3 o, const float *r, const float *y, int n, float spin, Color c)
+{
+    const int seg = 28;
+    for (int i = 0; i + 1 < n; i++) {
+        rlCheckRenderBatchLimit(seg * 6);
+        rlBegin(RL_TRIANGLES);
+        float dr = r[i + 1] - r[i], dy = y[i + 1] - y[i], L = sqrtf(dr * dr + dy * dy) + 1e-6f;
+        float ny = -dr / L, nr = dy / L;   // 面の向き（外向き）
+        for (int k = 0; k < seg; k++) {
+            float a0 = spin + 2.0f * PI * k / seg, a1 = spin + 2.0f * PI * (k + 1) / seg;
+            Vector3 n0 = { cosf(a0) * nr, ny, sinf(a0) * nr }, n1 = { cosf(a1) * nr, ny, sinf(a1) * nr };
+            Vector3 p00 = { o.x + cosf(a0) * r[i], o.y + y[i], o.z + sinf(a0) * r[i] }, p01 = { o.x + cosf(a1) * r[i], o.y + y[i], o.z + sinf(a1) * r[i] };
+            Vector3 p10 = { o.x + cosf(a0) * r[i + 1], o.y + y[i + 1], o.z + sinf(a0) * r[i + 1] }, p11 = { o.x + cosf(a1) * r[i + 1], o.y + y[i + 1], o.z + sinf(a1) * r[i + 1] };
+            MV(p00, n0, c); MV(p11, n1, c); MV(p01, n1, c);
+            MV(p00, n0, c); MV(p10, n0, c); MV(p11, n1, c);
+            MV(p00, n0, c); MV(p01, n1, c); MV(p11, n1, c);   // 裏も（杯の内側が見えるように）
+            MV(p00, n0, c); MV(p11, n1, c); MV(p10, n0, c);
+        }
+        rlEnd();
+    }
+}
+// 取っ手：杯の横に、縦の半円（または輪）を細い筒でつなぐ
+static void Handle(Vector3 o, float spin, float side, float x0, float y0, float x1, float y1, float bulge, float thick, Color c)
+{
+    const int N = 14;
+    Vector3 prev = { 0 };
+    float ca = cosf(spin), sa = sinf(spin);
+    for (int i = 0; i <= N; i++) {
+        float u = (float)i / N;
+        float x = x0 + (x1 - x0) * u + bulge * sinf(PI * u), yy = y0 + (y1 - y0) * u;
+        Vector3 p = { o.x + ca * x * side, o.y + yy, o.z + sa * x * side };
+        if (i > 0) DrawCylinderEx(prev, p, thick, thick, 8, MetalShade(c, (Vector3){ ca * side, 0.3f, sa * side }));
+        prev = p;
+    }
+}
+float TrophyHeight(int slam, bool women)
+{
+    if (slam == 2 && women) return 0.48f;   // 大皿は直径
+    static const float H[4] = { 0.62f, 0.58f, 0.50f, 0.56f };
+    return H[((slam % 4) + 4) % 4] * (women && slam != 3 ? 0.88f : 1.0f);
+}
+void DrawTrophy3D(int slam, bool women, Vector3 o, float spin)
+{
+    Color silver = { 222, 226, 232, 255 }, gold = { 236, 196, 92, 255 }, black = { 40, 38, 42, 255 }, wood = { 70, 45, 30, 255 };
+    slam = ((slam % 4) + 4) % 4;
+    if (slam == 0) {
+        if (!women) {   // 全豪・男子：銀の大きな壺形の杯、大きな取っ手 2 つ、黒い台座
+            const float r[] = { 0.13f, 0.13f, 0.11f, 0.05f, 0.03f, 0.045f, 0.10f, 0.14f, 0.15f, 0.135f, 0.12f, 0.14f };
+            const float y[] = { 0.00f, 0.08f, 0.10f, 0.12f, 0.20f, 0.24f, 0.30f, 0.38f, 0.46f, 0.53f, 0.57f, 0.62f };
+            Lathe(o, r, y, 2, spin, black); Lathe(o, r + 1, y + 1, 11, spin, silver);
+            for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.14f, 0.52f, 0.13f, 0.32f, 0.11f, 0.018f, silver);
+        } else {        // 全豪・女子：銀の花瓶形
+            const float r[] = { 0.09f, 0.09f, 0.04f, 0.03f, 0.08f, 0.11f, 0.08f, 0.06f, 0.09f };
+            const float y[] = { 0.00f, 0.03f, 0.06f, 0.14f, 0.24f, 0.34f, 0.44f, 0.50f, 0.55f };
+            Lathe(o, r, y, 9, spin, silver);
+            for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.07f, 0.48f, 0.10f, 0.30f, 0.06f, 0.015f, silver);
+        }
+    } else if (slam == 1) {   // 全仏：銀の背の高い杯、口が大きく開き、取っ手 2 つ、台座つき（女子は少し小さい）
+        float k = women ? 0.88f : 1.0f;
+        float r[] = { 0.11f, 0.11f, 0.06f, 0.035f, 0.03f, 0.05f, 0.09f, 0.12f, 0.15f, 0.16f };
+        float y[] = { 0.00f, 0.05f, 0.08f, 0.12f, 0.22f, 0.27f, 0.34f, 0.44f, 0.54f, 0.58f };
+        for (int i = 0; i < 10; i++) { r[i] *= k; y[i] *= k; }
+        Lathe(o, r, y, 2, spin, black); Lathe(o, r + 1, y + 1, 9, spin, silver);
+        for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.15f * k, 0.55f * k, 0.07f * k, 0.30f * k, 0.12f * k, 0.017f, silver);
+    } else if (slam == 2) {
+        if (!women) {   // ウィンブルドン・男子：金色の杯、ふたと頂上のパイナップル飾り、取っ手 2 つ
+            const float r[] = { 0.075f, 0.07f, 0.03f, 0.025f, 0.06f, 0.10f, 0.105f, 0.10f, 0.105f, 0.09f, 0.05f, 0.02f };
+            const float y[] = { 0.00f,  0.02f, 0.05f, 0.12f,  0.17f, 0.24f, 0.31f,  0.35f, 0.37f,  0.40f, 0.43f, 0.45f };
+            Lathe(o, r, y, 12, spin, gold);
+            DrawSphere(Vector3Add(o, (Vector3){ 0, 0.48f, 0 }), 0.03f, gold);           // パイナップル
+            DrawCylinderEx(Vector3Add(o, (Vector3){ 0, 0.50f, 0 }), Vector3Add(o, (Vector3){ 0, 0.53f, 0 }), 0.012f, 0.004f, 6, (Color){ 120, 160, 70, 255 });   // 葉
+            for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.10f, 0.33f, 0.07f, 0.17f, 0.08f, 0.016f, gold);
+        } else {        // ウィンブルドン・女子：銀の大皿（金の模様）。縦に持って見せる
+            float R = 0.24f;
+            Vector3 c = Vector3Add(o, (Vector3){ 0, R, 0 });
+            Vector3 n = { sinf(spin * 0.4f) * 0.4f, 0.0f, 1.0f };
+            n = Vector3Normalize(n);
+            Vector3 ax = Vector3Normalize(Vector3CrossProduct((Vector3){ 0, 1, 0 }, n)), ay = { 0, 1, 0 };
+            for (int ring = 0; ring < 5; ring++) {   // 外から：銀のふち、金の帯、銀、金の模様、真ん中の金のふくらみ
+                float r0 = R * (1.0f - ring * 0.2f), r1 = R * (1.0f - (ring + 1) * 0.2f);
+                Color col = (ring % 2) ? gold : silver;
+                rlCheckRenderBatchLimit(36 * 6);
+                rlBegin(RL_TRIANGLES);
+                for (int k = 0; k < 36; k++) {
+                    float a0 = 2 * PI * k / 36, a1 = 2 * PI * (k + 1) / 36;
+                    Vector3 p0 = Vector3Add(c, Vector3Add(Vector3Scale(ax, cosf(a0) * r0), Vector3Scale(ay, sinf(a0) * r0)));
+                    Vector3 p1 = Vector3Add(c, Vector3Add(Vector3Scale(ax, cosf(a1) * r0), Vector3Scale(ay, sinf(a1) * r0)));
+                    Vector3 q0 = Vector3Add(c, Vector3Add(Vector3Scale(ax, cosf(a0) * r1), Vector3Scale(ay, sinf(a0) * r1)));
+                    Vector3 q1 = Vector3Add(c, Vector3Add(Vector3Scale(ax, cosf(a1) * r1), Vector3Scale(ay, sinf(a1) * r1)));
+                    q0 = Vector3Add(q0, Vector3Scale(n, 0.004f * ring)); q1 = Vector3Add(q1, Vector3Scale(n, 0.004f * ring));
+                    Vector3 nn = Vector3Normalize(Vector3Add(n, Vector3Scale(ax, 0.6f * cosf(a0))));   // 光が回る
+                    MV(p0, nn, col); MV(q0, nn, col); MV(q1, nn, col); MV(p0, nn, col); MV(q1, nn, col); MV(p1, nn, col);
+                    MV(p0, nn, col); MV(q1, nn, col); MV(q0, nn, col); MV(p0, nn, col); MV(p1, nn, col); MV(q1, nn, col);
+                }
+                rlEnd();
+            }
+        }
+    } else {   // 全米：銀の背の高い杯、細長い取っ手 2 つ、木の台座
+        const float r[] = { 0.10f, 0.10f, 0.05f, 0.03f, 0.025f, 0.05f, 0.10f, 0.12f, 0.125f, 0.12f };
+        const float y[] = { 0.00f, 0.05f, 0.07f, 0.10f, 0.20f,  0.25f, 0.34f, 0.44f, 0.52f,  0.56f };
+        Lathe(o, r, y, 2, spin, wood); Lathe(o, r + 1, y + 1, 9, spin, silver);
+        for (int sd = -1; sd <= 1; sd += 2) Handle(o, spin, (float)sd, 0.12f, 0.52f, 0.06f, 0.26f, 0.10f, 0.016f, silver);
     }
 }
