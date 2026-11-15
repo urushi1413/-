@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # SWEET SPOT — ラケットを地面に叩きつける音・投げたラケットが落ちる音を合成する
-#   録音素材は使わず、実際の音の特徴（数値）だけをまねて一から作る：
-#     ・2〜6ms で消える鋭い「パキッ」（カーボンのフレームがコートに当たる、広い帯域の音）
-#     ・800〜900Hz あたりのフレームの響き（約 20ms で消える）と、少し高い倍音
-#     ・約 24ms おきに 2〜3 回、跳ね返りの小さな当たりが続く
-#     ・コートに当たる低い「ドン」（150〜400Hz が強い）、約 30ms 後にほぼ同じ強さの 2 回目の当たり
-#     ・会場の響き（ピークより 15〜20dB 小さい音が長く残る）
-#   使い方: python3 tools/gen_racket.py   → sounds/racket_smash*.wav, sounds/racket_land*.wav
+#   録音素材は使わず、実際の音を測った数値だけをまねて一から作る（もらった音声 3 回分の平均）：
+#     ・音程のないノイズのような「パキッ」。500Hz〜8kHz にほぼ平らに広がり、5〜6kHz がいちばん強い。低い音は弱い
+#     ・1ms で立ち上がり、2ms で -14dB、10ms で -30dB。フレームの響き（音程）はほとんどない
+#     ・約 18ms・35ms・55ms に、14〜20dB 小さい「パキッ」が続く（跳ね返り・割れ）
+#     ・会場の響きは小さい（ピークより約 30dB 小さい）
+#   使い方: python3 tools/gen_racket.py   → sounds/racket_smash*.wav
 #   必要: numpy, scipy, soundfile
 import os
 
@@ -60,52 +59,59 @@ def contact(rng, amp, bright, ring_tau, n):
     return y * amp
 
 
-def arena_ir(rng, length=1.6):
-    """会場の響き：少し遅れて届く跳ね返り（客席・壁）と、長く残る響き"""
+# 実際の叩きつけ音（ブーイングが少ない 3 回分）を 1/3 オクターブで測った「パキッ」の最初の 8ms の音色（dB）。
+# 1kHz 以下は後ろのブーイングが混ざっていたので、その分を下げてある
+CRACK_FREQ = [125, 250, 500, 800, 1000, 1600, 2000, 2500, 3150, 4000, 5000, 6300, 8000, 10000, 12500, 16000]
+CRACK_DB = [-26, -22, -16, -11, -9, -5, -5, -5, -5, -4, -1, 0, -2, -9, -16, -60]
+
+
+def shaped_noise(rng, n, freqs=CRACK_FREQ, dbs=CRACK_DB, tilt=0.0):
+    """測った音色どおりのノイズ（音程のない音）。tilt：高い音を増やす（+）・減らす（-）dB/オクターブ"""
+    X = np.fft.rfft(rng.normal(0, 1, n))
+    f = np.fft.rfftfreq(n, 1 / SR)
+    lf = np.log2(np.maximum(f, 20))
+    g = np.interp(lf, np.log2(freqs), dbs, left=dbs[0], right=dbs[-1]) + tilt * (lf - np.log2(2000))
+    return np.fft.irfft(X * 10 ** (g / 20), n)
+
+
+def crack(rng, amp, tilt=0.0):
+    """「パキッ」1 回：1ms で立ち上がり、2ms で -14dB、10ms で -30dB。最初の 3ms に細かい割れが重なる"""
+    n = int(0.03 * SR)
+    t = np.arange(n) / SR
+    env = np.minimum(1, t / 0.0006) * (np.exp(-t / 0.00085) + 0.015 * np.exp(-t / 0.006))
+    for k in range(rng.integers(2, 5)):                       # 細かい割れ
+        t0 = rng.uniform(0.0004, 0.003)
+        env += rng.uniform(0.2, 0.5) * np.exp(-np.maximum(t - t0, 0) / 0.0004) * (t >= t0)
+    y = hp(shaped_noise(rng, n, tilt=tilt), 300) * env
+    return y / np.max(np.abs(y)) * amp
+
+
+def arena_ir(rng, length=1.0):
+    """会場の響き：跳ね返りは小さく、響きはピークより 30dB ほど小さく残る"""
     n = int(length * SR)
     ir = np.zeros(n)
     ir[0] = 1.0
-    for d in rng.uniform(0.012, 0.09, 10):                      # 近くの壁・客席からの跳ね返り
-        ir[int(d * SR)] += rng.uniform(0.04, 0.12) * rng.choice([-1, 1])
-    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.32 * SR))   # 長い響き（約 1 秒で消える）
-    tail[: int(0.02 * SR)] = 0
-    ir += lp(tail, 5000) * 0.022
+    tail = rng.normal(0, 1, n) * np.exp(-np.arange(n) / (0.12 * SR))
+    tail[: int(0.012 * SR)] = 0
+    ir += lp(tail, 6000) * 0.006
     return ir
 
 
 def smash(seed, bright=1.0, dull=0.0):
-    """叩きつけ 1 回分。実際の音に合わせて：
-         ・低い「ドン」（150〜400Hz）がいちばん強い帯域と同じくらい大きい
-         ・約 30ms 後にラケットのもう一方（ヘッドかグリップ）がほぼ同じ強さで当たる（「バ・キン」）
-         ・会場に響いて、ピークより 15〜20dB 小さい音が長く残る"""
+    """叩きつけ 1 回分：大きな「パキッ」のあと、約 18ms・35ms・55ms に小さな「パキッ」（-14〜-20dB）"""
     rng = np.random.default_rng(seed)
-    n = int(0.5 * SR)
-    t = np.arange(n) / SR
-    ring = 0.035 * (1 - 0.3 * dull)
-
-    def body(amp, br):
-        y = contact(rng, amp, br, ring, n)
-        # 低い「ドン」：コートとラケットの胴の響き（ノイズを 150〜400Hz に絞ったもの＋低い共鳴）
-        m = int(0.12 * SR)
-        thump = band(rng.normal(0, 1, m), 150, 420) * decay(m, 0.03) * 2.4
-        thump += 1.0 * np.sin(2 * np.pi * rng.uniform(170, 260) * t[:m]) * decay(m, 0.04)
-        y[:m] += thump * amp
-        return y
-
-    y = body(1.0, bright * (1 - dull))
-    s2 = int(rng.uniform(0.024, 0.036) * SR)                     # 2 回目の当たり
-    y[s2:] += body(rng.uniform(0.7, 0.95), 0.7 * bright)[: n - s2]
-    tt = s2 / SR
-    for k in range(rng.integers(2, 4)):                          # 跳ねて転がるカタカタ
-        tt += rng.uniform(0.05, 0.09)
-        s = int(tt * SR)
-        if s >= n:
-            break
-        y[s:] += contact(rng, 0.25 * (0.7 ** k), 0.3, 0.012, n - s)
-    if dull > 0:
-        y = lp(y, 7000 - 3000 * dull)
-    wet = fftconvolve(y, arena_ir(rng))
-    return wet
+    n = int(0.12 * SR)
+    y = np.zeros(n)
+    tilt = 1.5 * (bright - 1.0) - 1.5 * dull
+    c = crack(rng, 1.0, tilt)
+    y[:len(c)] += c
+    for t0, db in ((rng.uniform(0.016, 0.020), rng.uniform(-18, -14)),
+                   (rng.uniform(0.032, 0.038), rng.uniform(-22, -18)),
+                   (rng.uniform(0.050, 0.058), rng.uniform(-19, -15))):
+        c = crack(rng, 10 ** (db / 20), tilt - 2.0)
+        s = int(t0 * SR)
+        y[s:s + len(c)] += c[: n - s]
+    return fftconvolve(y, arena_ir(rng))
 
 
 def land(seed):
@@ -126,7 +132,7 @@ def land(seed):
 
 
 def finish(y, drive=1.0):
-    y = hp(y, 90)
+    y = hp(y, 150)
     f = int(0.03 * SR)
     y[-f:] *= np.linspace(1, 0, f)
     y = y / np.max(np.abs(y))
@@ -137,11 +143,11 @@ def finish(y, drive=1.0):
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
-    # 聞き比べで選んだ「最初の一撃」（鋭く高いパキッ）の作り方で 5 種類。叩くたびに順に鳴らす
+    # 5 種類（毎回少しずつ違う割れ方）。叩くたびに順に鳴らす
     files = {
-        "racket_smash": (smash(1, 1.0), 1.4), "racket_smash_2": (smash(2, 1.0, 0.05), 1.4),
-        "racket_smash_3": (smash(3, 1.0, 0.1), 1.4), "racket_smash_4": (smash(4, 0.95, 0.12), 1.4),
-        "racket_smash_5": (smash(7, 0.9, 0.15), 1.4),
+        "racket_smash": (smash(1, 1.0), 1.0), "racket_smash_2": (smash(2, 1.0, 0.05), 1.0),
+        "racket_smash_3": (smash(3, 1.0, 0.1), 1.0), "racket_smash_4": (smash(4, 0.95, 0.12), 1.0),
+        "racket_smash_5": (smash(7, 0.9, 0.15), 1.0),
     }
     # 投げたラケットが落ちる音（land）は聞き比べで外した
     for name, (y, drive) in files.items():
