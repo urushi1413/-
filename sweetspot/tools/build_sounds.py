@@ -114,10 +114,12 @@ def main():
     """聞き比べページで選んだ音だけを書き出す（2026-11 の選択。外した候補は書き出さない）"""
     os.makedirs(OUT, exist_ok=True)
 
-    # ---- 打球音：芯で打った音（hit_good）から、まあまあの当たりを作る ----
-    #   外した当たり・スライス・フレームは候補を外したので、hit_ok → hit_good で代わりに鳴る
+    # ---- 打球音：芯で打った音（hit_good）から、まあまあ・外した当たり・スライスを作る ----
+    #   フレームは候補を外したので、hit_bad で代わりに鳴る
     good = [trim(load(p)) for p in sorted(glob.glob(os.path.join(OUT, "hit_good*.wav")))]
     write("hit_ok", fade(lp(resample(good[0], 0.96), 4500)))
+    write("hit_bad", fade(lp(resample(good[0], 0.88), 1700)), peak=0.75)
+    write("hit_slice", fade(lp(hp(resample(good[0], 1.06), 500), 3200)[: int(0.25 * SR)]), peak=0.8)
 
     # ---- バウンド：クレーは鈍く、芝は柔らかく（ハードは候補を外した） ----
     write("bounce_clay", fade(lp(trim(load(kenney("impactSoft_medium")[0])), 2600)), peak=0.7)

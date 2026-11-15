@@ -253,16 +253,29 @@ void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float di
     else                Play(S_HIT_GOOD, S_HIT_OK, vol, Jitter());
 }
 
-// ラケットを地面に叩きつける音（racket_smash がなければ鳴らさない）
-void SfxRacketSmash(float dist)
+// ラケットを地面に叩きつける音（racket_smash がなければ鳴らさない）。k 回目は k 番目の録音（_2, _3 …）を鳴らす
+//   大きく聞かせるため、ほかの音より強めに鳴らす（1 を超えると増幅）
+#define SMASH_GAIN 2.0f
+static void PlaySmash(int k, float vol)
 {
-    Play(S_RACKET_SMASH, -1, 1.0f * DistVol(dist), Jitter());
+    SfxSlot *s = &gSlot[S_RACKET_SMASH];
+    if (!gAudioOk || s->nVar == 0 || vol <= 0.001f || gVolume <= 0.0f) return;
+    int v = k % s->nVar;
+    Sound *snd = &s->s[v][s->next];
+    s->next = (s->next + 1) % POOL;
+    SetSoundVolume(*snd, Clamp(vol, 0.0f, 6.0f) * gVolume);
+    SetSoundPitch(*snd, Jitter());
+    PlaySound(*snd);
+}
+void SfxRacketSmash(float dist, int k)
+{
+    PlaySmash(k, SMASH_GAIN * Clamp01(1.6f / (1.0f + dist / 14.0f)));   // 遠くても小さくなりにくい
 }
 // 投げたラケットが地面に落ちて転がる音
 void SfxRacketLand(float dist)
 {
     if (gSlot[S_RACKET_LAND].nVar) Play(S_RACKET_LAND, -1, 0.9f * DistVol(dist), Jitter());
-    else SfxRacketSmash(dist);
+    else SfxRacketSmash(dist, GetRandomValue(0, 4));
 }
 
 void SfxServe(float q, float kmh, bool voice, float dist)

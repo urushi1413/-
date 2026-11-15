@@ -21,8 +21,8 @@ SWEET SPOT 効果音の出典
   boo, boo_2, boo_3, ooh, ooh_2, ooh_3  — 大勢の声を合成して重ねたもの
 
 ■ 合成（tools/gen_racket.py）
-  racket_smash〜_4, racket_land, racket_land_2  — 実際の音の特徴（響きの高さ・消える速さ・跳ね返りの間隔）だけをまねて一から合成。録音は使っていない
+  racket_smash〜_5  — 実際の音の特徴（響きの高さ・消える速さ・跳ね返りの間隔）だけをまねて一から合成。録音は使っていない
 
-■ hit_ok — hit_good を元に tools/build_sounds.py で音色を変えたもの
+■ hit_ok, hit_bad, hit_slice — hit_good を元に tools/build_sounds.py で音色を変えたもの
 
 CC-BY の音を使って配布するときは、この出典を一緒に載せること。

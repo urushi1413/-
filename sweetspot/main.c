@@ -1813,10 +1813,10 @@ int main(void)
             if (ai.anim.smashT > 0.0f) {
                 // ラケットを叩きつけている間は動かない。地面に当たるたびに音、1 回目でラケットが曲がる
                 float e0 = smashPrevE, e1 = SMASH_TIME - fmaxf(ai.anim.smashT - simDt, 0.0f);
-                const float hits[3] = { 0.52f, 0.90f, 1.26f };
-                for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos));
+                const float hits[SMASH_NHITS] = SMASH_HITS;
+                for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos), k);
                 if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(ai.smashes >= 2 ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング
-                ai.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
+                ai.anim.broken = Clamp01((e1 - 0.40f) / 1.0f);
                 smashPrevE = e1;
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
@@ -1840,10 +1840,10 @@ int main(void)
             }
             if (P.anim.smashT > 0.0f) {   // 叩きつけている間：地面に当たるたびに音、ラケットが曲がる
                 float e0 = youSmashPrevE, e1 = SMASH_TIME - fmaxf(P.anim.smashT - simDt, 0.0f);
-                const float hits[3] = { 0.52f, 0.90f, 1.26f };
-                for (int k = 0; k < 3; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos));
+                const float hits[SMASH_NHITS] = SMASH_HITS;
+                for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos), k);
                 if (e0 < hits[0] && e1 >= hits[0]) SfxBoo(youSmashes >= 2 ? 1.0f : 0.75f, 0.35f);
-                P.anim.broken = Clamp01((e1 - 0.50f) / 0.8f);
+                P.anim.broken = Clamp01((e1 - 0.40f) / 1.0f);
                 youSmashPrevE = e1;
                 P.anim.smashT = fmaxf(P.anim.smashT - simDt, 0.0f);
                 P.vel = (Vector3){ 0 };

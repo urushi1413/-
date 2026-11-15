@@ -38,9 +38,14 @@ def contact(rng, amp, bright, ring_tau, n):
     y = np.zeros(n)
     # パキッ（広い帯域のノイズ。明るいほど高い音が多い）
     m = int(0.012 * SR)
-    click = rng.normal(0, 1, m) * decay(m, 0.0016 + 0.001 * rng.random())
-    click = lp(hp(click, 900) + bright * hp(click, 4000) * 1.6, 9000)
-    y[:m] += click * 2.6
+    click = rng.normal(0, 1, m) * decay(m, 0.0011 + 0.0006 * rng.random())
+    click = lp(hp(click, 900) + bright * hp(click, 3500) * 2.2, 10000)
+    y[:m] += click * 4.0
+    # カーボンが割れる「バキッ」：最初の 6ms に細かい割れの音がいくつも重なる
+    for k in range(int(3 + 4 * bright)):
+        s = int(rng.uniform(0.0005, 0.006) * SR)
+        mm = int(0.004 * SR)
+        y[s:s + mm] += hp(rng.normal(0, 1, mm), 2500) * decay(mm, 0.0005) * rng.uniform(1.0, 2.5) * bright
     # フレームの響き（800〜900Hz に集まった数本の共鳴＋少し高い倍音）
     t = np.arange(n) / SR
     for k in range(5):
@@ -97,21 +102,26 @@ def land(seed):
     return y
 
 
-def finish(y):
+def finish(y, drive=1.0):
     y = hp(y, 220)
     f = int(0.03 * SR)
     y[-f:] *= np.linspace(1, 0, f)
-    return y / np.max(np.abs(y)) * 0.92
+    y = y / np.max(np.abs(y))
+    if drive > 1.0:   # 頭をつぶして全体を大きく聞かせる
+        y = np.tanh(drive * y) / np.tanh(drive)
+    return y * 0.95
 
 
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
+    # 聞き比べで選んだ「最初の一撃」（鋭く高いパキッ）の作り方で 5 種類。叩くたびに順に鳴らす
     files = {
-        "racket_smash": smash(1, 1.0), "racket_smash_2": smash(2, 0.8),
-        "racket_smash_3": smash(3, 0.4, 0.4), "racket_smash_4": smash(4, 0.2, 0.7),
-        "racket_land": land(5), "racket_land_2": land(6),
+        "racket_smash": (smash(1, 1.0), 3.0), "racket_smash_2": (smash(2, 1.0, 0.05), 3.0),
+        "racket_smash_3": (smash(3, 1.0, 0.1), 3.0), "racket_smash_4": (smash(4, 0.95, 0.12), 3.0),
+        "racket_smash_5": (smash(7, 0.9, 0.15), 3.0),
     }
-    for name, y in files.items():
+    # 投げたラケットが落ちる音（land）は聞き比べで外した
+    for name, (y, drive) in files.items():
         p = os.path.join(OUT, name + ".wav")
-        sf.write(p, finish(y).astype(np.float32), SR, subtype="PCM_16")
+        sf.write(p, finish(y, drive).astype(np.float32), SR, subtype="PCM_16")
         print(f"{name:16s} {len(y) / SR:.2f}s")

@@ -142,6 +142,8 @@ typedef struct {
 extern const Mental MENTAL[];
 extern bool gDecidingSet;   // 最終セット
 #define SMASH_TIME       2.2f    // ラケットを叩きつける見た目の長さ（秒）
+#define SMASH_NHITS      5       // 地面に叩きつける回数
+#define SMASH_HITS       { 0.42f, 0.68f, 0.94f, 1.20f, 1.46f }   // 地面に当たる時間（秒。render.c の動きと同じ）
 #define RAGE_TIMING      0.35f   // 怒りが最大のとき：タイミングのばらつきがこれだけ減る
 #define RAGE_POS         0.30f   //   立ち位置のずれが減る
 #define RAGE_SPEED       0.25f   //   走る速さの上乗せ（m/s）
@@ -904,7 +906,7 @@ void  SfxTest(void);
 bool  SfxGruntPre(float dist);
 void  SfxCallFault(void);
 void  SfxCallOut(void);
-void  SfxRacketSmash(float dist);
+void  SfxRacketSmash(float dist, int k);   // k：何回目の叩きつけか（0 から。音を順に変える）
 bool  SfxGruntPreBy(int who, float dist);   // who：選手の番号（-1 は人間）
 float SfxGruntLead(int who);
 float SfxGruntChance(int who);
