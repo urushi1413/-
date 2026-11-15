@@ -1109,6 +1109,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
 {
     Color skin = a->skin.a ? a->skin : (Color){ 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
     float sc = a->scale > 0.0f ? a->scale : 1.0f;   // 体の大きさ（身長）
+    // 体つき（選手ごと）
+    float bSh = a->bShoulder > 0.0f ? a->bShoulder : 1.0f, bBu = a->bBulk > 0.0f ? a->bBulk : 1.0f;
+    float bAr = a->bArm > 0.0f ? a->bArm : 1.0f, bLg = a->bLeg > 0.0f ? a->bLeg : 1.0f, bWa = a->bWaist > 0.0f ? a->bWaist : 1.0f;
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
@@ -1337,9 +1340,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Vector3 hp = hips[i], kn = knees[i], ft = feet[i];
         Vector3 mid = Vector3Lerp(hp, kn, 0.55f);                                // ショーツの裾
         Vector3 sockTop = Vector3Lerp(kn, ft, 0.78f);
-        Limb(WV(kn), WV(ft), 0.050f, 0.040f, skin);                                // すね
-        Limb(WV(hp), WV(kn), 0.068f, 0.052f, skin);                                // 太もも
-        if (!a->female) DrawCylinderEx(WV(hp), WV(mid), 0.092f, 0.088f, 10, shorts);   // ショーツ（脚の部分は少しゆったり）
+        Limb(WV(kn), WV(ft), 0.050f * bLg, 0.040f * bLg, skin);                    // すね
+        Limb(WV(hp), WV(kn), 0.068f * bLg, 0.052f * bLg, skin);                    // 太もも
+        if (!a->female) DrawCylinderEx(WV(hp), WV(mid), 0.092f * fmaxf(bLg, 1.0f), 0.088f * fmaxf(bLg, 1.0f), 10, shorts);   // ショーツ（脚の部分は少しゆったり）
         DrawCylinderEx(WV(sockTop), WV(ft), 0.046f, 0.044f, 8, sock);              // ソックス
         float tx = sinf(toes[i]), tz = cosf(toes[i]);
         Vector3 heel = { ft.x - tx * 0.06f, ft.y - 0.035f, ft.z - tz * 0.06f };
@@ -1353,7 +1356,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.02f, leanV.z * 0.3f };
     Vector3 waist  = { leanV.x * 0.55f, hipY + 0.20f, leanV.z * 0.55f };
     Vector3 chest  = { leanV.x, hipY + 0.42f, leanV.z };
-    float shw = a->female ? 0.18f : 0.20f;   // 肩幅
+    float shw = (a->female ? 0.18f : 0.20f) * bSh;   // 肩幅
     Vector3 rShoulder = { chest.x + shw * cy, hipY + 0.55f, chest.z - shw * sy };
     Vector3 lShoulder = { chest.x - shw * cy, hipY + 0.55f, chest.z + shw * sy };
     // ショーツの腰：左右の股関節を包む（丸くしない）
@@ -1365,8 +1368,8 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             float fl = 0.27f + 0.03f * move * fabsf(sinf(ph * 2.0f));
             DrawCylinderEx(W(pelvis.x, pelvis.y + 0.13f, pelvis.z), W(pelvis.x * 1.2f, pelvis.y - 0.20f, pelvis.z * 1.2f), 0.15f, fl, 14, shorts);
         } else {
-            DrawCylinderEx(W(hl.x, hl.y - 0.05f, hl.z), W(hl.x, hl.y + 0.13f, hl.z), 0.10f, 0.105f, 10, shorts);
-            DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.13f, hr.z), 0.10f, 0.105f, 10, shorts);
+            DrawCylinderEx(W(hl.x, hl.y - 0.05f, hl.z), W(hl.x, hl.y + 0.13f, hl.z), 0.10f * bWa, 0.105f * bWa, 10, shorts);
+            DrawCylinderEx(W(hr.x, hr.y - 0.05f, hr.z), W(hr.x, hr.y + 0.13f, hr.z), 0.10f * bWa, 0.105f * bWa, 10, shorts);
         }
     }
     // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
@@ -1377,11 +1380,11 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         Vector3 c1 = { waist.x, hipY + 0.22f, waist.z };
         Vector3 c2 = { chest.x, hipY + 0.47f, chest.z };
         Vector3 c3 = { chest.x, hipY + 0.57f, chest.z };
-        LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs, 0.110f, 0.150f * fs, 0.100f, 14, shirt, false, true);
-        LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs, 0.100f, 0.190f * fs, 0.118f, 14, shirt, false, false);
-        LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs, 0.118f, 0.120f * fs, 0.075f, 14, shirt, true, false);
+        LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs * bWa, 0.110f * bBu, 0.150f * fs * bWa, 0.100f * bBu, 14, shirt, false, true);
+        LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs * bWa, 0.100f * bBu, 0.190f * fs * bSh, 0.118f * bBu, 14, shirt, false, false);
+        LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs * bSh, 0.118f * bBu, 0.120f * fs * bSh, 0.075f * bBu, 14, shirt, true, false);
     }
-    Limb(WV(lShoulder), WV(rShoulder), 0.062f, 0.062f, shirt);
+    Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
     Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
     Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
@@ -1390,7 +1393,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         head.x += 0.03f * sinf(co.e * 12.0f) * co.headShake;                   // 首を振る
         head.z -= 0.03f * co.headUp; head.y += 0.02f * co.headUp;              // 天を仰ぐ
     }
-    DrawCylinderEx(WV(neckB), WV(head), 0.050f, 0.045f, 8, skin);
+    DrawCylinderEx(WV(neckB), WV(head), 0.050f * bBu, 0.045f * bBu, 8, skin);
     // 顔の向き：肩の向きの 3 割（構え・サーブでもネットの方を見る）。体ごと回るしぐさ（後ろを向く）ではそのまま回る。天を仰ぐ・うつむく
     float turnC = celeb ? co.turn : 0.0f;
     float headYaw = (yaw - turnC) * 0.30f + turnC;
@@ -1769,9 +1772,9 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         if (idle && move >= 0.3f && arm == 1) hint = (Vector3){ -0.15f, -0.5f, -1.0f };   // 走り：肘は後ろへ   // 構え：肘は体の前に軽く曲げる（横に張ると腰に手を当てたように見える）
         Vector3 el = TwoBone(s0, hd, 0.31f, 0.30f, hint);
         Vector3 sleeve = Vector3Lerp(s0, el, 0.45f);
-        Limb(WV(s0), WV(el), 0.050f, 0.043f, skin);
-        Limb(WV(el), WV(hd), 0.042f, 0.034f, skin);
-        DrawCylinderEx(WV(s0), WV(sleeve), 0.072f, 0.066f, 8, shirt);   // 袖
+        Limb(WV(s0), WV(el), 0.050f * bAr, 0.043f * bAr, skin);                   // 上腕（ナダルは太い）
+        Limb(WV(el), WV(hd), 0.042f * bAr, 0.034f * bAr, skin);
+        DrawCylinderEx(WV(s0), WV(sleeve), 0.072f * fmaxf(bAr, 1.0f), 0.066f * fmaxf(bAr, 1.0f), 8, shirt);   // 袖
         DrawSphere(WV(hd), 0.042f, skin);
         if (a->headband.a && arm == 0)   // ヘッドバンドの選手はリストバンドも
             DrawCylinderEx(WV(Vector3Lerp(el, hd, 0.78f)), WV(Vector3Lerp(el, hd, 0.92f)), 0.046f, 0.044f, 8, a->headband);

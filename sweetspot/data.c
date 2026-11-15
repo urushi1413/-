@@ -124,6 +124,7 @@ void ApplyLook(SwingAnim *a, int persona)
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
         a->hairStyle = gWomen ? HS_PONY : HS_SHORT; a->beard = 0.0f; a->hat = 0;
         a->eyeCol = (Color){ 95, 62, 38, 255 }; a->faceH = a->faceW = a->jaw = a->noseK = 1.0f;
+        a->bShoulder = a->bBulk = a->bArm = a->bLeg = a->bWaist = 1.0f;
         return;
     }
     persona %= PERSONA_COUNT;
@@ -184,6 +185,30 @@ void ApplyLook(SwingAnim *a, int persona)
         const Color EC[6] = { BRN, DBR, HAZ, GRN, BLU, GRY };
         a->faceH = h; a->faceW = w; a->jaw = jw; a->noseK = ns; a->eyeCol = EC[e];
         if (persona == 13) a->eyeCol = (Color){ 80, 125, 85, 255 };   // シャラポワは緑がはっきり
+    }
+    {   // 体つき（肩幅・胴の厚み・腕・脚・腰回り）。身長は別（scale）
+        static const float BODY[PERSONA_COUNT][5] = {
+            { 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },   // 癖なし
+            { 1.00f, 1.00f, 1.00f, 1.00f, 1.00f },   // フェデラー：標準的なアスリート体型
+            { 0.97f, 0.90f, 0.90f, 0.92f, 0.92f },   // ジョコビッチ：細身でしなやか
+            { 1.08f, 1.12f, 1.24f, 1.10f, 1.00f },   // ナダル：筋肉質、太い腕
+            { 0.98f, 0.94f, 0.95f, 0.96f, 0.95f },   // マレー：やや細身
+            { 1.05f, 1.08f, 1.10f, 1.12f, 1.00f },   // アルカラス：がっしり、太い脚
+            { 0.92f, 0.86f, 0.85f, 0.88f, 0.88f },   // シナー：とても細い
+            { 0.94f, 0.86f, 0.86f, 0.88f, 0.90f },   // メドベデフ：ひょろ長い
+            { 1.08f, 1.12f, 1.10f, 1.06f, 1.08f },   // キルギオス：肩幅が広く、厚みがある
+            { 1.08f, 1.15f, 1.15f, 1.15f, 1.08f },   // ウィリアムズ：力強い体
+            { 1.00f, 1.00f, 1.00f, 1.04f, 0.96f },   // シフィオンテク：引き締まった体、強い脚
+            { 1.06f, 1.08f, 1.10f, 1.08f, 1.00f },   // サバレンカ：肩幅が広く、力強い
+            { 0.97f, 0.92f, 0.92f, 0.95f, 0.92f },   // ガウフ：細身で手足が長い
+            { 0.96f, 0.92f, 0.92f, 0.94f, 0.92f },   // シャラポワ：細身
+            { 1.00f, 1.03f, 1.02f, 1.06f, 0.98f },   // バーティ：小柄でがっしり
+            { 0.97f, 0.96f, 0.96f, 1.00f, 0.96f },   // 錦織：小柄で引き締まった体
+            { 0.98f, 0.92f, 0.92f, 0.94f, 0.94f },   // ズベレフ：細身で長身
+        };
+        #define BX(v) (1.0f + 1.6f * ((v) - 1.0f))   // 差を 1.6 倍に（遠くから見ても分かるように）
+        a->bShoulder = BX(BODY[persona][0]); a->bBulk = BX(BODY[persona][1]); a->bArm = BX(BODY[persona][2]); a->bLeg = BX(BODY[persona][3]); a->bWaist = BX(BODY[persona][4]);
+        #undef BX
     }
     if (gAllWhite) {   // ウィンブルドン：服は白だけ
         a->shorts = (Color){ 245, 245, 248, 255 };
