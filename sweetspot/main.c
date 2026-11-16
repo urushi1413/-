@@ -2797,21 +2797,22 @@ int main(void)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
                                  tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT);
             if (DEMO_ONLY && score.over && phaseTimer <= 0.0f && (demoCode[0] || demoTried)) {   // 体験版：勝利の証明コード
-                int W = GetScreenWidth(), H = GetScreenHeight(), bw = 760, bh = demoCode[0] ? 128 : 64, bx = W / 2 - bw / 2, by = H - bh - 12;
-                DrawRectangle(bx, by, bw, bh, Fade((Color){ 20, 20, 40, 255 }, 0.92f));
+                // 結果の表の上の空き（表は画面の真ん中、上に約 60px 空く）に 2 行で
+                int W = GetScreenWidth(), bw = 660, bh = 54, bx = W / 2 - bw / 2, by = 4;   // 右上の点数の表示にかからない幅
+                DrawRectangle(bx, by, bw, bh, Fade((Color){ 20, 20, 40, 255 }, 0.94f));
                 DrawRectangleLines(bx, by, bw, bh, (Color){ 255, 215, 70, 255 });
                 if (demoCode[0]) {
                     if (IsKeyPressed(KEY_C)) { SetClipboardText(demoCode); snprintf(toast, sizeof(toast), "%s", TR("Code copied", "コードをコピーした")); toastT = 2.0f; }
-                    const char *h1 = TR("CHALLENGE CLEARED! Your proof code:", "チャレンジ達成！ 勝利の証明コード：");
-                    DrawText(h1, bx + 20, by + 12, 20, (Color){ 255, 215, 70, 255 });
-                    DrawText(demoCode, bx + bw / 2 - MeasureText(demoCode, 34) / 2, by + 42, 34, RAYWHITE);
+                    const char *l1 = TextFormat(TR("CHALLENGE CLEARED!  %s", "チャレンジ達成！  %s"), demoCode);
+                    int f1 = 26; while (f1 > 16 && MeasureText(l1, f1) > bw - 24) f1--;
+                    DrawText(l1, W / 2 - MeasureText(l1, f1) / 2, by + 5, f1, (Color){ 255, 215, 70, 255 });
                     const char *h2 = TR("Write it down (C: copy). Send it as the store page says to get the full game free.", "書き留めておく（C：コピー）。ストアページの案内のとおり送ると、製品版が無料でもらえる");
-                    int f2 = 18; while (f2 > 12 && MeasureText(h2, f2) > bw - 30) f2--;
-                    DrawText(h2, bx + bw / 2 - MeasureText(h2, f2) / 2, by + 92, f2, LIGHTGRAY);
+                    int f2 = 16; while (f2 > 12 && MeasureText(h2, f2) > bw - 30) f2--;
+                    DrawText(h2, W / 2 - MeasureText(h2, f2) / 2, by + 34, f2, LIGHTGRAY);
                 } else {
                     const char *h1 = TR("Win against AI NORMAL or PRO on REAL (whole match) to get the free full game code.", "AI「ふつう」以上・難しさ「リアル」のまま勝つと、製品版が無料になるコードがもらえる");
                     int f1 = 20; while (f1 > 12 && MeasureText(h1, f1) > bw - 30) f1--;
-                    DrawText(h1, bx + bw / 2 - MeasureText(h1, f1) / 2, by + 22, f1, (Color){ 255, 215, 70, 255 });
+                    DrawText(h1, W / 2 - MeasureText(h1, f1) / 2, by + 16, f1, (Color){ 255, 215, 70, 255 });
                 }
             }
             if (score.over && phaseTimer <= 0.0f) { }   // 試合の結果は上で出した（下の 2 つは出さない）
