@@ -897,7 +897,7 @@ int main(void)
                     case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
-                    case MI_LANG:    label = gLang == LANG_JA ? "Language / 言語" : "Language";   // 英語表示は日本語の字を持たないフォントなので「言語」は出さない  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;
+                    case MI_LANG:    label = gLang == LANG_JA ? "Language / 言語" : "Language";  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;   // 英語表示は日本語の字を持たないフォントなので「言語」は出さない
                     case MI_AI:      label = TR("AI level", "AI の強さ");        value = LevelNameUI(ai.level); break;
                     case MI_STYLE:   label = TR("Style", "難しさ");           value = style == STYLE_CASUAL ? TR("CASUAL (easy)", "カジュアル（かんたん）") : TR("REAL", "リアル"); break;
                     case MI_COURT:   label = TR("Court", "コート");           value = gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
