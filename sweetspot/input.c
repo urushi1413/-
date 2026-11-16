@@ -9,7 +9,7 @@ static const int DEFAULT_KEYS[ACT_COUNT] = {
     [ACT_TOP] = KEY_J, [ACT_SLICE] = KEY_K, [ACT_FLAT] = KEY_L,
     [ACT_LOB] = KEY_LEFT_SHIFT, [ACT_DROP] = KEY_LEFT_CONTROL, [ACT_CLICK_FLAT] = KEY_SPACE,
     [ACT_CROUCH] = KEY_Q, [ACT_SMASH] = KEY_X, [ACT_REPLAY] = KEY_R, [ACT_MUTE] = KEY_M,
-    [ACT_TAUNT] = KEY_E, [ACT_SWAT] = KEY_Z,
+    [ACT_TAUNT] = KEY_E, [ACT_SWAT] = KEY_Z, [ACT_COMEON] = KEY_Y,
 };
 int gKeys[ACT_COUNT];
 
@@ -19,7 +19,7 @@ void KeysReset(void) { for (int a = 0; a < ACT_COUNT; a++) gKeys[a] = DEFAULT_KE
 const char *ActionId(int a)
 {
     static const char *ID[ACT_COUNT] = { "up", "down", "left", "right", "aim_left", "aim_right", "aim_deep", "aim_short",
-                                         "topspin", "slice", "flat", "lob", "drop", "click_flat", "crouch", "smash", "replay", "mute", "taunt", "swat" };
+                                         "topspin", "slice", "flat", "lob", "drop", "click_flat", "crouch", "smash", "replay", "mute", "taunt", "swat", "comeon" };
     return (a >= 0 && a < ACT_COUNT) ? ID[a] : "";
 }
 
@@ -29,12 +29,12 @@ const char *ActionName(int a)
         "Aim left", "Aim right", "Aim deeper", "Aim shorter",
         "Topspin (serve: kick)", "Slice (serve: slice)", "Flat (serve: flat)",
         "Lob (hold + shot)", "Drop shot (hold + shot)", "Flat (hold + click)",
-        "Crouch", "Smash racket", "Replay", "Mute", "Pump up the crowd", "Swat ball into the crowd" };
+        "Crouch", "Smash racket", "Replay", "Mute", "Pump up the crowd", "Swat ball into the crowd", "C'mon! (fist pump)" };
     static const char *JA[ACT_COUNT] = { "前へ", "後ろへ", "左へ", "右へ",
         "狙い：左", "狙い：右", "狙い：深く", "狙い：浅く",
         "トップスピン（サーブ：キック）", "スライス（サーブ：スライス）", "フラット（サーブ：フラット）",
         "ロブ（押しながら打つ）", "ドロップ（押しながら打つ）", "フラット（押しながらクリック）",
-        "かがむ", "ラケットを叩きつける", "リプレイ", "消音", "観客をあおる", "球を観客席へかっ飛ばす" };
+        "かがむ", "ラケットを叩きつける", "リプレイ", "消音", "観客をあおる", "球を観客席へかっ飛ばす", "カモン！（拳を握って喜ぶ）" };
     if (a < 0 || a >= ACT_COUNT) return "";
     return gLang == LANG_JA ? JA[a] : EN[a];
 }

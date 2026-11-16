@@ -246,6 +246,10 @@ extern bool gDecidingSet;   // 最終セット
 #define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
+// 「お静かに」：サーブの前に観客がざわつく（QUIET_TIME 秒）→ 残り QUIET_SAY 秒で主審が注意 → 残り QUIET_THANKS 秒で「ありがとう」→ サーブ
+#define QUIET_TIME   4.2f
+#define QUIET_SAY    3.0f
+#define QUIET_THANKS 1.0f
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）
 #define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
@@ -937,7 +941,7 @@ void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, f
 // キーの割り当て（設定で変えられる）
 typedef enum { ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_AIM_L, ACT_AIM_R, ACT_AIM_DEEP, ACT_AIM_SHORT,
                ACT_TOP, ACT_SLICE, ACT_FLAT, ACT_LOB, ACT_DROP, ACT_CLICK_FLAT, ACT_CROUCH, ACT_SMASH, ACT_REPLAY, ACT_MUTE,
-               ACT_TAUNT, ACT_SWAT, ACT_COUNT } KeyAction;
+               ACT_TAUNT, ACT_SWAT, ACT_COMEON, ACT_COUNT } KeyAction;
 extern int gKeys[ACT_COUNT];
 void KeysReset(void);
 const char *ActionId(int a);

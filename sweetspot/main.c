@@ -398,7 +398,8 @@ int main(void)
     // テニスの外の楽しみ：観客をあおる（E）、球を観客席へ（Z）、ハプニング（ハト・「お静かに」）
     int lastPtWinner = -1;        // 直前のポイントを取った方
     int tauntIdx = 0, taunts = 0, tauntGame = -1;   // あおった回数（同じゲームの中で）
-    float quietT = 0.0f;          // 「お静かに」の残り時間
+    float quietT = 0.0f;          // 「お静かに」の残り時間（サーブの前：ざわつく → 主審が注意 → 静まる → サーブ）
+    bool  quietPending = false;   // 次のサーブの前に「お静かに」が起きる
     float youSwatPrevE = 0.0f;
     float swatCatchT = 0.0f;      // かっ飛ばした球が観客席に届くまで（届いたら観客が捕って沸く）
     // バトルモード（試合に体力をつける）：ポイントを取られる・体にボールを当てられると体力が減り、0 になったら K.O. 負け
@@ -534,8 +535,8 @@ int main(void)
             }
             if (quietT > 0.0f) {
                 float q0 = quietT; quietT -= frameDt;
-                if (q0 >= 3.3f && quietT < 3.3f) { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Quiet, please.", "主審：お静かに願います")); toastT = 1.6f; }
-                if (q0 >= 1.7f && quietT < 1.7f) { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Thank you.", "主審：ありがとうございます")); toastT = 1.6f; }
+                if (q0 >= QUIET_SAY && quietT < QUIET_SAY)     { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Quiet, please.", "主審：お静かに願います")); toastT = 1.8f; }
+                if (q0 >= QUIET_THANKS && quietT < QUIET_THANKS) { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Thank you.", "主審：ありがとうございます")); toastT = 1.4f; }
             }
         }
         lineCallT = fmaxf(lineCallT - frameDt, 0.0f);
@@ -1192,6 +1193,10 @@ int main(void)
             bot.pos = Rot180(P.pos);
             bot.standPos = bot.pos;
             if (autopilot && server == 0) phaseTimer = 1.5f;
+            if (quietPending && mode == MODE_MATCH) {   // サーブに入ろうとしても観客が静まらない：主審が注意して、静まるまで待つ
+                quietPending = false; quietT = QUIET_TIME;
+                phaseTimer = fmaxf(phaseTimer, QUIET_TIME + 0.3f);
+            }
             TraceLog(LOG_INFO, "POINT start: server=%s %s court, %s serve, games %d-%d, %s",
                      server == 0 ? "YOU" : "AI", deuce ? "deuce" : "ad", serveNo == 1 ? "1st" : "2nd",
                      score.games[0], score.games[1], ScoreText(&score));
@@ -1384,7 +1389,7 @@ int main(void)
                     P.aimDepth = Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f);
                 }
                 for (int s = 0; s < SERVE_COUNT; s++) {
-                    if (in.serve != s) continue;
+                    if (in.serve != s || quietT > 0.0f) continue;   // 主審が観客を静かにさせている間はトスを上げない
                     P.chargeSrc = in.source;
                     P.chargingServe = s;
                     P.charge = 0.0f;
@@ -1793,6 +1798,27 @@ int main(void)
             }
             gCasual = false; gCrouch = false;
         }
+        // ---- ヒンドランス（妨害）：相手がサーブのトスを上げている間・相手の打った球が飛んでいる間に、カモン（Y）やあおる（E）をすると相手のポイント ----
+        if (mode == MODE_MATCH && !score.over && !botControls && (ActPressed(ACT_COMEON) || ActPressed(ACT_TAUNT)) &&
+            ((phase == PH_SERVE && server == 1 && aiTossing) || (phase == PH_PLAY && ball.active && ball.lastHitter == HITTER_OPP))) {
+            aiTossing = false; ai.anim.windup = 0.0f;
+            ball = (Ball){ 0 }; trailCount = 0;
+            P.anim.celebKind = CELEB_COMEON; P.anim.celebDur = CelebDuration(CELEB_COMEON); P.anim.celebT = P.anim.celebDur;
+            P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.chargingShot = -1; P.chargingServe = -1;
+            SfxCelebrate(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
+            SfxBoo(0.4f, 0.3f);
+            int gb = score.games[0] + score.games[1], sb = score.nSetsDone;
+            AwardPoint(&score, 1);
+            ms[1].points++; lastPtWinner = 1;
+            if (!score.over && score.nSetsDone == sb && score.games[0] + score.games[1] != gb && (score.games[0] + score.games[1]) % 2 == 1) { changePending = true; changeSit = true; }
+            snprintf(rageMsg, sizeof(rageMsg), TL("HINDRANCE!\nYou shouted while the opponent was %s.\nPoint to %s.", "ヒンドランス（妨害）！\n相手が%sの最中に声を出した\n%s のポイント"),
+                     phase == PH_SERVE ? TL("serving", "サーブ") : TL("hitting", "打っている"), OPP_SHORT);
+            rageMsgT = 3.5f;
+            snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
+            SfxScoreCall(&score, server, 1, 0, 1.4f);
+            TraceLog(LOG_INFO, "POINT end: HINDRANCE -> AI");
+            phase = PH_POINT_OVER; phaseTimer = 2.8f;
+        }
         if (ActPressed(ACT_REPLAY) && mode != MODE_MATCH) {
             // ITF のバウンドテスト: 2.54m から落とす
             ball = (Ball){ 0 };
@@ -1914,7 +1940,7 @@ int main(void)
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
         prevAiSliding = ai.sliding;
-        SfxCrowd(mode == MODE_MATCH, ((phase == PH_PLAY || phase == PH_SERVE) ? 0.55f : 1.0f) * (quietT > 1.7f ? 2.4f : quietT > 0.0f ? 0.35f : 1.0f));   // ポイント中は観客は静か。「お静かに」の前は騒がしい
+        SfxCrowd(mode == MODE_MATCH, ((phase == PH_PLAY || phase == PH_SERVE) ? 0.55f : 1.0f) * (quietT > QUIET_SAY ? 3.0f : quietT > QUIET_THANKS ? 1.2f : quietT > 0.0f ? 0.4f : 1.0f));   // ポイント中は観客は静か。「お静かに」の前は騒がしく、注意されると静まる
         SfxUpdate();
         // フットワークの音（自分）：打つ 0.6 秒ほど前に、まだ動いて位置を合わせていたら「キュッ」を 2〜3 回
         if (!ball.active || ball.lastHitter != HITTER_OPP) playerFoot = false;
@@ -2191,10 +2217,10 @@ int main(void)
                     }
                 }
                 // ---- ハプニング：ときどきハトが降りてくる、観客が騒いで主審が「お静かに」 ----
-                if (mode == MODE_MATCH && !score.over && !gPigeon.on && quietT <= 0.0f) {
+                if (mode == MODE_MATCH && !score.over && !gPigeon.on && quietT <= 0.0f && !quietPending) {
                     float r = RandRange(0.0f, 1.0f);
                     if (r < 0.05f)      { PigeonStart(); phaseTimer = fmaxf(phaseTimer, 2.0f); }
-                    else if (r < 0.10f) { quietT = 3.4f; phaseTimer = fmaxf(phaseTimer, 3.6f); }
+                    else if (r < 0.10f) quietPending = true;   // 次のサーブに入るときに、観客が静まらない
                 }
                 // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
                 if (score.over && winner == 0 && DEMO_ONLY && mode == MODE_MATCH) {   // 体験版のチャレンジ
@@ -2286,6 +2312,14 @@ int main(void)
                     SfxBoo(0.45f, 0.3f);
                     snprintf(toast, sizeof(toast), "%s", lastPtWinner == 0 ? TL("Too much. The crowd boos.", "やりすぎ。観客がブーイング") : TL("You just lost the point... the crowd boos.", "取られた後に…観客がブーイング")); toastT = 2.0f;
                 }
+            }
+            // ---- Y：「カモン！」と拳を握って喜ぶ（ポイントの間、何回でも）。ブーイングやペナルティはなし。取った直後なら観客が少し沸く ----
+            if (ActPressed(ACT_COMEON) && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {
+                P.anim.celebKind = CELEB_COMEON; P.anim.celebDur = CelebDuration(CELEB_COMEON); P.anim.celebT = P.anim.celebDur;
+                P.anim.swingT = -1.0f; P.anim.windup = 0.0f;
+                phaseTimer = fmaxf(phaseTimer, P.anim.celebDur * 0.6f);
+                SfxCelebrate(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
+                if (lastPtWinner == 0) crowdExcite = fmaxf(crowdExcite, 0.55f);
             }
             // ---- Z：球を観客席へかっ飛ばす（ポイントの間）。行為違反（ラケット破壊と同じ数え方）。燃えるが、ラケット破壊より弱い ----
             if (ActPressed(ACT_SWAT) && !score.over && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {

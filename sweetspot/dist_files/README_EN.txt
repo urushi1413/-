@@ -16,6 +16,7 @@ CONTROLS (IN A MATCH)
   X ............... smash your racket (between points). You get FIRED UP for a few points:
                     faster and harder, but more errors. Point penalty from the 3rd time
   E ............... pump up the crowd (they roar if you just won the point)
+  Y ............... C'mon! (fist pump)
   Z ............... swat the ball into the crowd (code violation, counted like racket abuse)
   R ............... after a point: replay (C switches camera)
   Tab ............. stats
