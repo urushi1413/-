@@ -239,9 +239,8 @@ extern bool gDecidingSet;   // 最終セット
 #define DIVE_QUALITY     0.35f   // 飛びついた球の質は 35% に落ちる
 // バトルモード：体力と、減り方
 #define BATTLE_HP          100.0f
-#define BATTLE_DMG_POINT   7.0f    // ふつうに取られた（相手のミスも含む）
-#define BATTLE_DMG_WINNER  11.0f   // ウィナーを決められた
-#define BATTLE_DMG_ACE     13.0f   // エース
+#define BATTLE_DMG_WINNER  14.0f   // ウィナーを決められた（自分のミスでは体力は減らない）
+#define BATTLE_DMG_ACE     16.0f   // エース
 #define BATTLE_DMG_BODY    24.0f   // 体にボールを当てられた
 #define BATTLE_BODY_R      0.40f   // 体に当たったとみなす、体の中心からの距離（m）
 #define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合

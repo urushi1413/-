@@ -2070,9 +2070,9 @@ int main(void)
                 int gamesBefore = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 int setsBefore = score.nSetsDone;
                 AwardPoint(&score, winner);
-                if (battle) {   // バトル：取られた方の体力が減る。決め方で大きさが変わる。長いラリーは両方が疲れる
+                if (battle) {   // バトル：相手に決められた（ウィナー・エース・ボディショット）ときだけ体力が減る。自分のミスでは減らない。長いラリーは両方が疲れる
                     int lo = 1 - winner;
-                    float dmg = endKind == 5 ? BATTLE_DMG_BODY : endKind == 1 ? BATTLE_DMG_ACE : endKind == 2 ? BATTLE_DMG_WINNER : BATTLE_DMG_POINT;
+                    float dmg = endKind == 5 ? BATTLE_DMG_BODY : endKind == 1 ? BATTLE_DMG_ACE : endKind == 2 ? BATTLE_DMG_WINNER : 0.0f;
                     if (winner == 0) dmg *= 1.0f + 0.5f * gYouRage;   // 燃えているとダメージが大きい
                     hp[lo] -= dmg;
                     if (rallyHits > 6) { float tired = 0.6f * (rallyHits - 6); hp[0] -= tired; hp[1] -= tired; }
