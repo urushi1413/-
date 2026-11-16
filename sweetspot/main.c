@@ -896,7 +896,7 @@ int main(void)
                     case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
-                    case MI_LANG:    label = "Language / 言語";  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;
+                    case MI_LANG:    label = gLang == LANG_JA ? "Language / 言語" : "Language";   // 英語表示は日本語の字を持たないフォントなので「言語」は出さない  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;
                     case MI_AI:      label = TR("AI level", "AI の強さ");        value = LevelNameUI(ai.level); break;
                     case MI_STYLE:   label = TR("Style", "難しさ");           value = style == STYLE_CASUAL ? TR("CASUAL (easy)", "カジュアル（かんたん）") : TR("REAL", "リアル"); break;
                     case MI_COURT:   label = TR("Court", "コート");           value = gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
@@ -963,8 +963,8 @@ int main(void)
                 int by = H - 150, bx0 = pw + 60, bw0 = W - bx0 - 20;
                 DrawRectangle(bx0, by, bw0, 130, Fade(BLACK, 0.60f));
                 for (int k = 0; k < (menuPage == 3 ? 1 : 2); k++) {   // 枠に収まるように字を小さくする
-                    const char *bl = k == 0 ? TextFormat("%s：%s", gYouPersona ? PERSONAS[gYouPersona].shortName : YouName(), PersonaBlurb(gYouPersona))
-                                            : TextFormat("%s：%s", PERSONAS[ai.persona].shortName, PersonaBlurb(ai.persona));
+                    const char *bl = k == 0 ? TextFormat(TR("%s: %s", "%s：%s"), gYouPersona ? PERSONAS[gYouPersona].shortName : YouName(), PersonaBlurb(gYouPersona))
+                                            : TextFormat(TR("%s: %s", "%s：%s"), PERSONAS[ai.persona].shortName, PersonaBlurb(ai.persona));
                     char buf[256]; snprintf(buf, sizeof(buf), "%s", bl);
                     int bfs = 18; while (bfs > 11 && MeasureText(buf, bfs) > bw0 - 28) bfs--;
                     DrawText(buf, bx0 + 14, by + 14 + k * 36, bfs, k == 0 ? SKYBLUE : ORANGE);
