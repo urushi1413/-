@@ -6,16 +6,16 @@
 // 光の向きと強さは時間帯・天気で変わる（AtmosApply）
 static Vector3 gLightL = { 0.348f, 0.846f, 0.403f };   // 光の来る向き（正規化済み）
 static float   gLightAmb = 0.55f, gLightDiff = 0.50f;   // 当たらない面の明るさ、光の当たる分
-// 見た目（メニューの「見た目」）：0 = ふつう、1 = アニメ調（陰を 3 段に分け、人に輪郭線）
+// 見た目（メニューの「見た目」）：0 = ふつう、1 = アニメ調（陰を 3 段に分け、人に輪郭線）、2 = ドット風（アニメ調を低い解像度で描いて拡大）
 int gLook = 0;
 static bool gOutline = false;          // 輪郭線を描く回：形を少し太らせて暗い色で、裏側の面だけ描く
-#define OUTLINE_W 0.014f               // 輪郭線の太さ（m）
+#define OUTLINE_W (gLook == 2 ? 0.030f : 0.014f)   // 輪郭線の太さ（m）。ドット風は粗いので太く
 static const Color OUTLINE_COL = { 28, 24, 32, 255 };
 static Color Shade(Color c, Vector3 n)
 {
     float d = Vector3DotProduct(n, gLightL);
     float l = gLightAmb + gLightDiff * fmaxf(d, 0.0f);
-    if (gLook == 1) {   // アニメ調：光・中間・陰の 3 段。色は少し濃く
+    if (gLook >= 1) {   // アニメ調・ドット風：光・中間・陰の 3 段。色は少し濃く
         l = d > 0.45f ? gLightAmb + gLightDiff * 0.95f : d > 0.0f ? gLightAmb + gLightDiff * 0.55f : gLightAmb * 0.92f;
         float g = (c.r + c.g + c.b) / 3.0f, sat = 1.18f;
         c = (Color){ (unsigned char)Clamp(g + (c.r - g) * sat, 0, 255), (unsigned char)Clamp(g + (c.g - g) * sat, 0, 255), (unsigned char)Clamp(g + (c.b - g) * sat, 0, 255), c.a };
@@ -176,14 +176,16 @@ static void LitEllipseTube(Vector3 a, Vector3 b, Vector3 sideA, Vector3 sideB, f
 #define DrawCube(...)       LitCube(__VA_ARGS__)
 
 // ---- 描画まわり ----
+// ドット風では線が 1 ドットより細くなって途切れるので、太く描く
+#define LINE_DRAW_W (gLook == 2 ? LINE_W * 2.6f : LINE_W)
 void LineAlongX(float z, float x0, float x1)
 {
-    DrawCube((Vector3){ (x0 + x1) * 0.5f, 0.002f, z }, fabsf(x1 - x0), 0.004f, LINE_W, RAYWHITE);
+    DrawCube((Vector3){ (x0 + x1) * 0.5f, 0.002f, z }, fabsf(x1 - x0), 0.004f, LINE_DRAW_W, RAYWHITE);
 }
 
 void LineAlongZ(float x, float z0, float z1)
 {
-    DrawCube((Vector3){ x, 0.002f, (z0 + z1) * 0.5f }, LINE_W, 0.004f, fabsf(z1 - z0), RAYWHITE);
+    DrawCube((Vector3){ x, 0.002f, (z0 + z1) * 0.5f }, LINE_DRAW_W, 0.004f, fabsf(z1 - z0), RAYWHITE);
 }
 
 void DrawCourt(void)
@@ -1315,7 +1317,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 // 人を描く。アニメ調のときは、先に輪郭線（太らせた形の裏側）を描いてから、ふつうに描く
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
-    if (gLook == 1) {
+    if (gLook >= 1) {
         rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_FRONT); gOutline = true;
         DrawFigureBody(pos, facingNegZ, shirt, a, speed);
         rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_BACK); gOutline = false;
@@ -2198,6 +2200,52 @@ static void DrawLightTowers(Vector3 camPos)
         Vector3 lp = Vector3Add(P[i], Vector3Scale(f, 0.27f));
         DrawCube(lp, fabsf(f.x) > 0.5f ? 0.06f : 1.1f, 0.5f, fabsf(f.x) > 0.5f ? 1.1f : 0.06f, lamp);                            // 光る面
     }
+}
+
+// ---- ドット風：空・3D・色合いを画面と同じ大きさの絵に描き、縦 240 ドットに縮めて、ぼかさずに拡大する。色の数も減らす ----
+//   PixelBegin は DrawSky の前、PixelEnd は AtmosOverlay の後に呼ぶ（ドット風でなければ何もしない）
+#define PIX_H 240
+static RenderTexture2D gPixFull, gPixLow;
+static int gPixW = 0, gPixH = 0;
+static Shader gPixShader; static bool gPixShaderOk = false;
+static bool gPixOn = false;
+#if defined(PLATFORM_WEB)
+static const char *PIX_FS =
+    "#version 100\nprecision mediump float;\nvarying vec2 fragTexCoord;\nvarying vec4 fragColor;\nuniform sampler2D texture0;\n"
+    "void main(){ vec3 c = texture2D(texture0, fragTexCoord).rgb; c = floor(c * 9.0 + 0.5) / 9.0; gl_FragColor = vec4(c, 1.0); }\n";
+#else
+static const char *PIX_FS =
+    "#version 330\nin vec2 fragTexCoord;\nin vec4 fragColor;\nuniform sampler2D texture0;\nout vec4 finalColor;\n"
+    "void main(){ vec3 c = texture(texture0, fragTexCoord).rgb; c = floor(c * 9.0 + 0.5) / 9.0; finalColor = vec4(c, 1.0); }\n";
+#endif
+void PixelBegin(void)
+{
+    gPixOn = gLook == 2;
+    if (!gPixOn) return;
+    int W = GetScreenWidth(), H = GetScreenHeight();
+    if (W != gPixW || H != gPixH) {   // 画面の大きさが変わったら作り直す
+        if (gPixW) { UnloadRenderTexture(gPixFull); UnloadRenderTexture(gPixLow); }
+        gPixFull = LoadRenderTexture(W, H);
+        gPixLow = LoadRenderTexture(PIX_H * W / H, PIX_H);
+        SetTextureFilter(gPixFull.texture, TEXTURE_FILTER_BILINEAR);   // 縮めるときは、まわりの色を混ぜる
+        SetTextureFilter(gPixLow.texture, TEXTURE_FILTER_POINT);       // 広げるときは、ドットのまま
+        gPixW = W; gPixH = H;
+    }
+    if (!gPixShaderOk) { gPixShader = LoadShaderFromMemory(0, PIX_FS); gPixShaderOk = true; }
+    BeginTextureMode(gPixFull);
+}
+void PixelEnd(void)
+{
+    if (!gPixOn) return;
+    gPixOn = false;
+    EndTextureMode();
+    int lw = gPixLow.texture.width, lh = gPixLow.texture.height;
+    BeginTextureMode(gPixLow);
+    DrawTexturePro(gPixFull.texture, (Rectangle){ 0, 0, (float)gPixW, (float)-gPixH }, (Rectangle){ 0, 0, (float)lw, (float)lh }, (Vector2){ 0 }, 0.0f, WHITE);
+    EndTextureMode();
+    if (gPixShader.id) BeginShaderMode(gPixShader);
+    DrawTexturePro(gPixLow.texture, (Rectangle){ 0, 0, (float)lw, (float)-lh }, (Rectangle){ 0, 0, (float)gPixW, (float)gPixH }, (Vector2){ 0 }, 0.0f, WHITE);
+    if (gPixShader.id) EndShaderMode();
 }
 
 // 3D を描き終えたら（EndMode3D の直後、文字より前に）呼ぶ：全体の色合いと、ナイターのライトの光

@@ -16,7 +16,9 @@
 // 言語：英語 / 日本語（メニューの Language で切り替え）。TR("英語", "日本語") で表示する文字を選ぶ
 enum { LANG_EN, LANG_JA };
 extern int gLang;
-extern int gLook;   // 見た目：0 = ふつう、1 = アニメ調（render.c）
+extern int gLook;   // 見た目：0 = ふつう、1 = アニメ調、2 = ドット風（render.c）
+void PixelBegin(void);   // ドット風：DrawSky の前に
+void PixelEnd(void);     // ドット風：AtmosOverlay の後に
 #define TR(en, ja) (gLang == LANG_JA ? (ja) : (en))
 #define TL(en, ja) (en)   // 試合中のテロップ（コール・判定・警告）は英語のまま（いずれ音声のコールにする）
 void UiFontInit(void);

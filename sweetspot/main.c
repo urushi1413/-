@@ -230,7 +230,7 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
     cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 38.0f; cam.projection = CAMERA_PERSPECTIVE;
     cam.position = (Vector3){ lookX + 0.5f * sinf(t * 0.25f), 1.75f, -HALF_LEN + 3.4f };
     cam.target   = (Vector3){ lookX, 1.05f, -HALF_LEN + 9.0f };
-    DrawSky(cam);   // 空（時間帯と天気）。奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
+    PixelBegin(); DrawSky(cam);   // 空（時間帯と天気）。奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
     BeginMode3D(cam);
     DrawCourt();
     for (int k = 0; k < 2; k++) {
@@ -248,7 +248,7 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
         if (k == 1 && oppScr) *oppScr = s;
     }
     EndMode3D();
-    AtmosOverlay(cam);
+    AtmosOverlay(cam); PixelEnd();
 }
 
 // 優勝の表彰：コートの真ん中で、自分の選手がその大会のトロフィーを頭の上に掲げる。カメラはまわりをゆっくり回る
@@ -261,7 +261,7 @@ static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm
     float a = 0.55f * sinf(tm * 0.22f);   // 正面から左右へゆっくり回り込む
     cam.position = (Vector3){ pos.x + sinf(a) * 5.6f, 1.35f, pos.z - cosf(a) * 5.6f };
     cam.target = (Vector3){ pos.x, 1.45f, pos.z };
-    DrawSky(cam);
+    PixelBegin(); DrawSky(cam);
     BeginMode3D(cam);
     DrawCourt();
     DrawStadium(cam.position, (Vector3){ 0, -10, 0 }, 1.0f, tm, (Vector3){ 0 }, 0.0f);
@@ -278,7 +278,7 @@ static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm
     if (TrophyIsDish(t->slam, t->women)) base.y = hy - 0.5f * th;   // 大皿は真ん中を持つ
     DrawTrophy3D(t->slam, t->women, base, tm * 0.6f);
     EndMode3D();
-    AtmosOverlay(cam);
+    AtmosOverlay(cam); PixelEnd();
     // 紙吹雪
     for (int i = 0; i < 90; i++) {
         float x = fmodf(i * 97.3f + sinf(tm * 0.7f + i) * 40.0f, (float)W);
@@ -481,7 +481,7 @@ int main(void)
             aimSens = Clamp(s.sens, 0.25f, 3.0f); SfxSetVolume(Clamp(s.vol, 0.0f, 1.0f));
             gLang = s.lang == LANG_EN ? LANG_EN : LANG_JA;
             gTimeSetting = Clamp(s.tod, 0, TOD_COUNT); gWeatherSetting = Clamp(s.wx, 0, WX_COUNT);
-            gLook = Clamp(s.look, 0, 1);
+            gLook = Clamp(s.look, 0, 2);
         }
         AtmosNewMatch();
     }
@@ -705,7 +705,7 @@ int main(void)
                         forceRestart = true;
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
-                    case MI_LOOK:   gLook = 1 - gLook; break;
+                    case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
@@ -890,7 +890,7 @@ int main(void)
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
-                    case MI_LOOK:    label = TR("Look", "見た目"); value = gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
+                    case MI_LOOK:    label = TR("Look", "見た目"); value = gLook == 2 ? TR("PIXEL", "ドット風") : gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
                     case MI_KEYRESET: label = TR("Reset to defaults", "はじめの割り当てに戻す"); break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
                     case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;
@@ -995,11 +995,11 @@ int main(void)
                 rp.cam = ReplayCamera(rp.view, f->ball, rp.cam, rp.first);
                 rp.first = false;
                 BeginDrawing();
-                DrawSky(rp.cam);
+                PixelBegin(); DrawSky(rp.cam);
                 BeginMode3D(rp.cam);
                 DrawReplayFrame(f, rp.cam);
                 EndMode3D();
-                AtmosOverlay(rp.cam);
+                AtmosOverlay(rp.cam); PixelEnd();
                 int W = GetScreenWidth(), H = GetScreenHeight();
                 if (fmodf((float)GetTime(), 1.0f) < 0.7f) { DrawRectangle(20, 20, 150, 40, (Color){ 200, 30, 30, 230 }); DrawText(TR("REPLAY", "リプレイ"), 34, 28, 26, RAYWHITE); }
                 if (rp.mode == 1) {
@@ -2411,7 +2411,7 @@ int main(void)
         // ---- 描画 ----
         UpdateSpeedBoard(speedBoardKmh);   // スピードメーター（数字が変わったときだけ描き直す）
         BeginDrawing();
-        DrawSky(cam);   // 空（時間帯と天気）
+        PixelBegin(); DrawSky(cam);   // 空（時間帯と天気）
         BeginMode3D(cam);
             DrawCourt();
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
@@ -2673,7 +2673,7 @@ int main(void)
                 rlDrawRenderBatchActive(); rlEnableDepthMask();
             }
         EndMode3D();
-        AtmosOverlay(cam);   // 時間帯と天気の色合い、ナイターのライト
+        AtmosOverlay(cam); PixelEnd();   // 時間帯と天気の色合い、ナイターのライト
         if (mode == MODE_MATCH && gYouRage > 0.0f && !changeActive) {   // 燃えている：残りの強さを見せる
             const char *fu = TL("FIRED UP", "燃えている");
             float pulse = 0.75f + 0.25f * sinf((float)GetTime() * 6.0f);
