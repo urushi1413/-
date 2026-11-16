@@ -81,7 +81,8 @@ Mouse and keyboard (WASD to move, mouse to aim, click to hit). Keyboard-only pla
 2. 別のパソコン（できれば開発をしていないもの）で zip を展開して、SweetSpot.exe が起動するか確かめる
    - 音が鳴るか、日本語が出るか、試合が最後までできるか
 3. 宣伝用の画像と動画を撮る
-   - ゲームの中で F12 を押すと、同じフォルダに screenshot000.png ができる（1280×720）
+   - ゲームの中で F3 を押すと撮影モード（画面の文字が消え、カメラが映画のような位置に。押すたびに変わる）
+   - F12 を押すと、同じフォルダに screenshot000.png ができる（1280×720）
    - 動画は Windows の Xbox Game Bar（Win＋G）で録れる。15〜30 秒：芯で捉えた一球、長いラリー、ネットイン、優勝の表彰
 4. itch.io
    - アカウントを作る → Upload new project → Kind of project：Downloadable

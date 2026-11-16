@@ -19,6 +19,7 @@ CONTROLS (IN A MATCH)
   Z ............... swat the ball into the crowd (code violation, counted like racket abuse)
   R ............... after a point: replay (C switches camera)
   Tab ............. stats
+  F3 .............. photo mode (hides the HUD and changes the camera; press again for the next)
   F1 / F2 ......... screen info / guides
   M ............... mute
   Esc ............. menu
@@ -30,6 +31,9 @@ KEYBOARD ONLY (NO MOUSE)
 CHANGING KEYS
   SETTINGS > Keys. Select an action, press Enter (or click), then press the new key.
   If another action used that key, the two are swapped. "Reset to defaults" puts everything back.
+
+FIRST TIME?
+  Choose HOW TO PLAY on the title screen: move, hit, aim and serve in 4 short steps.
 
 SERVING
   Left click kick / Right click slice / Space + click flat

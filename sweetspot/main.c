@@ -405,6 +405,10 @@ int main(void)
     bool  battle = false;
     float hp[2] = { BATTLE_HP, BATTLE_HP }, hpShown[2] = { BATTLE_HP, BATTLE_HP };   // 体力（見せる値は少し遅れて減る）
     float koT = -1.0f;            // K.O. の文字を出している時間
+    // 撮影モード（F3）：画面の文字や印を消して、カメラを映画のような位置に（宣伝の画像・動画用）。0 = なし
+    int   cineMode = 0; float cineLabelT = 0.0f; Vector3 cinePos = { 0 }, cineTgt = { 0 }; bool cineFirst = true;
+    // はじめての人への練習：0 動く → 1 打つ → 2 狙う → 3 サーブ → 4 終わり。-1 = していない
+    int   tut = -1, tutBase = 0, tutLastShot = -1; bool tutL = false, tutR = false; float tutT = 0.0f;
     float hitFlashT[2] = { 0 };   // 体に当たった：画面の赤い点滅
     bool  showSummary = false;
     int   rallyHits = 0;
@@ -583,7 +587,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
@@ -593,6 +597,7 @@ int main(void)
             int items[32], n = 0;
             if (menuPage == 0) {
                 items[n++] = MI_PLAY;
+                if (app == APP_TITLE) items[n++] = MI_TUTORIAL;
                 if (app == APP_TITLE && !DEMO_ONLY) items[n++] = MI_TOURNAMENT;   // 体験版はグランドスラムなし
                 items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
@@ -624,7 +629,7 @@ int main(void)
             bool titleMain = app == APP_TITLE && menuPage == 0;
             // 並べ方：タイトルは左に大きく、選手と試合は左のパネル（右に選手）、それ以外は真ん中のパネル
             int pw, rowH, fs, px, py, ph, rowY0;
-            if (titleMain) { pw = 520; rowH = 54; fs = 30; px = 70; rowY0 = H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }
+            if (titleMain) { pw = 520; rowH = n >= 7 ? 46 : 54; fs = n >= 7 ? 28 : 30; px = 70; rowY0 = n >= 7 ? H / 2 - 50 : H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }   // 項目が多いときは詰める
             else if (menuPage == 4) { pw = Clamp(W - 120, 600, 1100); rowH = 40; fs = 22; px = W / 2 - pw / 2; py = 30; ph = H - 60; rowY0 = py + ph - 60; }
             else if (menuPage == 5) { pw = 760; rowH = Clamp((H - 190) / n, 24, 40); fs = rowH >= 32 ? 20 : 18; ph = 96 + n * rowH + 44; px = W / 2 - pw / 2; py = H / 2 - ph / 2; rowY0 = py + 90; }
             else if (menuPage == 1 || menuPage == 3) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
@@ -688,14 +693,14 @@ int main(void)
                 menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it >= MI_KEY0;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -737,7 +742,12 @@ int main(void)
                 if (it != MI_TOURNAMENT) SaveSettings();
             }
             if (activate && n > 0) {
-                if (it == MI_PLAY || it == MI_RESTART) {
+                if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
+                    tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
+                    mode = MODE_RALLY; battle = false; assistLevel = 2;
+                    forceRestart = true; app = APP_PLAY;
+                    mouseLocked = true; DisableCursor(); skipMouseDelta = true;
+                } else if (it == MI_PLAY || it == MI_RESTART) {
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
                     app = APP_PLAY;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
@@ -759,10 +769,11 @@ int main(void)
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
                 else if (it == MI_BACK) {
                     int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
+                    tut = -1;              // 練習の途中なら、やめる
                     app = APP_TITLE; menuSel = 0;
                 } else if (it == MI_QUIT) {
                     quitGame = true;
@@ -902,6 +913,7 @@ int main(void)
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
+                    case MI_TUTORIAL: label = TR("HOW TO PLAY", "はじめての人へ"); value = TR("4 short steps", "4 つの短い練習"); break;
                     case MI_LOOK:    label = TR("Look", "見た目"); value = gLook == 2 ? TR("PIXEL", "ドット風") : gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
                     case MI_KEYRESET: label = TR("Reset to defaults", "はじめの割り当てに戻す"); break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
@@ -2443,6 +2455,34 @@ int main(void)
             }
         }
 
+        // ---- はじめての人への練習：できたら次へ ----
+        if (tut >= 0) {
+            tutT += frameDt;
+            int inNow = 0; for (int k = 0; k < SHOT_COUNT; k++) inNow += stats[k][1];
+            int svIn = svStats[0][1] + svStats[1][1];
+            if (tut == 0) {   // 動く：光る円の中へ（その間は球を出さない）
+                feedTimer = fmaxf(feedTimer, 1.0f);
+                if (Vector3Distance((Vector3){ P.pos.x, 0, P.pos.z }, TUT_SPOT) < 0.8f) { tut = 1; tutT = 0.0f; tutBase = inNow; feedTimer = 0.8f; }
+            } else if (tut == 1) {   // 打つ：3 球入れる
+                if (inNow - tutBase >= 3) { tut = 2; tutT = 0.0f; tutL = tutR = false; tutLastShot = ball.shotId; }
+            } else if (tut == 2) {   // 狙う：左と右に 1 球ずつ
+                if (ball.active && ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1 && ball.result == RESULT_IN && ball.shotId != tutLastShot) {
+                    tutLastShot = ball.shotId;
+                    if (ball.firstBounce.x < -0.6f) tutL = true;
+                    if (ball.firstBounce.x > 0.6f)  tutR = true;
+                }
+                if (tutL && tutR) { tut = 3; tutT = 0.0f; mode = MODE_SERVE; forceRestart = true; tutBase = svIn; }
+            } else if (tut == 3) {   // サーブ：2 本入れる
+                if (mode != MODE_SERVE) { mode = MODE_SERVE; forceRestart = true; }
+                if (svIn - tutBase >= 2) { tut = 4; tutT = 0.0f; }
+            } else if (tut == 4 && tutT > 4.0f) {   // 終わり：タイトルへ（次は試合）
+                tut = -1; mode = MODE_MATCH; app = APP_TITLE; menuSel = 0;
+                mouseLocked = false; EnableCursor();
+            }
+        }
+        // ---- 撮影モード（F3）：押すたびにカメラが変わる。画面の文字や印は出さない ----
+        if (IsKeyPressed(KEY_F3)) { cineMode = (cineMode + 1) % (CINE_COUNT + 1); cineLabelT = 1.5f; cineFirst = true; }
+
         // ---- カメラ ----
         if (changeActive) {        // コートチェンジ：審判台の反対側の高いところから（中継のように）
             cam.position = (Vector3){ -gUmpSide * 15.0f, 5.5f, 0.0f };
@@ -2459,6 +2499,28 @@ int main(void)
             cam.position = Vector3Add(ball.pos, (Vector3){ 4.0f, 2.0f, 6.0f });
         }
 
+        if (cineMode > 0 && !changeActive) {   // 撮影モードのカメラ（なめらかに追う）
+            Vector3 mid = Vector3Scale(Vector3Add(P.pos, ai.pos), 0.5f);
+            Vector3 focus = ball.active ? ball.pos : (Vector3){ mid.x, 1.0f, mid.z };
+            Vector3 wp, wt;
+            float t = (float)GetTime();
+            switch (cineMode) {
+                case 1:  wp = (Vector3){ P.pos.x * 0.4f + 4.5f, 1.5f, P.pos.z + 5.5f }; wt = (Vector3){ mid.x * 0.5f, 1.0f, mid.z - 2.0f }; break;   // 中継のように、低めで少し横から
+                case 2: { float side = -(float)gUmpSide, zc = 0.5f * focus.z + 0.5f * mid.z;                                                           // コートの外、真横の低い位置から
+                          wp = (Vector3){ side * (DOUBLES_W * 0.5f + 3.2f), 1.25f, zc }; wt = (Vector3){ 0.0f, 1.0f, zc }; } break;
+                case 3:  wp = Vector3Add(P.pos, (Vector3){ 0.9f, 1.5f, 2.4f }); { bool ahead = ball.active && ball.pos.z < P.pos.z - 1.0f && ball.pos.y < 6.0f;           // 自分のすぐ後ろ。球が前にあるときだけ球を見る
+                           Vector3 opp = Vector3Add(ai.pos, (Vector3){ 0, 1.0f, 0 });
+                           wt = ahead ? Vector3Lerp(opp, ball.pos, 0.5f) : opp; } break;
+                default: wp = Vector3Add(P.pos, (Vector3){ 4.0f * sinf(t * 0.25f), 1.2f, 4.0f * cosf(t * 0.25f) }); wt = Vector3Add(P.pos, (Vector3){ 0, 1.1f, 0 }); break;   // 自分のまわりをゆっくり回る
+            }
+            float k = cineFirst ? 1.0f : fminf(frameDt * 3.0f, 1.0f);
+            cinePos = Vector3Lerp(cinePos, wp, k); cineTgt = Vector3Lerp(cineTgt, wt, k * 1.5f > 1.0f ? 1.0f : k * 1.5f);
+            cineFirst = false;
+            cam.position = cinePos; cam.target = cineTgt;
+        }
+        int keepGuide = guideLevel, keepAssist = assistLevel;
+        if (cineMode > 0) { guideLevel = 2; assistLevel = 0; }   // 撮影モード：狙いの印や手がかりの円も消す（描く間だけ）
+
         // ---- 描画 ----
         UpdateSpeedBoard(speedBoardKmh);   // スピードメーター（数字が変わったときだけ描き直す）
         BeginDrawing();
@@ -2467,6 +2529,11 @@ int main(void)
             DrawCourt();
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
             if (mode == MODE_MATCH) DrawPigeon();
+            if (tut == 0) {   // 練習：ここへ動く（光る円）
+                float pu = 0.5f + 0.5f * sinf((float)GetTime() * 5.0f);
+                DrawCylinder(TUT_SPOT, 0.7f, 0.7f, 0.02f, 32, Fade((Color){ 255, 215, 60, 255 }, 0.35f + 0.3f * pu));
+                DrawCylinderWires(TUT_SPOT, 0.7f + 0.1f * pu, 0.7f + 0.1f * pu, 1.2f, 24, Fade((Color){ 255, 230, 120, 255 }, 0.6f));
+            }
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, gYouPersona ? gYouPersona : -1); ApplyLook(&bot.anim, gYouPersona ? gYouPersona : -1);   // 自分が使う選手の見た目
@@ -2725,6 +2792,18 @@ int main(void)
             }
         EndMode3D();
         AtmosOverlay(cam); PixelEnd();   // 時間帯と天気の色合い、ナイターのライト
+        guideLevel = keepGuide; assistLevel = keepAssist;
+        if (cineMode > 0) {   // 撮影モード：文字は出さない（切り替えた直後だけ、カメラの名前を小さく）
+            if (cineLabelT > 0.0f) {
+                cineLabelT -= frameDt;
+                static const char *CN_EN[CINE_COUNT] = { "TV (low)", "SIDE", "BEHIND YOU", "ORBIT" };
+                static const char *CN_JA[CINE_COUNT] = { "中継（低め）", "真横", "すぐ後ろ", "まわりを回る" };
+                const char *l = TextFormat(TR("PHOTO MODE %d/%d: %s   (F3: next, F12: screenshot)", "撮影モード %d/%d：%s（F3：次、F12：画面を保存）"), cineMode, CINE_COUNT,
+                                           gLang == LANG_JA ? CN_JA[cineMode - 1] : CN_EN[cineMode - 1]);
+                DrawText(l, 16, 14, 18, Fade(RAYWHITE, Clamp01(cineLabelT / 0.4f)));
+            }
+            goto hud_done;
+        }
         if (battle && mode == MODE_MATCH) {   // バトル：画面の上に 2 人の体力ゲージ。体に当たると赤く点滅、K.O. の文字
             // 左上の説明（幅 500）と右上の点数（幅 310）の間に収める
             int W = GetScreenWidth(), H = GetScreenHeight(), bh = 20, y0 = 14;
@@ -3105,6 +3184,38 @@ int main(void)
                 DrawText(st, 560, GetScreenHeight() - 52, 16, sc);
             }
         }
+        if (tut >= 0) {   // はじめての人への練習：やること（画面の上の真ん中）
+            // 左上の説明（幅 500）の右に置く（練習では右上に点数は出ない）
+            int W = GetScreenWidth(), bx = 525, bw = Clamp(W - bx - 16, 400, 760), by = 12;
+            const char *ttl = "", *l1 = "", *l2 = "";
+            int inNow = 0; for (int k = 0; k < SHOT_COUNT; k++) inNow += stats[k][1];
+            int svIn = svStats[0][1] + svStats[1][1];
+            switch (tut) {
+                case 0: ttl = TR("1/4  MOVE", "1/4  動く");
+                        l1 = TextFormat(TR("Use %s to move into the glowing circle.", "%s で、光る円の中へ動こう"), ControlsMove()); break;
+                case 1: ttl = TextFormat(TR("2/4  HIT  (%d/3 in)", "2/4  打つ（%d/3 球）"), inNow - tutBase);
+                        l1 = TextFormat(TR("When the ball comes, press L-click (or %s) and RELEASE to swing. Get 3 in.", "球が来たら、左クリック（または %s）を押して、離して振る。3 球入れよう"), KeyName(gKeys[ACT_TOP]));
+                        l2 = TR("Hold longer to hit deeper. Stand where the circle shows. Top-left tells you early / late / far.", "長く押すほど深く飛ぶ。円の場所に立つと打ちやすい。早い・遅い・遠いは左上に出る"); break;
+                case 2: ttl = TextFormat(TR("3/4  AIM  (left %s / right %s)", "3/4  狙う（左 %s / 右 %s）"), tutL ? "OK" : "-", tutR ? "OK" : "-");
+                        l1 = TextFormat(TR("Move the mouse left / right to aim (keys: %s / %s). Land one ball on each side.", "マウスを左右に動かすと狙いが動く（キーなら %s / %s）。左と右に 1 球ずつ入れよう"), KeyName(gKeys[ACT_AIM_L]), KeyName(gKeys[ACT_AIM_R]));
+                        l2 = TR("Right click = slice, Shift + click = lob, Ctrl + click = drop shot.", "右クリック＝スライス、Shift＋クリック＝ロブ、Ctrl＋クリック＝ドロップ"); break;
+                case 3: ttl = TextFormat(TR("4/4  SERVE  (%d/2 in)", "4/4  サーブ（%d/2 本）"), svIn - tutBase);
+                        l1 = TR("Press to toss, RELEASE near the top of the toss. Get 2 serves in.", "押してトスを上げ、いちばん高い所で離す。2 本入れよう");
+                        l2 = TR("L-click = kick (safe), R-click = slice, Space + click = flat (fast).", "左クリック＝キック（入りやすい）、右クリック＝スライス、Space＋クリック＝フラット（速い）"); break;
+                default: ttl = TR("ALL DONE!", "できた！");
+                        l1 = TR("Now try a match. (Back to the title...)", "次は試合をやってみよう（タイトルに戻る）"); break;
+            }
+            int bh = l2[0] ? 108 : 80;
+            DrawRectangle(bx, by, bw, bh, Fade((Color){ 15, 30, 40, 255 }, 0.88f));
+            DrawRectangleLines(bx, by, bw, bh, (Color){ 255, 215, 70, 255 });
+            DrawText(ttl, bx + 18, by + 10, 26, (Color){ 255, 215, 70, 255 });
+            int f1 = 20; while (f1 > 13 && MeasureText(l1, f1) > bw - 36) f1--;
+            DrawText(l1, bx + 18, by + 46, f1, RAYWHITE);
+            if (l2[0]) { int f2 = 17; while (f2 > 12 && MeasureText(l2, f2) > bw - 36) f2--; DrawText(l2, bx + 18, by + 76, f2, LIGHTGRAY); }
+            const char *esc = TR("Esc: menu", "Esc：メニュー");
+            DrawText(esc, bx + bw - 14 - MeasureText(esc, 14), by + 12, 14, GRAY);
+        }
+        hud_done:
         EndDrawing();
         // リプレイ用に記録（試合中だけ。描いたままの姿勢で）
         if (mode == MODE_MATCH && app == APP_PLAY) {

@@ -68,7 +68,7 @@ const char *KeyName(int k)
 // 割り当てられないキー：メニュー・決定に使うキーと、練習や表示の切り替えに使っている固定のキー
 bool KeyReserved(int k)
 {
-    static const int R[] = { KEY_ESCAPE, KEY_ENTER, KEY_TAB, KEY_F1, KEY_F2, KEY_F12, KEY_ONE, KEY_TWO, KEY_THREE,
+    static const int R[] = { KEY_ESCAPE, KEY_ENTER, KEY_TAB, KEY_F1, KEY_F2, KEY_F3, KEY_F12, KEY_ONE, KEY_TWO, KEY_THREE,
                              KEY_G, KEY_B, KEY_H, KEY_N, KEY_V, KEY_F, KEY_T, KEY_C };
     for (size_t i = 0; i < sizeof(R) / sizeof(R[0]); i++) if (R[i] == k) return true;
     return k <= 0;
