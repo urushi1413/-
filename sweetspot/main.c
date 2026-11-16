@@ -1816,8 +1816,9 @@ int main(void)
             }
             gCasual = false; gCrouch = false;
         }
-        // ---- ヒンドランス（妨害）：相手がサーブのトスを上げている間・相手の打った球が飛んでいる間に、カモン（Y）やあおる（E）をすると相手のポイント ----
-        if (mode == MODE_MATCH && !score.over && !botControls && (ActPressed(ACT_COMEON) || ActPressed(ACT_TAUNT)) &&
+        // ---- ヒンドランス（妨害）：相手がサーブのトスを上げている間・相手の打った球が飛んでいる間に、カモン（Y）と叫ぶと相手のポイント ----
+        //      あおる（E）は移動のキー（W・D）の隣で、うっかり押しやすいので対象にしない（相手のプレー中に押しても何も起きない）
+        if (mode == MODE_MATCH && !score.over && !botControls && ActPressed(ACT_COMEON) &&
             ((phase == PH_SERVE && server == 1 && aiTossing) || (phase == PH_PLAY && ball.active && ball.lastHitter == HITTER_OPP))) {
             aiTossing = false; ai.anim.windup = 0.0f;
             ball = (Ball){ 0 }; trailCount = 0;
@@ -1829,8 +1830,8 @@ int main(void)
             AwardPoint(&score, 1);
             ms[1].points++; lastPtWinner = 1;
             if (!score.over && score.nSetsDone == sb && score.games[0] + score.games[1] != gb && (score.games[0] + score.games[1]) % 2 == 1) { changePending = true; changeSit = true; }
-            snprintf(rageMsg, sizeof(rageMsg), TL("HINDRANCE!\nYou shouted while the opponent was %s.\nPoint to %s.", "ヒンドランス（妨害）！\n相手が%sの最中に声を出した\n%s のポイント"),
-                     phase == PH_SERVE ? TL("serving", "サーブ") : TL("hitting", "打っている"), OPP_SHORT);
+            snprintf(rageMsg, sizeof(rageMsg), TL("HINDRANCE!\nYOU shouted \"C'mon!\" during the opponent's %s.\nPoint to %s.", "ヒンドランス（妨害）！\nあなたが、相手の%s中に「カモン」と叫んだ\n%s のポイント"),
+                     phase == PH_SERVE ? TL("serve", "サーブ") : TL("shot", "打球"), OPP_SHORT);
             rageMsgT = 3.5f;
             snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
             SfxScoreCall(&score, server, 1, 0, 1.4f);
