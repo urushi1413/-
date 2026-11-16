@@ -183,7 +183,7 @@ static const char *PersonaBlurb(int p)
         "No special traits. A solid all-round player.",
         PN("Elegant all-court genius. One-handed backhand, great slice and volleys. Loves grass.", "All-court player. One-handed backhand, good slice and volleys. Likes fast courts."),
         PN("The best defender and returner. Rubber-band sliding, ice cold on big points.", "Strong defender and returner. Slides well and stays calm on big points."),
-        PN("Left-handed. Huge topspin forehand. King of clay, never gives up.", "Left-handed. Heavy topspin forehand. Strong on clay and never gives up."),
+        PN("Left-handed. Huge topspin forehand. King of clay, never gives up. Total emotional control: never smashes a racket.", "Left-handed. Heavy topspin forehand. Strong on clay and never gives up. Keeps his emotions in check: never smashes a racket."),
         PN("Tireless counter-puncher. Great lobs and returns. Talks to himself a lot.", "Tireless counter-puncher. Good lobs and returns."),
         PN("Explosive speed and power. Drop shots, net play, loves the big stage.", "Fast and powerful. Uses drop shots and comes to the net."),
         PN("Hits early and flat. Fewest errors, the best returner of the new generation.", "Hits early and flat. Few errors and a good returner."),
@@ -202,7 +202,7 @@ static const char *PersonaBlurb(int p)
         "癖のない、バランスのいい選手。",
         PN("優雅なオールラウンダー。片手バック、キレのあるスライスとボレー。芝が得意。", "オールラウンダー。片手バック、スライスとボレーがうまい。速いコートが得意。"),
         PN("守備とリターンが一番。よく滑って拾い、大事なポイントに一番強い。", "守備とリターンがうまい。よく滑って拾い、大事なポイントで落ち着いている。"),
-        PN("左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。", "左利き。回転の強いフォア。クレーに強く、最後まであきらめない。"),
+        PN("左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。感情をコントロールでき、ラケットを壊さない。", "左利き。回転の強いフォア。クレーに強く、最後まであきらめない。感情をコントロールでき、ラケットを壊さない。"),
         PN("粘り強い守備の名手。ロブとリターンがうまい。独り言が多い。", "粘り強い守備型。ロブとリターンがうまい。"),
         PN("爆発的な足と強打。ドロップとネットプレー。大舞台に強い。", "速い足と強打。ドロップとネットプレーも使う。"),
         PN("早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。", "早いタイミングでフラットに打つ。ミスが少なく、リターンがうまい。"),
@@ -2347,7 +2347,9 @@ int main(void)
                 if (lastPtWinner == 0) crowdExcite = fmaxf(crowdExcite, 0.55f);
             }
             // ---- Z：球を観客席へかっ飛ばす（ポイントの間）。行為違反（ラケット破壊と同じ数え方）。燃えるが、ラケット破壊より弱い ----
-            if (ActPressed(ACT_SWAT) && !score.over && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {
+            if ((ActPressed(ACT_SWAT) || ActPressed(ACT_SMASH)) && gYouPersona == PERSONA_NADAR && !score.over && !botControls) {   // ナダル：感情をコントロールできるので、叩きつけない・かっ飛ばさない
+                snprintf(toast, sizeof(toast), "%s", TL("Stays calm. Never smashes a racket.", "感情をコントロールしている。ラケットは壊さない")); toastT = 2.2f;
+            } else if (ActPressed(ACT_SWAT) && !score.over && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {
                 youSmashes++;
                 P.anim.celebKind = CELEB_SWAT; P.anim.celebDur = CelebDuration(CELEB_SWAT); P.anim.celebT = P.anim.celebDur;
                 P.anim.swingT = -1.0f; P.anim.windup = 0.0f;
@@ -2373,7 +2375,7 @@ int main(void)
             }
             // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。観客にブーイングされるが、しばらく「燃えて」強くなる（ミスも増える）。
             //      1・2 回目は警告だけ、SMASH_PENALTY_FROM 回目からポイントペナルティ ----
-            if (ActPressed(ACT_SMASH) && !score.over && P.anim.smashT <= 0.0f && !botControls) {
+            if (ActPressed(ACT_SMASH) && gYouPersona != PERSONA_NADAR && !score.over && P.anim.smashT <= 0.0f && !botControls) {
                 youSmashes++;
                 P.anim.smashT = SMASH_TIME; P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.anim.celebT = 0.0f;
                 youSmashPrevE = 0.0f;

@@ -539,6 +539,7 @@ typedef struct {
 #define MEN_LAST      8
 #define WOMEN_FIRST   9
 #define WOMEN_LAST    14
+#define PERSONA_NADAR 3     // ナダル（感情をコントロールできる：ラケットを叩きつけない）
 #define PERSONA_MURRAYE 4
 int TourPersonaCount(bool women);           // ツアーの選手の数
 int TourPersonaAt(bool women, int i);       // ツアーの i 番目の選手
