@@ -101,12 +101,13 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
+    fprintf(f, "look=%d\n", s->look);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, "key_%s=%d\n", ActionId(a), gKeys[a]);   // キーの割り当て（raylib のキーの番号）
@@ -140,6 +141,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "volume")) s->vol = v;
         else if (!strcmp(key, "language")) s->lang = iv;
         else if (!strcmp(key, "time_of_day")) s->tod = iv; else if (!strcmp(key, "weather")) s->wx = iv;
+        else if (!strcmp(key, "look")) s->look = iv;
     }
     fclose(f);
     return true;
@@ -459,10 +461,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook };
         if (LoadSettingsFile(&s)) {
             setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 1, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
@@ -473,6 +475,7 @@ int main(void)
             aimSens = Clamp(s.sens, 0.25f, 3.0f); SfxSetVolume(Clamp(s.vol, 0.0f, 1.0f));
             gLang = s.lang == LANG_EN ? LANG_EN : LANG_JA;
             gTimeSetting = Clamp(s.tod, 0, TOD_COUNT); gWeatherSetting = Clamp(s.wx, 0, WX_COUNT);
+            gLook = Clamp(s.look, 0, 1);
         }
         AtmosNewMatch();
     }
@@ -553,7 +556,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
@@ -583,7 +586,7 @@ int main(void)
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
                 items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
-                items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
+                items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (menuSel >= n) menuSel = 0;
             const char *assistNames[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING + SPOT", "タイミング＋立つ場所") };
@@ -681,6 +684,7 @@ int main(void)
                         forceRestart = true;
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
+                    case MI_LOOK:   gLook = 1 - gLook; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
@@ -865,6 +869,7 @@ int main(void)
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
+                    case MI_LOOK:    label = TR("Look", "見た目"); value = gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
                     case MI_KEYRESET: label = TR("Reset to defaults", "はじめの割り当てに戻す"); break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
                     case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;

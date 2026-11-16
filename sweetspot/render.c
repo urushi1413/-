@@ -6,13 +6,40 @@
 // 光の向きと強さは時間帯・天気で変わる（AtmosApply）
 static Vector3 gLightL = { 0.348f, 0.846f, 0.403f };   // 光の来る向き（正規化済み）
 static float   gLightAmb = 0.55f, gLightDiff = 0.50f;   // 当たらない面の明るさ、光の当たる分
+// 見た目（メニューの「見た目」）：0 = ふつう、1 = アニメ調（陰を 3 段に分け、人に輪郭線）
+int gLook = 0;
+static bool gOutline = false;          // 輪郭線を描く回：形を少し太らせて暗い色で、裏側の面だけ描く
+#define OUTLINE_W 0.014f               // 輪郭線の太さ（m）
+static const Color OUTLINE_COL = { 28, 24, 32, 255 };
 static Color Shade(Color c, Vector3 n)
 {
-    float l = gLightAmb + gLightDiff * fmaxf(Vector3DotProduct(n, gLightL), 0.0f);
+    float d = Vector3DotProduct(n, gLightL);
+    float l = gLightAmb + gLightDiff * fmaxf(d, 0.0f);
+    if (gLook == 1) {   // アニメ調：光・中間・陰の 3 段。色は少し濃く
+        l = d > 0.45f ? gLightAmb + gLightDiff * 0.95f : d > 0.0f ? gLightAmb + gLightDiff * 0.55f : gLightAmb * 0.92f;
+        float g = (c.r + c.g + c.b) / 3.0f, sat = 1.18f;
+        c = (Color){ (unsigned char)Clamp(g + (c.r - g) * sat, 0, 255), (unsigned char)Clamp(g + (c.g - g) * sat, 0, 255), (unsigned char)Clamp(g + (c.b - g) * sat, 0, 255), c.a };
+    }
     l = fminf(l, 1.05f);
     return (Color){ (unsigned char)fminf(c.r * l, 255.0f), (unsigned char)fminf(c.g * l, 255.0f), (unsigned char)fminf(c.b * l, 255.0f), c.a };
 }
-static void LitVertex(Vector3 p, Vector3 n, Color c) { Color s = Shade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z); }
+static void LitVertex(Vector3 p, Vector3 n, Color c);
+// 輪郭線の回で、両面に描いている形の三角を 1 枚だけ（面の向きが外を向く順で）描く
+static void OutlineTri(Vector3 a, Vector3 na, Vector3 b, Vector3 nb, Vector3 c, Vector3 nc)
+{
+    Vector3 fn = Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(c, a));
+    if (Vector3DotProduct(fn, Vector3Add(na, Vector3Add(nb, nc))) < 0.0f) { Vector3 t = b; b = c; c = t; t = nb; nb = nc; nc = t; }
+    LitVertex(a, na, BLACK); LitVertex(b, nb, BLACK); LitVertex(c, nc, BLACK);
+}
+static void LitVertex(Vector3 p, Vector3 n, Color c)
+{
+    if (gOutline) {   // 輪郭線の回：面の向きへ少し押し出して、暗い色で
+        p = Vector3Add(p, Vector3Scale(n, OUTLINE_W));
+        rlColor4ub(OUTLINE_COL.r, OUTLINE_COL.g, OUTLINE_COL.b, 255); rlVertex3f(p.x, p.y, p.z);
+        return;
+    }
+    Color s = Shade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z);
+}
 // 太さの変わる筒（側面とふた）
 void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
 {
@@ -62,6 +89,7 @@ void LitSphereEx(Vector3 c, float r, int rings, int slices, Color col)
 // 楕円の円板（顔に貼る目など）：中心 c、面の向き n、横 ex・縦 ey の半径 a・b。両面に描く
 static void LitEllipseDisc(Vector3 c, Vector3 n, Vector3 ex, Vector3 ey, float a, float b, int seg, Color col)
 {
+    if (gOutline) return;
     rlCheckRenderBatchLimit(seg * 6);
     rlBegin(RL_TRIANGLES);
     for (int i = 0; i < seg; i++) {
@@ -87,6 +115,7 @@ static void LitBlob(Vector3 c, Vector3 ex, Vector3 ey, Vector3 ez, float rx, flo
             P[k] = Vector3Add(c, Vector3Add(Vector3Scale(ex, nx * rx), Vector3Add(Vector3Scale(ey, ny * ry), Vector3Scale(ez, nz * rz))));
             N[k] = Vector3Normalize(Vector3Add(Vector3Scale(ex, nx / rx), Vector3Add(Vector3Scale(ey, ny / ry), Vector3Scale(ez, nz / rz))));
         }
+        if (gOutline) { OutlineTri(P[0], N[0], P[3], N[3], P[2], N[2]); OutlineTri(P[0], N[0], P[1], N[1], P[3], N[3]); continue; }
         LitVertex(P[0], N[0], col); LitVertex(P[3], N[3], col); LitVertex(P[2], N[2], col);
         LitVertex(P[0], N[0], col); LitVertex(P[1], N[1], col); LitVertex(P[3], N[3], col);
         LitVertex(P[0], N[0], col); LitVertex(P[2], N[2], col); LitVertex(P[3], N[3], col);
@@ -1167,6 +1196,7 @@ Vector3 RacketLocal(const SwingAnim *a, int *strokeOut, Vector3 *tangent)
 // ラケット：グリップ、のど（V 字）、楕円の枠、ガット。hand から dir の向き、normal が面の向き
 void DrawRacketBent(Vector3 hand, Vector3 dir, Vector3 normal, Color frame, float bend)
 {
+    if (gOutline) return;   // ラケットは細いので輪郭線なし
     dir = Vector3Normalize(dir);
     Vector3 side = Vector3Normalize(Vector3CrossProduct(normal, dir));
     Vector3 butt = Vector3Subtract(hand, Vector3Scale(dir, 0.07f));
@@ -1206,6 +1236,7 @@ void DrawRacketBent(Vector3 hand, Vector3 dir, Vector3 normal, Color frame, floa
 // ラケットの面（円）を描く。normal: 面の向き
 void DrawRacketHead(Vector3 center, Vector3 normal, Color frame)
 {
+    if (gOutline) return;
     normal = Vector3Normalize(normal);
     Vector3 z = { 0, 0, 1 };
     Vector3 axis = Vector3CrossProduct(z, normal);
@@ -1242,7 +1273,18 @@ static void Limb(Vector3 a, Vector3 b, float ra, float rb, Color c)
     DrawSphere(b, rb, c);
 }
 
+static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
+// 人を描く。アニメ調のときは、先に輪郭線（太らせた形の裏側）を描いてから、ふつうに描く
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
+{
+    if (gLook == 1) {
+        rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_FRONT); gOutline = true;
+        DrawFigureBody(pos, facingNegZ, shirt, a, speed);
+        rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_BACK); gOutline = false;
+    }
+    DrawFigureBody(pos, facingNegZ, shirt, a, speed);
+}
+static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
     Color skin = a->skin.a ? a->skin : (Color){ 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
     float sc = a->scale > 0.0f ? a->scale : 1.0f;   // 体の大きさ（身長）
@@ -1253,7 +1295,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
     // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
-    {
+    if (!gOutline) {
         rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
         for (int k = 0; k < 3; k++)
             DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
@@ -1602,6 +1644,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
                 Vector3 ln = Vector3Normalize(Vector3Add(Vector3Scale(fF, nf), Vector3Add(Vector3Scale(rR, nr / (kW * JAWK(0.105f * nu))), Vector3Scale(uU, nu / kH))));
                 P[c] = WV(lp); N[c] = Vector3Normalize(Vector3Subtract(WV(Vector3Add(head, ln)), WV(head)));
             }
+            if (gOutline) { OutlineTri(P[0], N[0], P[3], N[3], P[2], N[2]); OutlineTri(P[0], N[0], P[1], N[1], P[3], N[3]); continue; }
             LitVertex(P[0], N[0], skin); LitVertex(P[3], N[3], skin); LitVertex(P[2], N[2], skin);
             LitVertex(P[0], N[0], skin); LitVertex(P[1], N[1], skin); LitVertex(P[3], N[3], skin);
             LitVertex(P[0], N[0], skin); LitVertex(P[2], N[2], skin); LitVertex(P[3], N[3], skin);   // 裏も（向きで消えないように）
@@ -1723,6 +1766,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
         }
         #undef BRIM
     }
+    if (!gOutline) {   // ---- 顔の部品は輪郭線の回では描かない ----
     {   // ---- 顔：耳・目・眉・鼻・口。しぐさで表情が変わる（吠える＝口を大きく開ける、怒る＝眉を寄せる、喜ぶ＝笑う） ----
         Color white = { 245, 245, 240, 255 };
         Color lip = { (unsigned char)(skin.r * 0.62f), (unsigned char)(skin.g * 0.38f), (unsigned char)(skin.b * 0.38f), 255 };
@@ -1824,6 +1868,7 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
             DrawCylinderEx(WV(mc), WV(HP(0.090f, 0.024f, -0.046f + lift)), 0.0045f, 0.0040f, 5, lip);
             DrawCylinderEx(WV(mc), WV(HP(0.090f, -0.024f, -0.046f + lift)), 0.0045f, 0.0040f, 5, lip);
         }
+    }
     }
     if (a->hairStyle == HS_PONY) {
         // ポニーテール：頭の後ろから下へ。走ると左右に揺れ、振るとなびく
