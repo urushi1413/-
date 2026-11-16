@@ -303,7 +303,7 @@ static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm
 
 int main(void)
 {
-    SetConfigFlags(FLAG_MSAA_4X_HINT | FLAG_WINDOW_RESIZABLE);
+    SetConfigFlags(FLAG_MSAA_4X_HINT | (MOBILE_ONLY ? 0 : FLAG_WINDOW_RESIZABLE));   // スマホ版は 1280×720 のまま（ページの方で縮めて出す）
     InitWindow(1280, 720, "SWEET SPOT");
     SfxInit();
     UiFontInit();   // 日本語フォント
@@ -495,6 +495,7 @@ int main(void)
         }
         AtmosNewMatch();
     }
+    if (MOBILE_ONLY) { setsToWin = 0; mode = MODE_MATCH; style = STYLE_CASUAL; hudLevel = 1; }   // スマホ版：タイブレークの試合、かんたん、説明の行なし
 
     // 直前のフレームの物理ステップごとのボールの状態。
     // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
@@ -517,7 +518,7 @@ int main(void)
 #ifdef __EMSCRIPTEN__
         {   // ブラウザ版：ページの大きさが変わったら、ゲームの画面も合わせる
             int iw = EM_ASM_INT({ return window.innerWidth; }), ih = EM_ASM_INT({ return window.innerHeight; });
-            if (iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
+            if (!MOBILE_ONLY && iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
         }
 #endif
         float frameDt = fminf(GetFrameTime(), 0.1f);
@@ -599,7 +600,16 @@ int main(void)
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
             int items[32], n = 0;
-            if (menuPage == 0) {
+            if (menuPage == 0 && MOBILE_ONLY) {   // スマホ版：タイブレークの試合だけ。キーボードを使う項目はなし
+                items[n++] = MI_PLAY; items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
+                if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
+                if (app == APP_TITLE) items[n++] = MI_CREDITS;
+            } else if (menuPage == 1 && MOBILE_ONLY) {
+                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+            } else if (menuPage == 2 && MOBILE_ONLY) {
+                items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_BACK;
+            } else if (menuPage == 0) {
                 items[n++] = MI_PLAY;
                 if (app == APP_TITLE) items[n++] = MI_TUTORIAL;
                 if (app == APP_TITLE && !DEMO_ONLY) items[n++] = MI_TOURNAMENT;   // 体験版はグランドスラムなし
@@ -713,7 +723,7 @@ int main(void)
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
-                    case MI_PLAY:   if (app != APP_TITLE) break;   // タイトル：←→でモード（試合・バトル・練習）
+                    case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
                     /* fall through */
                     case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
                         int idx = battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);
@@ -887,7 +897,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
-                                     if (app == APP_TITLE) { value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); }
+                                     if (app == APP_TITLE) { value = MOBILE_ONLY ? TR("TIEBREAK", "タイブレーク") : (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); }
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
                     case MI_SLAM_GO:    label = TR("START TOURNAMENT", "大会を始める"); break;
@@ -987,13 +997,16 @@ int main(void)
                 DrawText(TextFormat(TR("%s  -  %s court  -  %s", "%s  -  %s コート  -  %s"), LevelNameUI(ai.level), SurfNameUI(gSurface), ModeName(mode)), bx0 + 14, by + 90, 18, LIGHTGRAY);
             }
             // ---- 下の案内 ----
-            const char *hint = TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
+            const char *hint = MOBILE_ONLY ? TR("Tap: choose / change", "タップ：選ぶ・変える") : TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
             DrawText(hint, titleMain ? px : ((menuPage == 1 || menuPage == 3) ? px + 20 : px + 30), H - 34, 16, LIGHTGRAY);
             if (menuPage == 5 && keyMsgT > 0.0f && keyMsg[0]) {   // キー設定の知らせ（枠の下の方）
                 int mw = MeasureText(keyMsg, 20);
                 DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
             }
-            if (titleMain || menuPage == 0) {
+            if ((titleMain || menuPage == 0) && MOBILE_ONLY) {
+                DrawText(TR("Tap to choose. In a match you run to the ball automatically: press a button to swing, slide your finger to aim.", "タップで選ぶ。試合では球の所へ自動で走る。ボタンを押して離すと打つ、押したまま指を動かすと狙い"),
+                         titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.85f));
+            } else if (titleMain || menuPage == 0) {
                 DrawText(TextFormat(TR("In game: %s move, mouse aim + click to hit (keys only: %s/%s/%s)   Change keys: SETTINGS > Keys", "試合中：%s 移動、マウスで狙ってクリックで打つ（キーだけなら %s/%s/%s）   キーは 設定 → キー設定 で変えられる"),
                                     ControlsMove(), KeyName(gKeys[ACT_TOP]), KeyName(gKeys[ACT_SLICE]), KeyName(gKeys[ACT_FLAT])),
                          titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.8f));
@@ -1127,6 +1140,7 @@ int main(void)
             AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
             gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
             SfxSetLineJudges(gSurface == SURF_CLAY);   // クレー（ローランドギャロスなど）は電子判定ではなく線審が声でコールする
+            if (MOBILE_ONLY) setsToWin = 0;   // スマホ版はいつもタイブレーク
             score.setsToWin = setsToWin > 0 ? setsToWin : 1;
             if (setsToWin == 0) { score.tbOnly = true; score.tiebreak = true; }   // タイブレークだけの試合：最初からタイブレーク
             ai.tilt = 0.0f;
@@ -1259,11 +1273,29 @@ int main(void)
             mouseLocked = false; EnableCursor();
             P.chargingShot = -1; P.chargingServe = -1;
         }
-        if (!mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
+        if (!MOBILE_ONLY && !mouseLocked && (IsMouseButtonPressed(MOUSE_BUTTON_LEFT) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT))) {
             mouseLocked = true; DisableCursor(); clickConsumed = true;   // クリックで戻す（このクリックでは打たない）
         }
         PlayerInput in;
-        ReadKeyboardMouse(&in, mouseLocked && !clickConsumed, skipMouseDelta, aimSens, frameDt);
+        ReadKeyboardMouse(&in, !MOBILE_ONLY && mouseLocked && !clickConsumed, skipMouseDelta, aimSens, frameDt);
+        if (MOBILE_ONLY) {
+            ReadTouch(&in, aimSens);   // 右手のボタン・狙い、左手のスティック
+            if (TouchPauseTapped()) { app = APP_PAUSE; menuSel = 0; P.chargingShot = -1; P.chargingServe = -1; }
+            // 自動で走る：スティックを使っていなければ、来る球を打つ場所へ（球がなければ真ん中の後ろへ戻る）
+            if (!botControls && Vector2Length(in.move) < 0.01f && P.downT <= 0.0f && (phase == PH_PLAY || mode != MODE_MATCH)) {
+                static AssistPlan mp; static float mpAge = 1e9f;
+                Vector3 tgt = { 0.0f, 0.0f, HALF_LEN + 0.6f };
+                bool incoming = ball.active && ball.lastHitter == HITTER_OPP && ball.pos.z < HALF_LEN + 3.0f;
+                if (incoming) {
+                    if (ball.age < mpAge || !mp.valid) mp = PlanAssist(P.pos, P.vel, &ball, SHOT_TOP);   // 新しい球なら作り直す
+                    mpAge = ball.age;
+                    if (mp.valid && mp.standValid) tgt = mp.stand;
+                } else { mp.valid = false; mpAge = 1e9f; tgt.x = Clamp(P.pos.x * 0.3f, -1.0f, 1.0f); }
+                Vector3 d = { tgt.x - P.pos.x, 0.0f, tgt.z - P.pos.z };
+                float l = Vector3Length(d);
+                if (l > 0.12f) { float k = fminf(1.0f, l / 0.6f) / l; in.move = (Vector2){ d.x * k, -d.z * k }; }
+            }
+        }
         skipMouseDelta = false;   // メニューから戻った直後のマウスの跳びは無視した
 
         // ---- 移動。加速・減速あり ----
@@ -2869,6 +2901,7 @@ int main(void)
         EndMode3D();
         AtmosOverlay(cam); PixelEnd();   // 時間帯と天気の色合い、ナイターのライト
         guideLevel = keepGuide; assistLevel = keepAssist;
+        if (MOBILE_ONLY && cineMode == 0) DrawTouchControls(playerServing);   // スマホ版：打つボタン・一時停止・スティック
         if (cineMode > 0) {   // 撮影モード：文字は出さない（切り替えた直後だけ、カメラの名前を小さく）
             if (cineLabelT > 0.0f) {
                 cineLabelT -= frameDt;
@@ -2980,6 +3013,9 @@ int main(void)
                 y += 22;
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
                 DrawText(serveMsg, 20, y, 22, mc); y += 30;
+            } else if (MOBILE_ONLY) {   // スマホ版のサーブの説明
+                DrawText(TR("Press a button to toss, release at the top to hit.", "ボタンを押してトス、いちばん高い所で離して打つ"), 20, y, 18, RAYWHITE); y += 22;
+                DrawText(TR("Kick = safe, Flat = fast. Slide your finger to aim.", "キック＝入りやすい、フラット＝速い。押したまま指を動かすと狙い"), 20, y, 18, RAYWHITE); y += 22;
             } else {
                 DrawText(TR("A/D: position.  Mouse: left/right.  Later release = deeper", "A/D：立ち位置。マウス：左右。遅く離すほど深い"), 20, y, 18, RAYWHITE); y += 22;
                 DrawText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;

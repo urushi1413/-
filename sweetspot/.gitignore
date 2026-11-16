@@ -12,3 +12,4 @@ dist/
 web/out/
 web/demo_secret.txt
 web/used_codes.txt
+web/mobile/

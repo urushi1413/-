@@ -953,6 +953,18 @@ void KeyAssign(int a, int k);
 bool ActDown(int a);
 bool ActPressed(int a);
 
+// スマホ版（make mobile）：画面を触る操作（touch.c）
+enum { TB_TOP, TB_SLICE, TB_FLAT, TB_LOB, TB_DROP, TOUCH_BTN_COUNT, TB_PAUSE = TOUCH_BTN_COUNT };
+void ReadTouch(PlayerInput *in, float aimSens);
+bool TouchStickActive(void);
+bool TouchPauseTapped(void);
+void DrawTouchControls(bool serving);
+void TouchButtonRect(int b, Vector2 *c, float *r);
+#ifdef MOBILE_BUILD
+#define MOBILE_ONLY 1
+#else
+#define MOBILE_ONLY 0
+#endif
 // 体験版（make web）：勝利の証明コード（demo.c）
 void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);
 #define DEMO_MATCHES 2   // 体験版で遊べる試合（1 セット）の数

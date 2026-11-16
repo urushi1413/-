@@ -28,14 +28,14 @@ ifeq ($(SALE),1)
     endif
 endif
 
-SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c
+SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c touch.c
 
 $(TARGET): $(SRC) game.h ja_glyphs.h
 	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
 
 clean:
 	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
-	rm -rf web/out
+	rm -rf web/out web/mobile
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
@@ -66,4 +66,11 @@ web: $(SRC) game.h ja_glyphs.h web/shell.html web/demo_secret.txt
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32 \
 	    --shell-file web/shell.html --preload-file sounds --preload-file fonts
 
-.PHONY: dist clean sim web
+# スマホ版（ブラウザ）：make mobile。タイブレークの試合だけ、画面を触る操作、売る版の名前。web/mobile/ にできる
+mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
+	mkdir -p web/mobile
+	emcc -std=gnu99 -O2 -Wall -DSALE_BUILD -DMOBILE_BUILD -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile/index.html \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32 \
+	    --shell-file web/shell_mobile.html --preload-file sounds --preload-file fonts
+
+.PHONY: dist clean sim web mobile

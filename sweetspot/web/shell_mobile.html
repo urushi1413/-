@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>SWEET SPOT</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0d1f1a; color: #eee; font-family: sans-serif; overflow: hidden;
+               touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
+  /* ゲームの画面は 1280×720 のまま、ページいっぱいに（縦横の比を保って）縮めて出す */
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; width: min(100vw, 177.78vh) !important; height: min(56.25vw, 100vh) !important; outline: none; touch-action: none; }
+  #status { position: fixed; left: 0; right: 0; top: 45%; text-align: center; font-size: 18px; pointer-events: none; }
+  #rotate { display: none; position: fixed; inset: 0; background: #0d1f1a; z-index: 10; align-items: center; justify-content: center;
+            flex-direction: column; font-size: 20px; text-align: center; padding: 24px; }
+  #rotate .phone { width: 60px; height: 100px; border: 4px solid #eee; border-radius: 10px; margin-bottom: 18px; animation: turn 1.6s ease-in-out infinite; }
+  @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
+  @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas></div>
+<div id="status">読み込み中… / Loading…</div>
+<div id="rotate"><div class="phone"></div>スマホを横向きにしてください<br><small>Please turn your phone sideways</small></div>
+<script>
+  var canvas = document.getElementById('canvas');
+  var statusEl = document.getElementById('status');
+  // メニューはタップをクリックとしてゲームに渡す（試合中の打つボタンは、ゲームが指の位置を直接読む）
+  function sendMouse(type, t) {
+    var ev = new MouseEvent(type, { clientX: t.clientX, clientY: t.clientY, button: 0, buttons: type === 'mouseup' ? 0 : 1, bubbles: true, cancelable: true });
+    canvas.dispatchEvent(ev);
+  }
+  var first = null;
+  canvas.addEventListener('touchstart', function (e) {
+    if (first === null && e.changedTouches.length) { first = e.changedTouches[0].identifier; sendMouse('mousemove', e.changedTouches[0]); sendMouse('mousedown', e.changedTouches[0]); }
+    e.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchend', function (e) {
+    for (var i = 0; i < e.changedTouches.length; i++) if (e.changedTouches[i].identifier === first) { sendMouse('mouseup', e.changedTouches[i]); first = null; }
+    e.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener('touchcancel', function () { first = null; }, { passive: false });
+  document.addEventListener('gesturestart', function (e) { e.preventDefault(); });   // 2 本指の拡大を止める（iPhone）
+  var Module = {
+    canvas: canvas,
+    setStatus: function (t) { statusEl.textContent = t ? t.replace(/Downloading data\.\.\./, '読み込み中… / Loading… ') : ''; },
+    monitorRunDependencies: function (left) { if (!left) statusEl.textContent = ''; },
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); }
+  };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>
