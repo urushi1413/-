@@ -591,6 +591,7 @@ int main(void)
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
                    MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
+            static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
             // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定
@@ -676,6 +677,11 @@ int main(void)
             if (keyMsgT > 0.0f) keyMsgT -= GetFrameTime();
             // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定、Esc で戻る。マウス：左クリックで次、右クリックで前
             int change = 0; bool activate = false;
+            if (quitAsk) {   // 終了の確認：Enter / クリック / Y で終了、Esc / N / 右クリックでやめる
+                if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_Y) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) quitGame = true;
+                else if (IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_N) || IsKeyPressed(KEY_BACKSPACE) || IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) quitAsk = false;
+                keyWaiting = true;   // 確認の間は、ほかのメニューの操作をしない
+            }
             bool nameEditing = nameEdit || keyWaiting;   // 文字やキーを入力している間は、メニューの操作に使わない
             if (!nameEditing && (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)))   menuSel = (menuSel + n - 1) % n;   // 名前の入力中は文字として使う
             if (!nameEditing && (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN))) menuSel = (menuSel + 1) % n;
@@ -778,7 +784,7 @@ int main(void)
                     tut = -1;              // 練習の途中なら、やめる
                     app = APP_TITLE; menuSel = 0;
                 } else if (it == MI_QUIT) {
-                    quitGame = true;
+                    quitAsk = true;   // すぐには終わらず、確認する
                 }
             }
             if (n == 0 || app == APP_PLAY || app == APP_BRACKET) { continue; }
@@ -919,8 +925,8 @@ int main(void)
                     case MI_LOOK:    label = TR("Look", "見た目"); value = gLook == 2 ? TR("PIXEL", "ドット風") : gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
                     case MI_KEYRESET: label = TR("Reset to defaults", "はじめの割り当てに戻す"); break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
-                    case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;
-                    case MI_QUIT:    label = TR("QUIT", "終わる"); break;
+                    case MI_TITLE:   label = TR("BACK TO TITLE SCREEN", "タイトル画面に戻る"); break;
+                    case MI_QUIT:    label = TR("QUIT GAME", "ゲームを終了する"); break;
                 }
                 Color lc = sel ? YELLOW : RAYWHITE;
                 if (titleMain) {
@@ -990,6 +996,18 @@ int main(void)
                 DrawText(TextFormat(TR("In game: %s move, mouse aim + click to hit (keys only: %s/%s/%s)   Change keys: SETTINGS > Keys", "試合中：%s 移動、マウスで狙ってクリックで打つ（キーだけなら %s/%s/%s）   キーは 設定 → キー設定 で変えられる"),
                                     ControlsMove(), KeyName(gKeys[ACT_TOP]), KeyName(gKeys[ACT_SLICE]), KeyName(gKeys[ACT_FLAT])),
                          titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.8f));
+            }
+            if (quitAsk) {   // 終了の確認
+                DrawRectangle(0, 0, W, H, Fade(BLACK, 0.6f));
+                int bw = 560, bh = 170, bx = W / 2 - bw / 2, by = H / 2 - bh / 2;
+                DrawRectangle(bx, by, bw, bh, (Color){ 20, 30, 40, 245 });
+                DrawRectangleLines(bx, by, bw, bh, (Color){ 255, 215, 70, 255 });
+                const char *q1 = TR("Quit the game?", "ゲームを終了しますか？");
+                const char *q2 = TR("Enter / click: quit     Esc / right click: cancel", "Enter / クリック：終了する     Esc / 右クリック：やめる");
+                const char *q3 = TR("(To go back to the title, choose BACK TO TITLE SCREEN)", "（タイトルに戻るなら「タイトル画面に戻る」を選ぶ）");
+                DrawText(q1, W / 2 - MeasureText(q1, 30) / 2, by + 24, 30, RAYWHITE);
+                DrawText(q2, W / 2 - MeasureText(q2, 20) / 2, by + 82, 20, (Color){ 255, 215, 70, 255 });
+                if (app == APP_PAUSE) DrawText(q3, W / 2 - MeasureText(q3, 16) / 2, by + 124, 16, LIGHTGRAY);   // 試合中のメニューだけ
             }
             EndDrawing();
             continue;
