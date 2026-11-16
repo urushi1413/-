@@ -106,6 +106,7 @@ static void SaveSettingsFile(const Settings *s)
     if (!f) return;
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
+    for (int a = 0; a < ACT_COUNT; a++) fprintf(f, "key_%s=%d\n", ActionId(a), gKeys[a]);   // キーの割り当て（raylib のキーの番号）
     fclose(f);
 }
 static bool LoadSettingsFile(Settings *s)
@@ -122,6 +123,10 @@ static bool LoadSettingsFile(Settings *s)
         }
         if (sscanf(line, "%63[^=]=%f", key, &v) != 2) continue;
         int iv = (int)v;
+        if (!strncmp(key, "key_", 4)) {   // キーの割り当て
+            for (int a = 0; a < ACT_COUNT; a++) if (!strcmp(key + 4, ActionId(a)) && iv > 0 && !KeyReserved(iv)) KeyAssign(a, iv);
+            continue;
+        }
         if (!strcmp(key, "sets")) s->sets = iv;           else if (!strcmp(key, "women")) s->women = iv;
         else if (!strcmp(key, "play_as")) s->you = iv;    else if (!strcmp(key, "opponent")) s->opp = iv;
         else if (!strcmp(key, "ai_level")) s->level = iv; else if (!strcmp(key, "style")) s->style = iv;
@@ -135,6 +140,35 @@ static bool LoadSettingsFile(Settings *s)
     }
     fclose(f);
     return true;
+}
+
+// 操作の案内（今のキーの割り当てで）
+static const char *ControlsMove(void)
+{
+    static char mv[48];
+    if (gKeys[ACT_UP] == KEY_W && gKeys[ACT_LEFT] == KEY_A && gKeys[ACT_DOWN] == KEY_S && gKeys[ACT_RIGHT] == KEY_D) snprintf(mv, sizeof(mv), "WASD");
+    else if (gKeys[ACT_UP] == KEY_UP && gKeys[ACT_LEFT] == KEY_LEFT && gKeys[ACT_DOWN] == KEY_DOWN && gKeys[ACT_RIGHT] == KEY_RIGHT) snprintf(mv, sizeof(mv), "%s", TR("Arrows", "矢印"));
+    else { snprintf(mv, sizeof(mv), "%s", KeyName(gKeys[ACT_UP])); for (int a = ACT_DOWN; a <= ACT_RIGHT; a++) { size_t L = strlen(mv); snprintf(mv + L, sizeof(mv) - L, "/%s", KeyName(gKeys[a])); } }
+    return mv;
+}
+static const char *ControlsLine(void)
+{
+    static char buf[2][640];
+    static int k = 0; k ^= 1;
+    char mv[48]; snprintf(mv, sizeof(mv), "%s", ControlsMove());
+    char lob[16], drop[16], cf[16], sh[3][16];
+    snprintf(lob, sizeof(lob), "%s", KeyName(gKeys[ACT_LOB])); snprintf(drop, sizeof(drop), "%s", KeyName(gKeys[ACT_DROP]));
+    snprintf(cf, sizeof(cf), "%s", KeyName(gKeys[ACT_CLICK_FLAT]));
+    snprintf(sh[0], 16, "%s", KeyName(gKeys[ACT_TOP])); snprintf(sh[1], 16, "%s", KeyName(gKeys[ACT_SLICE])); snprintf(sh[2], 16, "%s", KeyName(gKeys[ACT_FLAT]));
+    char cr[16], sm[16], mu[16];
+    snprintf(cr, sizeof(cr), "%s", KeyName(gKeys[ACT_CROUCH])); snprintf(sm, sizeof(sm), "%s", KeyName(gKeys[ACT_SMASH])); snprintf(mu, sizeof(mu), "%s", KeyName(gKeys[ACT_MUTE]));
+    if (gLang == LANG_JA)
+        snprintf(buf[k], sizeof(buf[k]), "%s 移動  マウス 狙い  左クリック トップ  右クリック スライス  %s＋クリック フラット  %s＋クリック ロブ  %s＋クリック ドロップ  キーだけ：%s/%s/%s  %s かがむ  %s ラケット破壊  %s 消音  Esc メニュー",
+                 mv, cf, lob, drop, sh[0], sh[1], sh[2], cr, sm, mu);
+    else
+        snprintf(buf[k], sizeof(buf[k]), "%s move  Mouse aim  L-click top  R-click slice  %s+click flat  %s+click lob  %s+click drop  Keys only: %s/%s/%s  %s crouch  %s smash racket  %s mute  Esc menu",
+                 mv, cf, lob, drop, sh[0], sh[1], sh[2], cr, sm, mu);
+    return buf[k];
 }
 
 // 選手の紹介（選手選択の画面に出す）
@@ -413,6 +447,7 @@ int main(void)
     bool  skipMouseDelta = false;
     int   menuFrames = 0;              // メニューを開いてからのフレーム数
     // 設定：前回の設定を読む（なければ今の初期値）
+    KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
                                             camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting }; SaveSettingsFile(&s_); } while (0)
     {
@@ -502,12 +537,14 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_KEY0 };
+            static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
+            static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
-            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット
+            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
-            if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; }
-            int items[24], n = 0;
+            if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
+            int items[32], n = 0;
             if (menuPage == 0) {
                 items[n++] = MI_PLAY;
                 if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
@@ -520,11 +557,14 @@ int main(void)
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
             } else if (menuPage == 4) {
                 items[n++] = MI_BACK;
+            } else if (menuPage == 5) {
+                for (int a = 0; a < ACT_COUNT; a++) items[n++] = MI_KEY0 + a;
+                items[n++] = MI_KEYRESET; items[n++] = MI_BACK;
             } else if (menuPage == 3) {
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (menuSel >= n) menuSel = 0;
@@ -538,6 +578,7 @@ int main(void)
             int pw, rowH, fs, px, py, ph, rowY0;
             if (titleMain) { pw = 520; rowH = 54; fs = 30; px = 70; rowY0 = H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }
             else if (menuPage == 4) { pw = Clamp(W - 120, 600, 1100); rowH = 40; fs = 22; px = W / 2 - pw / 2; py = 30; ph = H - 60; rowY0 = py + ph - 60; }
+            else if (menuPage == 5) { pw = 760; rowH = Clamp((H - 190) / n, 24, 40); fs = rowH >= 32 ? 20 : 18; ph = 96 + n * rowH + 44; px = W / 2 - pw / 2; py = H / 2 - ph / 2; rowY0 = py + 90; }
             else if (menuPage == 1 || menuPage == 3) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
             else { pw = 680; rowH = Clamp((H - 260) / n, 28, 46); fs = rowH >= 36 ? 24 : 20; px = W / 2 - pw / 2; ph = 110 + n * rowH + 60; py = H / 2 - ph / 2; rowY0 = py + 100; }
 
@@ -556,16 +597,38 @@ int main(void)
                     SaveSettings();
                 }
             }
+            // キー設定：押されたキーをその操作に割り当てる（Esc でやめる）。マウスのクリックは割り当てない
+            bool keyWaiting = keyCap >= 0;
+            if (keyCap >= 0) {
+                int k;
+                while ((k = GetKeyPressed()) > 0) {
+                    if (k == KEY_ESCAPE) { keyCap = -1; break; }
+                    if (k == KEY_RIGHT_SHIFT) k = KEY_LEFT_SHIFT;   // 左右は同じに扱う
+                    if (k == KEY_RIGHT_CONTROL) k = KEY_LEFT_CONTROL;
+                    if (k == KEY_RIGHT_ALT) k = KEY_LEFT_ALT;
+                    if (KeyReserved(k)) {
+                        snprintf(keyMsg, sizeof(keyMsg), TR("%s is used for something else. Try another key", "%s はほかに使っている。別のキーで"), KeyName(k));
+                        keyMsgT = 2.5f; continue;
+                    }
+                    int was = -1; for (int b = 0; b < ACT_COUNT; b++) if (b != keyCap && gKeys[b] == k) was = b;
+                    if (was >= 0) { snprintf(keyMsg, sizeof(keyMsg), TR("Swapped with \"%s\" (now %s)", "「%s」と入れ替えた（そちらは %s）"), ActionName(was), KeyName(gKeys[keyCap])); keyMsgT = 3.0f; }
+                    KeyAssign(keyCap, k);
+                    keyCap = -1;
+                    SaveSettings();
+                    break;
+                }
+            }
+            if (keyMsgT > 0.0f) keyMsgT -= GetFrameTime();
             // 入力：W/S（↑↓）で選ぶ、A/D（←→）で変える、Enter で決定、Esc で戻る。マウス：左クリックで次、右クリックで前
             int change = 0; bool activate = false;
-            bool nameEditing = nameEdit;
+            bool nameEditing = nameEdit || keyWaiting;   // 文字やキーを入力している間は、メニューの操作に使わない
             if (!nameEditing && (IsKeyPressed(KEY_W) || IsKeyPressed(KEY_UP)))   menuSel = (menuSel + n - 1) % n;   // 名前の入力中は文字として使う
             if (!nameEditing && (IsKeyPressed(KEY_S) || IsKeyPressed(KEY_DOWN))) menuSel = (menuSel + 1) % n;
-            if (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT))  change = -1;
-            if (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT)) change = +1;
-            if (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE)) activate = true;
+            if (!nameEditing && (IsKeyPressed(KEY_A) || IsKeyPressed(KEY_LEFT)))  change = -1;
+            if (!nameEditing && (IsKeyPressed(KEY_D) || IsKeyPressed(KEY_RIGHT))) change = +1;
+            if (!nameEditing && (IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_SPACE))) activate = true;
             Vector2 mp = GetMousePosition();
-            for (int i = 0; i < n; i++) {
+            for (int i = 0; i < n && !keyWaiting; i++) {
                 Rectangle rr = { (float)px + 20, (float)(rowY0 + i * rowH), (float)pw - 40, (float)rowH - 4 };
                 if (CheckCollisionPointRec(mp, rr)) {
                     if (menuFrames > 10 && Vector2Length(GetMouseDelta()) > 0.0f) menuSel = i;   // 開いた直後のマウスの跳びは無視
@@ -573,7 +636,9 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
-            if (IsKeyPressed(KEY_ESCAPE) && !nameEditing) {
+            if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
+                menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
+            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
                     int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
@@ -582,7 +647,7 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -630,6 +695,10 @@ int main(void)
                     else TourStart(&tour, gWomen, slamSel, setsToWin);
                     app = APP_BRACKET; bracketWait = 0.4f;
                 } else if (it == MI_NAME) { nameEdit = true; while (GetCharPressed() > 0) { } }
+                else if (it == MI_KEYS) { menuPage = 5; menuSel = 0; keyCap = -1; }
+                else if (it == MI_KEYRESET) { KeysReset(); SaveSettings(); snprintf(keyMsg, sizeof(keyMsg), "%s", TR("Keys reset to defaults", "はじめの割り当てに戻した")); keyMsgT = 2.5f; }
+                else if (it >= MI_KEY0) { keyCap = it - MI_KEY0; while (GetKeyPressed() > 0) { } }   // 次に押されたキーを割り当てる
+                else if (it == MI_BACK && menuPage == 5) { menuPage = 2; menuSel = 4; }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
@@ -671,10 +740,11 @@ int main(void)
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
                 else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
                 const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム")
-                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : TR("PAUSED", "一時停止");
+                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : TR("PAUSED", "一時停止");
                 int tx = leftPanel ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
                 DrawText(title, tx, py + 22, 46, YELLOW);
                 const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : TR("Esc: back", "Esc：戻る");
+                if (menuPage == 5) sub = keyCap >= 0 ? TR("Press a key  (Esc: cancel)", "割り当てるキーを押す（Esc：やめる）") : TR("Enter / click: change key   Esc: back", "Enter / クリック：キーを変える   Esc：戻る");
                 DrawText(sub, leftPanel ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
             }
             // ---- クレジット ----
@@ -725,6 +795,14 @@ int main(void)
                     else DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
                 }
                 const char *label = "", *value = "";
+                if (items[i] >= MI_KEY0) {   // キー設定の 1 行：操作の名前と、今のキー
+                    int a = items[i] - MI_KEY0;
+                    Color lc2 = sel ? YELLOW : RAYWHITE;
+                    DrawText(ActionName(a), px + 40, ry + (rowH - 4 - fs) / 2, fs, lc2);
+                    const char *v = keyCap == a ? (fmodf((float)GetTime(), 0.8f) < 0.5f ? TR("press a key...", "キーを押す…") : "") : TextFormat("[ %s ]", KeyName(gKeys[a]));
+                    DrawText(v, px + pw - 40 - MeasureText(v, fs), ry + (rowH - 4 - fs) / 2, fs, keyCap == a ? ORANGE : lc2);
+                    continue;
+                }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
                                      if (app == APP_TITLE) { value = ModeName(mode); }
@@ -761,6 +839,8 @@ int main(void)
                                            : TextFormat(TR("Sound (%d files)", "音（%d ファイル）"), SfxLoadedCount());
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
+                    case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
+                    case MI_KEYRESET: label = TR("Reset to defaults", "はじめの割り当てに戻す"); break;
                     case MI_RESTART: label = TR("RESTART", "やり直す"); break;
                     case MI_TITLE:   label = TR("BACK TO TITLE", "タイトルに戻る"); break;
                     case MI_QUIT:    label = TR("QUIT", "終わる"); break;
@@ -815,9 +895,13 @@ int main(void)
             // ---- 下の案内 ----
             const char *hint = TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
             DrawText(hint, titleMain ? px : ((menuPage == 1 || menuPage == 3) ? px + 20 : px + 30), H - 34, 16, LIGHTGRAY);
+            if (menuPage == 5 && keyMsgT > 0.0f && keyMsg[0]) {   // キー設定の知らせ（枠の下の方）
+                int mw = MeasureText(keyMsg, 20);
+                DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
+            }
             if (titleMain || menuPage == 0) {
-                DrawText(TR("In game: WASD move, mouse aim, L-click top, R-click slice, Space+click flat, Shift+click lob, Ctrl+click drop, Q crouch, M mute, Esc menu",
-                            "試合中：WASD 移動、マウスで狙う、左クリック トップ、右クリック スライス、Space＋クリック フラット、Shift＋クリック ロブ、Ctrl＋クリック ドロップ、Esc メニュー"),
+                DrawText(TextFormat(TR("In game: %s move, mouse aim + click to hit (keys only: %s/%s/%s)   Change keys: SETTINGS > Keys", "試合中：%s 移動、マウスで狙ってクリックで打つ（キーだけなら %s/%s/%s）   キーは 設定 → キー設定 で変えられる"),
+                                    ControlsMove(), KeyName(gKeys[ACT_TOP]), KeyName(gKeys[ACT_SLICE]), KeyName(gKeys[ACT_FLAT])),
                          titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.8f));
             }
             EndDrawing();
@@ -827,7 +911,7 @@ int main(void)
         camMode = 0;   // プレイ中は後ろからのカメラだけ（カメラの切り替えはリプレイのときに C）
         if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), TR("SCREEN INFO: %s  (F1)", "画面の表示：%s（F1）"), HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), TR("GUIDES: %s  (F2)", "ガイド：%s（F2）"), GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
-        if (IsKeyPressed(KEY_M)) {   // M：消音 / 元に戻す
+        if (ActPressed(ACT_MUTE)) {   // M（変えられる）：消音 / 元に戻す
             if (SfxGetVolume() > 0.0f) { soundVolBeforeMute = SfxGetVolume(); SfxSetVolume(0.0f); snprintf(toast, sizeof(toast), "%s", TR("SOUND OFF  (M)", "音を消した（M）")); }
             else {
                 SfxSetVolume(soundVolBeforeMute > 0.0f ? soundVolBeforeMute : 0.8f);
@@ -847,7 +931,7 @@ int main(void)
             const RFrame *fr = rp.mode == 0 ? RecClip(&n) : Highlight(rp.clip, &n, &cap);
             rp.t += frameDt * (rp.mode == 0 ? 0.5f : 0.7f);
             while (rp.idx < n - 1 && rp.acc + fr[rp.idx].dt <= rp.t) { rp.acc += fr[rp.idx].dt; rp.idx++; }
-            bool skip = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_R) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+            bool skip = IsKeyPressed(KEY_ENTER) || ActPressed(ACT_REPLAY) || IsKeyPressed(KEY_ESCAPE) || IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
             if (rp.idx >= n - 1 || skip) {
                 if (rp.mode == 1 && !IsKeyPressed(KEY_ESCAPE) && rp.clip + 1 < HighlightCount()) {   // 次のハイライトへ
                     rp.clip++; rp.idx = 0; rp.t = 0.0f; rp.acc = 0.0f; rp.first = true;
@@ -1601,7 +1685,7 @@ int main(void)
             }
             gCasual = false; gCrouch = false;
         }
-        if (IsKeyPressed(KEY_R) && mode != MODE_MATCH) {
+        if (ActPressed(ACT_REPLAY) && mode != MODE_MATCH) {
             // ITF のバウンドテスト: 2.54m から落とす
             ball = (Ball){ 0 };
             ball.pos = (Vector3){ 0.0f, 2.54f, -3.0f };
@@ -2002,7 +2086,7 @@ int main(void)
             }
         } else if (mode == MODE_MATCH && (phase == PH_BETWEEN || phase == PH_POINT_OVER)) {
             // R：今のポイントをスローで見直す。試合が終わったら、ハイライトを続けて見る
-            if (IsKeyPressed(KEY_R)) {
+            if (ActPressed(ACT_REPLAY)) {
                 if (score.over && phaseTimer <= 0.0f) {
                     if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }
                     if (HighlightCount() > 0) { rp.on = true; rp.mode = 1; rp.clip = 0; rp.idx = 0; rp.t = rp.acc = 0.0f; rp.first = true; }
@@ -2025,7 +2109,7 @@ int main(void)
             }
             // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。観客にブーイングされるが、しばらく「燃えて」強くなる（ミスも増える）。
             //      1・2 回目は警告だけ、SMASH_PENALTY_FROM 回目からポイントペナルティ ----
-            if (IsKeyPressed(KEY_X) && !score.over && P.anim.smashT <= 0.0f && !botControls) {
+            if (ActPressed(ACT_SMASH) && !score.over && P.anim.smashT <= 0.0f && !botControls) {
                 youSmashes++;
                 P.anim.smashT = SMASH_TIME; P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.anim.celebT = 0.0f;
                 youSmashPrevE = 0.0f;
@@ -2596,7 +2680,8 @@ int main(void)
                                 stats[SHOT_SLICE][1], stats[SHOT_SLICE][0], stats[SHOT_SLICE_LOB][1], stats[SHOT_SLICE_LOB][0],
                                 stats[SHOT_TOP_LOB][1], stats[SHOT_TOP_LOB][0], stats[SHOT_DROP][1], stats[SHOT_DROP][0]), 20, y, 16, RAYWHITE);
         y += 20;
-        DrawText(TR("WASD move  Mouse aim  L-click top  R-click slice  Space+click flat  Shift+click lob  Ctrl+click drop  Q crouch  X smash racket  M mute  Esc menu", "WASD 移動  マウス 狙い  左クリック トップ  右クリック スライス  Space＋クリック フラット  Shift＋クリック ロブ  Ctrl＋クリック ドロップ  Q かがむ  X ラケット破壊  M 消音  Esc メニュー"), 20, y, 16, LIGHTGRAY); y += 18;
+        { const char *cl = ControlsLine(); int cfs = 16; while (cfs > 12 && MeasureText(cl, cfs) > GetScreenWidth() - 30) cfs--;   // 画面の幅に収める
+          DrawText(cl, 20, y, cfs, LIGHTGRAY); } y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else

@@ -919,6 +919,18 @@ typedef struct {
 } PlayerInput;
 
 void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);
+// キーの割り当て（設定で変えられる）
+typedef enum { ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_AIM_L, ACT_AIM_R, ACT_AIM_DEEP, ACT_AIM_SHORT,
+               ACT_TOP, ACT_SLICE, ACT_FLAT, ACT_LOB, ACT_DROP, ACT_CLICK_FLAT, ACT_CROUCH, ACT_SMASH, ACT_REPLAY, ACT_MUTE, ACT_COUNT } KeyAction;
+extern int gKeys[ACT_COUNT];
+void KeysReset(void);
+const char *ActionId(int a);
+const char *ActionName(int a);
+const char *KeyName(int k);
+bool KeyReserved(int k);
+void KeyAssign(int a, int k);
+bool ActDown(int a);
+bool ActPressed(int a);
 
 // audio.c：効果音（sounds フォルダの録音ファイル）
 // ---- 時間帯と天気（render.c） ----

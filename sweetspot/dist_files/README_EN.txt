@@ -13,12 +13,21 @@ CONTROLS (IN A MATCH)
   Shift + click ... lob
   Ctrl + click .... drop shot
   Q ............... crouch (for low balls)
-  X ............... smash your racket (between points; penalties from the 2nd time)
+  X ............... smash your racket (between points). You get FIRED UP for a few points:
+                    faster and harder, but more errors. Point penalty from the 3rd time
   R ............... after a point: replay (C switches camera)
   Tab ............. stats
   F1 / F2 ......... screen info / guides
   M ............... mute
   Esc ............. menu
+
+KEYBOARD ONLY (NO MOUSE)
+  J / K / L ....... topspin / slice / flat (serve: kick / slice / flat). Hold Shift for a lob, Ctrl for a drop shot
+  U / O / I / , ... aim left / right / deeper / shorter
+
+CHANGING KEYS
+  SETTINGS > Keys. Select an action, press Enter (or click), then press the new key.
+  If another action used that key, the two are swapped. "Reset to defaults" puts everything back.
 
 SERVING
   Left click kick / Right click slice / Space + click flat

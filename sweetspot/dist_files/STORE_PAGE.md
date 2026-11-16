@@ -28,7 +28,7 @@ SWEET SPOT は、ボールを「どこで」「いつ」捉えるかがすべて
 - 難しさは 2 段階（カジュアル・リアル）、AI の強さは 3 段階。はじめての人でも遊べる
 
 ■ 操作
-マウスとキーボード（WASD で移動、マウスで狙う、クリックで打つ）
+マウスとキーボード（WASD で移動、マウスで狙う、クリックで打つ）。キーボードだけでも遊べる。キーの割り当ては自由に変えられる
 
 ## Description (English)
 
@@ -47,7 +47,7 @@ FEATURES
 - Two styles (Casual / Real) and three AI levels — friendly for beginners
 
 CONTROLS
-Mouse and keyboard (WASD to move, mouse to aim, click to hit)
+Mouse and keyboard (WASD to move, mouse to aim, click to hit). Keyboard-only play supported. All keys can be rebound
 
 ## タグの案
 
@@ -62,7 +62,7 @@ Mouse and keyboard (WASD to move, mouse to aim, click to hit)
 
 - Windows 10 / 11（64 ビット）
 - OpenGL 3.3 に対応したグラフィック
-- マウス
+- キーボード（マウスがあると遊びやすい）
 
 ## 載せないこと（大事）
 
