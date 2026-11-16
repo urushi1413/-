@@ -401,6 +401,11 @@ int main(void)
     float quietT = 0.0f;          // 「お静かに」の残り時間
     float youSwatPrevE = 0.0f;
     float swatCatchT = 0.0f;      // かっ飛ばした球が観客席に届くまで（届いたら観客が捕って沸く）
+    // バトルモード（試合に体力をつける）：ポイントを取られる・体にボールを当てられると体力が減り、0 になったら K.O. 負け
+    bool  battle = false;
+    float hp[2] = { BATTLE_HP, BATTLE_HP }, hpShown[2] = { BATTLE_HP, BATTLE_HP };   // 体力（見せる値は少し遅れて減る）
+    float koT = -1.0f;            // K.O. の文字を出している時間
+    float hitFlashT[2] = { 0 };   // 体に当たった：画面の赤い点滅
     bool  showSummary = false;
     int   rallyHits = 0;
     static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
@@ -512,6 +517,7 @@ int main(void)
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
+        gBattle = battle && mode == MODE_MATCH;
         if (app == APP_PLAY && mode == MODE_MATCH) {
             int pe = PigeonUpdate(frameDt);
             if (pe == 1) { SfxOoh(0.4f); snprintf(toast, sizeof(toast), "%s", TL("A pigeon has landed on court...", "コートにハトが…")); toastT = 2.5f; }
@@ -693,8 +699,14 @@ int main(void)
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
-                    case MI_PLAY:   if (app == APP_TITLE) { mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; } break;   // タイトル：←→でモード
-                    case MI_MODE:   mode = (PracticeMode)((mode + MODE_COUNT + change) % MODE_COUNT); forceRestart = true; break;
+                    case MI_PLAY:   if (app != APP_TITLE) break;   // タイトル：←→でモード（試合・バトル・練習）
+                    /* fall through */
+                    case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
+                        int idx = battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);
+                        idx = (idx + MODE_COUNT + 1 + change) % (MODE_COUNT + 1);
+                        battle = idx == 1; mode = idx <= 1 ? MODE_MATCH : (PracticeMode)(idx - 1);
+                        forceRestart = true;
+                    } break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
                     case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); gYouPersona = 0; forceRestart = true; break;
                     case MI_PLAYER: {   // 自分が使う選手：癖なし（0）→ そのツアーの選手
@@ -855,7 +867,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
-                                     if (app == APP_TITLE) { value = ModeName(mode); }
+                                     if (app == APP_TITLE) { value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); }
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
                     case MI_SLAM_GO:    label = TR("START TOURNAMENT", "大会を始める"); break;
@@ -865,7 +877,7 @@ int main(void)
                     case MI_BACK:    label = TR("BACK", "戻る"); break;
                     case MI_NAME:    label = TR("Your name (Enter to edit)", "名前（Enter で入力）");
                                      value = nameEdit ? TextFormat("%s%s", gPlayerName, fmodf((float)GetTime(), 1.0f) < 0.5f ? "_" : " ") : gPlayerName; break;
-                    case MI_MODE:    label = TR("Mode", "モード");            value = ModeName(mode); break;
+                    case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
                     case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
@@ -1045,7 +1057,7 @@ int main(void)
         if (restart && DEMO_ONLY) {
             demoCounted = false;
             if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。練習はできる
-                mode = MODE_RALLY; app = APP_TITLE; menuSel = 0;
+                mode = MODE_RALLY; battle = false; app = APP_TITLE; menuSel = 0;
                 mouseLocked = false; EnableCursor();
             }
         }
@@ -1077,6 +1089,8 @@ int main(void)
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
             demoClean = true; demoCode[0] = 0; demoTried = false;
+            hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
+            if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -1911,7 +1925,24 @@ int main(void)
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
             bool returnShot = retPending && !ball.isServe;   // 今飛んでいるのはリターン
-            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト
+            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト 5=体に当てた（バトル）
+            if (battle && ball.active && ball.bounces <= 1 && !ball.hitNet && (ball.bounces == 0 || ball.result == RESULT_IN) && ball.pos.y > 0.3f && ball.pos.y < 1.9f) {
+                // バトル：打った球が、バウンドする前に相手の体（腰から頭）に当たったら、打った方のポイント。当たった方は倒れる
+                Vector3 vic = hitter == 0 ? ai.pos : (botControls ? Rot180(bot.pos) : P.pos);
+                float dx = ball.pos.x - vic.x, dz = ball.pos.z - vic.z;
+                if (dx * dx + dz * dz < BATTLE_BODY_R * BATTLE_BODY_R) {
+                    winner = hitter; endKind = 5;
+                    pointMsg = hitter == 0 ? TL("Your BODY SHOT!", "自分のボディショット！") : TL("AI BODY SHOT!", "相手のボディショット！");
+                    ball.vel = (Vector3){ -ball.vel.x * 0.15f, 1.5f, -ball.vel.z * 0.15f };   // 当たって跳ね返る
+                    int v = 1 - hitter;
+                    if (v == 1) { ai.downTimer = DIVE_DOWN_TIME * 1.5f; ai.anim.downT = DIVE_DOWN_TIME * 1.5f; ai.vel = (Vector3){ 0 }; }
+                    else if (botControls) { bot.downTimer = DIVE_DOWN_TIME * 1.5f; bot.anim.downT = DIVE_DOWN_TIME * 1.5f; bot.vel = (Vector3){ 0 }; }
+                    else { P.downT = DIVE_DOWN_TIME * 1.5f; P.vel = (Vector3){ 0 }; }
+                    hitFlashT[v] = 0.5f;
+                    SfxHit(0.4f, 80.0f, false, false, false, 8.0f); SfxOoh(0.9f);
+                    SfxAngry(v == 0 ? (gYouPersona ? gYouPersona : -1) : ai.persona, 10.0f);
+                }
+            }
             // ネットに出たか：サービスラインより前に入った
             if (P.pos.z < SERVICE_Z) netFlag[0] = true;
             if (ai.pos.z > -SERVICE_Z) netFlag[1] = true;
@@ -1951,6 +1982,8 @@ int main(void)
                     SfxCallFault();
                     endKind = 4;
                 }
+            } else if (endKind == 5) {
+                // 体に当てた：上で決まった
             } else if (!ball.isServe || serveJudged) {
                 if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
                     winner = 1 - hitter;
@@ -2012,6 +2045,24 @@ int main(void)
                 int gamesBefore = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 int setsBefore = score.nSetsDone;
                 AwardPoint(&score, winner);
+                if (battle) {   // バトル：取られた方の体力が減る。決め方で大きさが変わる。長いラリーは両方が疲れる
+                    int lo = 1 - winner;
+                    float dmg = endKind == 5 ? BATTLE_DMG_BODY : endKind == 1 ? BATTLE_DMG_ACE : endKind == 2 ? BATTLE_DMG_WINNER : BATTLE_DMG_POINT;
+                    if (winner == 0) dmg *= 1.0f + 0.5f * gYouRage;   // 燃えているとダメージが大きい
+                    hp[lo] -= dmg;
+                    if (rallyHits > 6) { float tired = 0.6f * (rallyHits - 6); hp[0] -= tired; hp[1] -= tired; }
+                    for (int k = 0; k < 2; k++) if (hp[k] < 0.0f) hp[k] = 0.0f;
+                    if (!score.over && (hp[0] <= 0.0f || hp[1] <= 0.0f)) {   // K.O.：その場で試合終わり
+                        int ko = hp[lo] <= 0.0f ? winner : (hp[0] <= 0.0f ? 1 : 0);   // 勝った方
+                        winner = ko;
+                        if (score.nSetsDone < 5) { score.setScore[score.nSetsDone][0] = score.games[0]; score.setScore[score.nSetsDone][1] = score.games[1]; score.nSetsDone++; }
+                        score.sets[ko] = (score.setsToWin > 0 ? score.setsToWin : 1);
+                        score.over = true;
+                        koT = 0.0f;
+                        SfxMatchWin();
+                        TraceLog(LOG_INFO, "KO: %s wins", ko == 0 ? "YOU" : "AI");
+                    }
+                }
                 gYouRage *= YOU_RAGE_DECAY; if (gYouRage < 0.15f) gYouRage = 0.0f;   // 燃えた量はポイントごとに弱まる
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 {   // コートチェンジ：このセットのゲーム数が奇数になったら
@@ -2674,6 +2725,32 @@ int main(void)
             }
         EndMode3D();
         AtmosOverlay(cam); PixelEnd();   // 時間帯と天気の色合い、ナイターのライト
+        if (battle && mode == MODE_MATCH) {   // バトル：画面の上に 2 人の体力ゲージ。体に当たると赤く点滅、K.O. の文字
+            // 左上の説明（幅 500）と右上の点数（幅 310）の間に収める
+            int W = GetScreenWidth(), H = GetScreenHeight(), bh = 20, y0 = 14;
+            int gx0 = 520, gx1 = W - 320, cxm = (gx0 + gx1) / 2, bw = Clamp((gx1 - gx0) / 2 - 34, 90, 260);
+            for (int k = 0; k < 2; k++) {
+                hpShown[k] += (hp[k] - hpShown[k]) * fminf(frameDt * 3.0f, 1.0f);   // ゆっくり減って見える
+                hitFlashT[k] = fmaxf(hitFlashT[k] - frameDt, 0.0f);
+                int x = k == 0 ? cxm - 28 - bw : cxm + 28;
+                float f = hp[k] / BATTLE_HP, fs2 = hpShown[k] / BATTLE_HP;
+                Color col = f > 0.5f ? (Color){ 90, 220, 110, 255 } : f > 0.25f ? (Color){ 250, 200, 60, 255 } : (Color){ 240, 70, 60, 255 };
+                DrawRectangle(x - 3, y0 - 3, bw + 6, bh + 6, Fade(BLACK, 0.7f));
+                if (k == 0) { DrawRectangle(x + (int)(bw * (1 - fs2)), y0, (int)(bw * fs2), bh, (Color){ 255, 255, 255, 200 }); DrawRectangle(x + (int)(bw * (1 - f)), y0, (int)(bw * f), bh, col); }
+                else        { DrawRectangle(x, y0, (int)(bw * fs2), bh, (Color){ 255, 255, 255, 200 }); DrawRectangle(x, y0, (int)(bw * f), bh, col); }
+                const char *nm = k == 0 ? YouName() : OPP_SHORT;
+                DrawText(nm, k == 0 ? x : x + bw - MeasureText(nm, 18), y0 + bh + 4, 18, RAYWHITE);
+                if (hitFlashT[k] > 0.0f && k == 0) DrawRectangle(0, 0, W, H, Fade(RED, 0.35f * hitFlashT[k] / 0.5f));
+            }
+            DrawText("VS", cxm - MeasureText("VS", 22) / 2, y0, 22, YELLOW);
+            if (koT >= 0.0f) {
+                koT += frameDt;
+                float sc = koT < 0.25f ? 3.0f - 8.0f * koT : 1.0f, al = koT < 3.5f ? 1.0f : Clamp01(1.0f - (koT - 3.5f));
+                int fsz = (int)(140 * sc), tw = MeasureText("K.O.", fsz);
+                DrawText("K.O.", W / 2 - tw / 2 + 6, H / 2 - fsz / 2 - 60 + 6, fsz, Fade(BLACK, 0.6f * al));
+                DrawText("K.O.", W / 2 - tw / 2, H / 2 - fsz / 2 - 60, fsz, Fade((Color){ 255, 60, 50, 255 }, al));
+            }
+        }
         if (mode == MODE_MATCH && gYouRage > 0.0f && !changeActive) {   // 燃えている：残りの強さを見せる
             const char *fu = TL("FIRED UP", "燃えている");
             float pulse = 0.75f + 0.25f * sinf((float)GetTime() * 6.0f);

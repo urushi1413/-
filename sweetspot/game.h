@@ -237,6 +237,15 @@ extern bool gDecidingSet;   // 最終セット
 #define REACH_DIVE       2.80f   // 走っている勢いで飛びつけば、ここまで届く（打った後は倒れる）
 #define DIVE_MIN_SPEED   2.5f    // 飛びつくには、ボールの方向にこの速さ（m/s）以上で走っている必要がある
 #define DIVE_QUALITY     0.35f   // 飛びついた球の質は 35% に落ちる
+// バトルモード：体力と、減り方
+#define BATTLE_HP          100.0f
+#define BATTLE_DMG_POINT   7.0f    // ふつうに取られた（相手のミスも含む）
+#define BATTLE_DMG_WINNER  11.0f   // ウィナーを決められた
+#define BATTLE_DMG_ACE     13.0f   // エース
+#define BATTLE_DMG_BODY    24.0f   // 体にボールを当てられた
+#define BATTLE_BODY_R      0.40f   // 体に当たったとみなす、体の中心からの距離（m）
+#define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合
+extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 #define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
 // 踏み込み（ランジ）：打点に入れていない球へ、体ごと倒れ込んで届かせる。止まっていても使える
 #define STRETCH_VOLLEY   0.80f   // ボレーで届く範囲の上乗せ（m）。ネット前で横を抜かれにくくなる

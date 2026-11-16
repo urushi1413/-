@@ -483,6 +483,13 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     float depth = sp->depth;
     if (t <= SHOT_SLICE && RandRange(0, 1) < 0.15f * lv->aggression) depth = sp->shortDepth;   // 短いアングル
     *target = (Vector3){ x, 0.0f, depth };
+    if (gBattle && !stretched && RandRange(0.0f, 1.0f) < BATTLE_AI_BODY) {
+        // バトル：ときどき相手の体を狙う。強いフラットで、相手の 3m 手前に落として、跳ねた球が体に向かう
+        t = SHOT_FLAT;
+        const ShotSpec *fs = &SHOTS[SHOT_FLAT];
+        *charge = Clamp01((170.0f - fs->minKmh) / (fs->maxKmh - fs->minKmh));
+        *target = (Vector3){ Clamp(playerAi.x, -SINGLES_W * 0.5f + 0.3f, SINGLES_W * 0.5f - 0.3f), 0.0f, fmaxf(playerAi.z + 3.0f, -(HALF_LEN - 0.4f)) };
+    }
     return t;
 }
 
