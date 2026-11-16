@@ -4,6 +4,29 @@
 //   コードを確かめるのは tools/check_code.py（同じ鍵を使う）
 #include "game.h"
 #include <time.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+// 体験版で遊べる試合の数。1 ポイントでも始めたら 1 回と数える（途中でやめてもやり直せないように）。
+//   ブラウザ版はブラウザの保存場所（localStorage）に数える。消せば戻るが、小さな体験版の制限としては十分
+static int gDemoUsedLocal = 0;
+int DemoMatchesUsed(void)
+{
+#ifdef __EMSCRIPTEN__
+    return EM_ASM_INT({ try { return parseInt(localStorage.getItem("sweetspot_demo_matches") || "0", 10) || 0; } catch (e) { return 0; } });
+#else
+    return gDemoUsedLocal;
+#endif
+}
+void DemoCountMatch(void)
+{
+#ifdef __EMSCRIPTEN__
+    EM_ASM({ try { var n = parseInt(localStorage.getItem("sweetspot_demo_matches") || "0", 10) || 0; localStorage.setItem("sweetspot_demo_matches", String(n + 1)); } catch (e) {} });
+#else
+    gDemoUsedLocal++;
+#endif
+}
 
 #ifndef DEMO_SECRET
 #define DEMO_SECRET "no-secret"   // 体験版でないときは使わない

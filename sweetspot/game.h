@@ -934,6 +934,9 @@ bool ActPressed(int a);
 
 // 体験版（make web）：勝利の証明コード（demo.c）
 void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);
+#define DEMO_MATCHES 2   // 体験版で遊べる試合（1 セット）の数
+int  DemoMatchesUsed(void);
+void DemoCountMatch(void);
 #ifdef DEMO_BUILD
 #define DEMO_ONLY 1
 #else

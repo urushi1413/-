@@ -392,6 +392,7 @@ int main(void)
     bool demoClean = true;
     char demoCode[40] = "";
     bool demoTried = false;   // 勝ったが条件に足りなかった
+    bool demoCounted = false; // この試合を、遊んだ試合の数に入れた
     bool  showSummary = false;
     int   rallyHits = 0;
     static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
@@ -753,7 +754,10 @@ int main(void)
                 DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
                 DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
                 if (DEMO_ONLY) {
-                    DrawText(TR("DEMO  -  1-set matches. No Grand Slam.", "体験版  -  1 セットの試合。グランドスラムは製品版で"), px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
+                    int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
+                    DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
+                                      : TR("DEMO  -  No matches left. Practice is unlimited. Get the full game for more!", "体験版  -  試合はここまで。練習は何度でも。続きは製品版で"),
+                             px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
                     DrawText(TR("CHALLENGE: beat AI NORMAL on REAL and get the full game free", "チャレンジ：AI「ふつう」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
                 }
             } else {
@@ -1012,6 +1016,13 @@ int main(void)
         plog.assist = assistLevel;
         plog.style = style;
         bot.level = ai.level;
+        if (restart && DEMO_ONLY) {
+            demoCounted = false;
+            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。練習はできる
+                mode = MODE_RALLY; app = APP_TITLE; menuSel = 0;
+                mouseLocked = false; EnableCursor();
+            }
+        }
         if (restart) {
             feedTimer = 0.5f;
             ball = (Ball){ 0 };
@@ -1949,6 +1960,7 @@ int main(void)
                 {
                     int sv = server, rv = 1 - server;
                     ms[winner].points++;
+                    if (DEMO_ONLY && !demoCounted) { DemoCountMatch(); demoCounted = true; }   // 体験版：1 ポイントでも遊んだら 1 回
                     if (serveNo == 1) { ms[sv].s1Pts++; if (winner == sv) ms[sv].s1Won++; }
                     else              { ms[sv].s2Pts++; if (winner == sv) ms[sv].s2Won++; }
                     if (!score.tiebreak) {
