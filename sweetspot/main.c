@@ -509,6 +509,7 @@ int main(void)
     float markT = 10.0f;
     Ball hawk = { 0 };                   // 際どい判定の拡大図に使う球
     float hawkT = 10.0f;
+    bool  hawkPending = false;           // 際どい球があった：ポイント（ラリー）が終わってから拡大図を出す
     bool  bounceByPlayer = false;      // 自分の打球が落ちた（狙いとのずれを表示する）
     int prevBounces = 0;
 
@@ -1935,6 +1936,11 @@ int main(void)
 
         // バウンドを見つけて目印を出す
         bounceT += simDt; markT += frameDt; hawkT += frameDt;
+        if (hawkPending) {   // ポイント（練習ならラリー）が終わったら、際どかった球の拡大図を出す
+            bool live = mode == MODE_MATCH ? phase == PH_PLAY
+                      : (ball.active && !ball.hitNet && ball.bounces <= 1 && (ball.result == RESULT_NONE || ball.result == RESULT_IN));
+            if (!live) { hawkPending = false; hawkT = 0.0f; }
+        }
         if (ball.bounces > prevBounces && ball.bounces <= 2) {
             SfxBounce(Vector3Length(ball.vel), Vector3Distance(cam.position, ball.pos));
             bouncePos = (ball.bounces == 1) ? ball.firstBounce : ball.pos;   // 判定に使った、弾んだ瞬間の位置
@@ -1943,7 +1949,7 @@ int main(void)
                 if (mode == MODE_MATCH) MLogLand(&ball);
                 markPos = ball.firstBounce; markT = 0.0f;
                 // 際どい球（ラインから 8cm 以内）：ホークアイのような拡大図を出す
-                if (fabsf(ball.lineDist - BALL_R) < 0.08f && !ball.hitNet) { hawk = ball; hawkT = 0.0f; }
+                if (fabsf(ball.lineDist - BALL_R) < 0.08f && !ball.hitNet) { hawk = ball; hawkPending = true; }   // ラリー中は出さない（画面がふさがる）
             }
             bounceByPlayer = ball.lastHitter == HITTER_PLAYER && ball.bounces == 1 && !botControls;
         }
