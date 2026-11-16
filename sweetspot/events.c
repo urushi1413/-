@@ -4,6 +4,7 @@
 
 Pigeon gPigeon = { 0 };
 bool gBattle = false;
+bool gRallyPartner = false;
 
 static Vector3 KidHome(void) { return (Vector3){ gUmpSide * (NET_POST_X + 0.3f), 0.0f, 0.9f }; }   // 審判台の側のボールキッズ
 

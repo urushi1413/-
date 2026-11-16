@@ -246,6 +246,7 @@ extern bool gDecidingSet;   // 最終セット
 #define BATTLE_BODY_R      0.40f   // 体に当たったとみなす、体の中心からの距離（m）
 #define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
+extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）
 #define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
@@ -589,7 +590,8 @@ typedef struct {
     int gameServer[16];      // 各ゲームのサーバー（取った方と違えばブレーク）
     int setsToWin;           // 何セット取ったら勝ちか（1 / 2 / 3）。0 なら 1
     int nSetsDone;           // 終わったセットの数
-    int setScore[5][2];      // 終わったセットのゲーム数
+    int setScore[5][2];      // 終わったセットのゲーム数（タイブレークだけの試合は、タイブレークの点）
+    bool tbOnly;             // タイブレークだけの試合（7 点先取、2 点差）
 } Score;
 
 // 試合の統計（中継のマッチサマリーと同じ項目）。1st サーブの入り・ダブルフォールトは mst から

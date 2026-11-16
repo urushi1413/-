@@ -177,7 +177,7 @@ static void LitEllipseTube(Vector3 a, Vector3 b, Vector3 sideA, Vector3 sideB, f
 
 // ---- 描画まわり ----
 // ドット風では線が 1 ドットより細くなって途切れるので、太く描く
-#define LINE_DRAW_W (gLook == 2 ? LINE_W * 2.6f : LINE_W)
+#define LINE_DRAW_W (gLook == 2 ? LINE_W * 1.7f : LINE_W)
 void LineAlongX(float z, float x0, float x1)
 {
     DrawCube((Vector3){ (x0 + x1) * 0.5f, 0.002f, z }, fabsf(x1 - x0), 0.004f, LINE_DRAW_W, RAYWHITE);
@@ -2204,7 +2204,7 @@ static void DrawLightTowers(Vector3 camPos)
 
 // ---- ドット風：空・3D・色合いを画面と同じ大きさの絵に描き、縦 240 ドットに縮めて、ぼかさずに拡大する。色の数も減らす ----
 //   PixelBegin は DrawSky の前、PixelEnd は AtmosOverlay の後に呼ぶ（ドット風でなければ何もしない）
-#define PIX_H 240
+#define PIX_H 360   // 縦のドット数（240 だと粗すぎた）
 static RenderTexture2D gPixFull, gPixLow;
 static int gPixW = 0, gPixH = 0;
 static Shader gPixShader; static bool gPixShaderOk = false;

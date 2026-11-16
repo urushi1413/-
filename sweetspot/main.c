@@ -381,7 +381,7 @@ int main(void)
     int   retServer = 0;
     MatchStats ms[2] = { 0 };          // 試合の統計（マッチサマリー）
     bool  netFlag[2] = { false };      // このポイントでネットに出たか
-    int   setsToWin = 2;               // 試合の長さ：1=1 セット 2=3 セットマッチ 3=5 セットマッチ
+    int   setsToWin = 2;               // 試合の長さ：0=タイブレークだけ（7 点先取） 1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;
     float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
     float stagS = 0.0f;                  // 自分のよろめきの強さ（見た目）
@@ -481,7 +481,7 @@ int main(void)
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
                        camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook };
         if (LoadSettingsFile(&s)) {
-            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 1, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
+            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
             ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
             ai.level = Clamp(s.level, 0, 2); style = (PlayStyle)Clamp(s.style, 0, STYLE_COUNT - 1); gSurface = (SurfaceType)Clamp(s.court, 0, SURF_COUNT - 1);
@@ -522,6 +522,7 @@ int main(void)
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
         gBattle = battle && mode == MODE_MATCH;
+        gRallyPartner = mode == MODE_RALLY;
         if (app == APP_PLAY && mode == MODE_MATCH) {
             int pe = PigeonUpdate(frameDt);
             if (pe == 1) { SfxOoh(0.4f); snprintf(toast, sizeof(toast), "%s", TL("A pigeon has landed on court...", "コートにハトが…")); toastT = 2.5f; }
@@ -726,7 +727,7 @@ int main(void)
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
-                    case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; } break;   // 体験版は 1 セットだけ
+                    case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin + 4 + change) % 4; forceRestart = true; } break;   // タイブレーク → 1 セット → 3 → 5。体験版は 1 セットだけ
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
                     case MI_TIME:    gTimeSetting = (gTimeSetting + TOD_COUNT + 1 + change) % (TOD_COUNT + 1); AtmosNewMatch(); break;   // 後ろの画面にすぐ出る
@@ -889,7 +890,7 @@ int main(void)
                     case MI_NAME:    label = TR("Your name (Enter to edit)", "名前（Enter で入力）");
                                      value = nameEdit ? TextFormat("%s%s", gPlayerName, fmodf((float)GetTime(), 1.0f) < 0.5f ? "_" : " ") : gPlayerName; break;
                     case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); break;
-                    case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
+                    case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
                     case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
                     case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
@@ -923,10 +924,20 @@ int main(void)
                 Color lc = sel ? YELLOW : RAYWHITE;
                 if (titleMain) {
                     DrawText(label, px + 8, ry + (rowH - 6 - fs) / 2, fs, lc);
-                    if (value[0]) { const char *v = TextFormat("<  %s  >", value); DrawText(v, px + pw - 20 - MeasureText(v, 22), ry + (rowH - 6 - 22) / 2, 22, lc); }
+                    if (value[0]) {   // 長い値（大会の名前など）は、項目の名前にかぶらないように字を小さく
+                        const char *v = TextFormat("<  %s  >", value);
+                        int vf = 22, room = pw - 20 - (8 + MeasureText(label, fs) + 24);
+                        while (vf > 13 && MeasureText(v, vf) > room) vf--;
+                        DrawText(v, px + pw - 20 - MeasureText(v, vf), ry + (rowH - 6 - vf) / 2, vf, lc);
+                    }
                 } else {
                     DrawText(label, px + 40, ry + (rowH - 4 - fs) / 2, fs, lc);
-                    if (value[0]) { const char *v = TextFormat("<  %s  >", value); DrawText(v, px + pw - 40 - MeasureText(v, fs), ry + (rowH - 4 - fs) / 2, fs, lc); }
+                    if (value[0]) {
+                        const char *v = TextFormat("<  %s  >", value);
+                        int vf = fs, room = pw - 40 - (40 + MeasureText(label, fs) + 24);
+                        while (vf > 13 && MeasureText(v, vf) > room) vf--;
+                        DrawText(v, px + pw - 40 - MeasureText(v, vf), ry + (rowH - 4 - vf) / 2, vf, lc);
+                    }
                 }
             }
             // ---- 選手と試合：右に 2 人の名前・身長・紹介 ----
@@ -962,8 +973,8 @@ int main(void)
                     const char *ev = slamSel == SLAM_COUNT ? PN(TR("4 slams in a row: Australian (hard), French (clay), Wimbledon (grass), US (hard)", "4 大会を続けて：全豪（ハード）・全仏（クレー）・ウィンブルドン（芝）・全米（ハード）"),
                                                               TR("4 slams in a row: hard, clay, grass, hard", "4 大会を続けて：ハード・クレー・芝・ハード"))
                                                            : TextFormat(TR("%s  -  %s court  -  16 players, 4 rounds", "%s  -  %s コート  -  16 人、4 回勝てば優勝"), TourName(slamSel), SurfNameUI(TourSlamSurface(slamSel)));
-                    DrawText(ev, bx0 + 14, by + 50, 18, RAYWHITE);
-                    DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
+                    { int ef = 18; while (ef > 12 && MeasureText(ev, ef) > bw0 - 28) ef--; DrawText(ev, bx0 + 14, by + 50, ef, RAYWHITE); }   // 長い大会名でも枠に収める
+                    DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 0 ? TR("tiebreak", "タイブレーク") : setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
                 } else
                 DrawText(TextFormat(TR("%s  -  %s court  -  %s", "%s  -  %s コート  -  %s"), LevelNameUI(ai.level), SurfNameUI(gSurface), ModeName(mode)), bx0 + 14, by + 90, 18, LIGHTGRAY);
             }
@@ -1096,7 +1107,8 @@ int main(void)
             AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
             gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
             SfxSetLineJudges(gSurface == SURF_CLAY);   // クレー（ローランドギャロスなど）は電子判定ではなく線審が声でコールする
-            score.setsToWin = setsToWin;
+            score.setsToWin = setsToWin > 0 ? setsToWin : 1;
+            if (setsToWin == 0) { score.tbOnly = true; score.tiebreak = true; }   // タイブレークだけの試合：最初からタイブレーク
             ai.tilt = 0.0f;
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
@@ -1793,6 +1805,7 @@ int main(void)
 
         // ---- AI：反応して走る ----
         if (mode == MODE_MATCH && phase == PH_PLAY) AiUpdate(&ai, &ball, simDt);
+        else if (mode == MODE_RALLY && !feedSwing && ball.active) AiUpdate(&ai, &ball, simDt);   // ラリー練習：相手も走って打ち返す
 
         // ---- 物理（固定ステップ）----
         accumulator += simDt;
@@ -1824,10 +1837,10 @@ int main(void)
                 if (P.pos.z > VOICE_NET_Z && GetRandomValue(0, 99) < 60) botGrunt = SfxGruntPre(Vector3Distance(cam.position, P.pos));
             }
             if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
-            if (mode == MODE_MATCH && phase == PH_PLAY && ai.planned && ball.age >= ai.swingAge) {
+            if (((mode == MODE_MATCH && phase == PH_PLAY) || mode == MODE_RALLY) && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
-                    ms[1].shots++; ms[1].speedSum += ai.lastKmh;
-                    MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
+                    if (mode == MODE_MATCH) ms[1].shots++, ms[1].speedSum += ai.lastKmh;
+                    if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
                     youMinDist = 99.0f;
                     P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // 相手が打った：スプリットステップ
                     // 決まったと確信したショット：雄叫び（ジョコビッチ）。いつもではなく、大事なポイントほど
@@ -2385,9 +2398,9 @@ int main(void)
 
         // 次の球出し（練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
         if (mode == MODE_RALLY || mode == MODE_RETURN) {
-            bool rallyOver = !ball.active || ball.hitNet ||
-                             (ball.lastHitter == HITTER_PLAYER  && ball.bounces >= 1) ||
-                             (ball.lastHitter == HITTER_OPP && ball.bounces >= 2);
+            bool rallyOver = mode == MODE_RALLY
+                ? (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE))   // 相手も打ち返すので、決まるかミスするまで続く
+                : (!ball.active || ball.hitNet || (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1) || (ball.lastHitter == HITTER_OPP && ball.bounces >= 2));
             if (rallyOver) {
                 feedTimer -= frameDt;
                 // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
@@ -2416,6 +2429,8 @@ int main(void)
                         P.vel = (Vector3){ 0 };
                     } else {
                         ball = feedSwing ? feedNext : MachineFeed(proFeed);
+                        ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;   // 相手：次の球に備える
+                        ai.downTimer = 0.0f; ai.vel = (Vector3){ 0 };
                     }
                     feedSwing = false;
                     trailColor = Fade(LIGHTGRAY, 0.6f);
@@ -2549,7 +2564,7 @@ int main(void)
             if (mode == MODE_RALLY || mode == MODE_RETURN) {   // 練習：球を出す相手を描く（選んでいる相手の選手）
                 ai.anim.lefty = false; ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 ApplyLook(&ai.anim, ai.persona);
-                DrawFigure(feederPos, false, PersonaShirt(ai.persona), &ai.anim, 0.0f);
+                DrawFigure(mode == MODE_RALLY ? ai.pos : feederPos, false, PersonaShirt(ai.persona), &ai.anim, mode == MODE_RALLY ? Vector3Length(ai.vel) : 0.0f);
             }
             if (mode == MODE_MATCH)
             {

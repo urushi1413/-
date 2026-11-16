@@ -483,6 +483,16 @@ ShotType AiChooseShot(const Opponent *ai, const Contact *c, Vector3 playerAi, Ve
     float depth = sp->depth;
     if (t <= SHOT_SLICE && RandRange(0, 1) < 0.15f * lv->aggression) depth = sp->shortDepth;   // 短いアングル
     *target = (Vector3){ x, 0.0f, depth };
+    if (gRallyPartner) {
+        // ラリー練習：相手が打ちやすい所へ、つなぐ球（決めにいかない）。深さはふつう、左右は相手の近く
+        sAttack = false;
+        if (t == SHOT_FLAT || t == SHOT_DROP) t = SHOT_TOP;
+        const ShotSpec *rs = &SHOTS[t];
+        float want = t == SHOT_SLICE ? 90.0f : 115.0f;
+        *charge = rs->maxKmh > rs->minKmh ? Clamp01((want - rs->minKmh) / (rs->maxKmh - rs->minKmh)) : 0.5f;
+        *target = (Vector3){ Clamp(playerAi.x * 0.6f + RandRange(-1.3f, 1.3f), -2.8f, 2.8f), 0.0f, rs->depth };
+        return t;
+    }
     if (gBattle && !stretched && RandRange(0.0f, 1.0f) < BATTLE_AI_BODY) {
         // バトル：ときどき相手の体を狙う。強いフラットで、相手の 3m 手前に落として、跳ねた球が体に向かう
         t = SHOT_FLAT;

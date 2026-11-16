@@ -29,6 +29,7 @@ void AwardPoint(Score *s, int w)
         if (!s->tiebreak && s->points[0] >= 4 && s->points[1] >= 4) { s->points[0]--; s->points[1]--; }
         return;
     }
+    int tp0 = s->points[0], tp1 = s->points[1];   // タイブレークの点（タイブレークだけの試合の結果に使う）
     s->games[w]++;
     int firstServer = s->server;
     if (s->nGames < 16) { s->gameWinner[s->nGames] = w; s->gameServer[s->nGames] = firstServer; s->nGames++; }
@@ -37,7 +38,11 @@ void AwardPoint(Score *s, int w)
     s->tiebreak = false;
     s->server = 1 - firstServer;
     if (setWon) {
-        if (s->nSetsDone < 5) { s->setScore[s->nSetsDone][0] = s->games[0]; s->setScore[s->nSetsDone][1] = s->games[1]; s->nSetsDone++; }
+        if (s->nSetsDone < 5) {
+            s->setScore[s->nSetsDone][0] = s->tbOnly ? tp0 : s->games[0];
+            s->setScore[s->nSetsDone][1] = s->tbOnly ? tp1 : s->games[1];
+            s->nSetsDone++;
+        }
         s->sets[w]++;
         s->games[0] = s->games[1] = 0;
         s->nGames = 0;    // ゲームの流れはセットごと
