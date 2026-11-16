@@ -395,6 +395,12 @@ int main(void)
     char demoCode[40] = "";
     bool demoTried = false;   // 勝ったが条件に足りなかった
     bool demoCounted = false; // この試合を、遊んだ試合の数に入れた
+    // テニスの外の楽しみ：観客をあおる（E）、球を観客席へ（Z）、ハプニング（ハト・「お静かに」）
+    int lastPtWinner = -1;        // 直前のポイントを取った方
+    int tauntIdx = 0, taunts = 0, tauntGame = -1;   // あおった回数（同じゲームの中で）
+    float quietT = 0.0f;          // 「お静かに」の残り時間
+    float youSwatPrevE = 0.0f;
+    float swatCatchT = 0.0f;      // かっ飛ばした球が観客席に届くまで（届いたら観客が捕って沸く）
     bool  showSummary = false;
     int   rallyHits = 0;
     static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
@@ -506,6 +512,21 @@ int main(void)
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
+        if (app == APP_PLAY && mode == MODE_MATCH) {
+            int pe = PigeonUpdate(frameDt);
+            if (pe == 1) { SfxOoh(0.4f); snprintf(toast, sizeof(toast), "%s", TL("A pigeon has landed on court...", "コートにハトが…")); toastT = 2.5f; }
+            if (pe == 2) { crowdExcite = fmaxf(crowdExcite, 0.6f); SfxPointEnd(6, false); }   // 追い払うと、観客が笑って拍手
+            if (gPigeon.on) phaseTimer = fmaxf(phaseTimer, 0.8f);   // いなくなるまで次のポイントを始めない
+            if (swatCatchT > 0.0f) {   // かっ飛ばした球が奥の観客席に届いた：観客が捕って沸く
+                swatCatchT -= frameDt;
+                if (swatCatchT <= 0.0f) { crowdExcite = fmaxf(crowdExcite, 0.7f); SfxPointEnd(5, false); snprintf(toast, sizeof(toast), "%s", TL("A fan catches it!", "観客がキャッチ！")); toastT = 2.0f; }
+            }
+            if (quietT > 0.0f) {
+                float q0 = quietT; quietT -= frameDt;
+                if (q0 >= 3.3f && quietT < 3.3f) { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Quiet, please.", "主審：お静かに願います")); toastT = 1.6f; }
+                if (q0 >= 1.7f && quietT < 1.7f) { snprintf(toast, sizeof(toast), "%s", TL("UMPIRE: Thank you.", "主審：ありがとうございます")); toastT = 1.6f; }
+            }
+        }
         lineCallT = fmaxf(lineCallT - frameDt, 0.0f);
         // スプリットステップの見た目の時間
         if (P.anim.splitT > 0.0f)   P.anim.splitT   -= simDt;
@@ -1854,7 +1875,7 @@ int main(void)
         prevHitNet = ball.active && ball.hitNet;
         if (ai.sliding && !prevAiSliding) SfxSlide(Vector3Distance(cam.position, ai.pos));
         prevAiSliding = ai.sliding;
-        SfxCrowd(mode == MODE_MATCH, (phase == PH_PLAY || phase == PH_SERVE) ? 0.55f : 1.0f);   // ポイント中は観客は静か
+        SfxCrowd(mode == MODE_MATCH, ((phase == PH_PLAY || phase == PH_SERVE) ? 0.55f : 1.0f) * (quietT > 1.7f ? 2.4f : quietT > 0.0f ? 0.35f : 1.0f));   // ポイント中は観客は静か。「お静かに」の前は騒がしい
         SfxUpdate();
         // フットワークの音（自分）：打つ 0.6 秒ほど前に、まだ動いて位置を合わせていたら「キュッ」を 2〜3 回
         if (!ball.active || ball.lastHitter != HITTER_OPP) playerFoot = false;
@@ -1965,6 +1986,7 @@ int main(void)
                 {
                     int sv = server, rv = 1 - server;
                     ms[winner].points++;
+                    lastPtWinner = winner;
                     if (DEMO_ONLY && !demoCounted) { DemoCountMatch(); demoCounted = true; }   // 体験版：1 ポイントでも遊んだら 1 回
                     if (serveNo == 1) { ms[sv].s1Pts++; if (winner == sv) ms[sv].s1Won++; }
                     else              { ms[sv].s2Pts++; if (winner == sv) ms[sv].s2Won++; }
@@ -2092,6 +2114,12 @@ int main(void)
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
                 }
+                // ---- ハプニング：ときどきハトが降りてくる、観客が騒いで主審が「お静かに」 ----
+                if (mode == MODE_MATCH && !score.over && !gPigeon.on && quietT <= 0.0f) {
+                    float r = RandRange(0.0f, 1.0f);
+                    if (r < 0.05f)      { PigeonStart(); phaseTimer = fmaxf(phaseTimer, 2.0f); }
+                    else if (r < 0.10f) { quietT = 3.4f; phaseTimer = fmaxf(phaseTimer, 3.6f); }
+                }
                 // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
                 if (score.over && winner == 0 && DEMO_ONLY && mode == MODE_MATCH) {   // 体験版のチャレンジ
                     if (demoClean && style == STYLE_REAL && ai.level >= 1)
@@ -2162,6 +2190,51 @@ int main(void)
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
+            }
+            // ---- E：観客をあおる（ポイントの間）。取ったポイントの後なら観客が沸いて少し燃える。やりすぎる・取られた後だとブーイング ----
+            if (ActPressed(ACT_TAUNT) && !score.over && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {
+                static const int TK[] = { CELEB_COMEON, CELEB_FIST, CELEB_JUMP_FIST, CELEB_ARMS_UP, CELEB_ROAR, CELEB_EAR };
+                int nk = SALE_ONLY ? 5 : 6;   // 売る版は特定の選手を思わせるしぐさ（耳に手）なし
+                int kind = TK[tauntIdx++ % nk];
+                P.anim.celebKind = kind; P.anim.celebDur = CelebDuration(kind); P.anim.celebT = P.anim.celebDur;
+                P.anim.swingT = -1.0f; P.anim.windup = 0.0f;
+                phaseTimer = fmaxf(phaseTimer, P.anim.celebDur + 0.3f);
+                SfxCelebrate(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
+                if (tauntGame != score.nGames) { tauntGame = score.nGames; taunts = 0; }
+                taunts++;
+                if (lastPtWinner == 0 && taunts <= 2) {   // 観客が応えて沸く。少し燃える
+                    crowdExcite = fmaxf(crowdExcite, 0.9f); SfxPointEnd(9, true);
+                    gYouRage = fmaxf(gYouRage, 0.35f);
+                    snprintf(toast, sizeof(toast), "%s", TL("The crowd is behind you!", "観客が味方についた！")); toastT = 2.0f;
+                } else {                                  // 取られた後・やりすぎ：ブーイング
+                    SfxBoo(0.45f, 0.3f);
+                    snprintf(toast, sizeof(toast), "%s", lastPtWinner == 0 ? TL("Too much. The crowd boos.", "やりすぎ。観客がブーイング") : TL("You just lost the point... the crowd boos.", "取られた後に…観客がブーイング")); toastT = 2.0f;
+                }
+            }
+            // ---- Z：球を観客席へかっ飛ばす（ポイントの間）。行為違反（ラケット破壊と同じ数え方）。燃えるが、ラケット破壊より弱い ----
+            if (ActPressed(ACT_SWAT) && !score.over && P.anim.smashT <= 0.0f && P.anim.celebT <= 0.0f && !botControls) {
+                youSmashes++;
+                P.anim.celebKind = CELEB_SWAT; P.anim.celebDur = CelebDuration(CELEB_SWAT); P.anim.celebT = P.anim.celebDur;
+                P.anim.swingT = -1.0f; P.anim.windup = 0.0f;
+                youSwatPrevE = 0.0f; swatCatchT = 2.4f;
+                phaseTimer = fmaxf(phaseTimer, P.anim.celebDur + 2.0f);
+                gYouRage = fmaxf(gYouRage, 0.6f);
+                const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : "YOU";
+                if (youSmashes < SMASH_PENALTY_FROM)
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s %s THE BALL INTO THE CROWD!\nCode violation, ball abuse. %s\nFIRED UP: faster and harder for a few points, but more errors", "%s %sが球を観客席へかっ飛ばした！\n行為違反、ボールの乱用。%s\n燃えた：数ポイントの間、速く強くなる。ミスも増える"),
+                             nm, gYouPersona ? "SWATS" : "SWAT", youSmashes == SMASH_PENALTY_FROM - 1 ? TL("Final warning.", "最後の警告") : TL("Warning.", "警告"));
+                else {
+                    AwardPoint(&score, 1);
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s %s THE BALL INTO THE CROWD!\nCode violation, ball abuse. Point penalty.\nFIRED UP: faster and harder for a few points, but more errors", "%s %sが球を観客席へかっ飛ばした！\n行為違反、ボールの乱用。ポイントペナルティ\n燃えた：数ポイントの間、速く強くなる。ミスも増える"), nm, gYouPersona ? "SWATS" : "SWAT");
+                }
+                rageMsgT = P.anim.celebDur + 2.5f;
+                SfxAngry(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
+            }
+            if (P.anim.celebKind == CELEB_SWAT && P.anim.celebT > 0.0f) {   // かっ飛ばす音、ブーイング、観客席の人が捕って沸く
+                float e0 = youSwatPrevE, e1 = P.anim.celebDur - fmaxf(P.anim.celebT - simDt, 0.0f);
+                float dist = Vector3Distance(cam.position, P.pos);
+                if (e0 < 0.68f && e1 >= 0.68f) { SfxHit(0.95f, 150.0f, false, false, false, dist); SfxBoo(0.5f, 0.5f); }
+                youSwatPrevE = e1;
             }
             // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。観客にブーイングされるが、しばらく「燃えて」強くなる（ミスも増える）。
             //      1・2 回目は警告だけ、SMASH_PENALTY_FROM 回目からポイントペナルティ ----
@@ -2342,6 +2415,7 @@ int main(void)
         BeginMode3D(cam);
             DrawCourt();
             if (mode == MODE_MATCH) DrawStadium(cam.position, ball.pos, crowdExcite, (float)GetTime(), lineCallPos, lineCallT);
+            if (mode == MODE_MATCH) DrawPigeon();
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, gYouPersona ? gYouPersona : -1); ApplyLook(&bot.anim, gYouPersona ? gYouPersona : -1);   // 自分が使う選手の見た目

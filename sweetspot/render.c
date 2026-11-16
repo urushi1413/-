@@ -648,8 +648,46 @@ void DrawStadium(Vector3 camPos, Vector3 ballPos, float excite, float time, Vect
     // ボールキッズ：ネットの両端にしゃがむ
     {
         Color kid = { 110, 60, 150, 255 }, kidPants = { 40, 40, 50, 255 };
-        DrawPerson((Vector3){ gUmpSide * (NET_POST_X + 0.3f), 0, 0.9f }, (Vector3){ fs, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 225, 185, 150, 255 }, 0.0f, ballPos);
+        if (!PigeonKidOut())   // ハトを追い払いに出ている間は、DrawPigeon が走る姿を描く
+            DrawPerson((Vector3){ gUmpSide * (NET_POST_X + 0.3f), 0, 0.9f }, (Vector3){ fs, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 225, 185, 150, 255 }, 0.0f, ballPos);
         DrawPerson((Vector3){ -gUmpSide * (NET_POST_X + 0.6f), 0, -0.6f }, (Vector3){ -fs, 0, 0 }, 2, kid, kidPants, (Color){ 0 }, (Color){ 200, 150, 115, 255 }, 0.0f, ballPos);
+    }
+}
+
+// ---- ハト（コートに降りてくる）と、追い払うボールキッズ ----
+void DrawPigeon(void)
+{
+    const Pigeon *p = &gPigeon;
+    if (!p->on) return;
+    const float S = 1.8f;   // 大きめ（遠くからでも見えるように）
+    Vector3 f = { sinf(p->yaw), 0.0f, cosf(p->yaw) }, up = { 0, 1, 0 }, r = Vector3CrossProduct(f, up);
+    Vector3 base = Vector3Add(p->pos, (Vector3){ 0, p->hop, 0 });
+    #define PG(fw, rt, y) Vector3Add(base, Vector3Add(Vector3Scale(f, (fw) * S), Vector3Add(Vector3Scale(r, (rt) * S), Vector3Scale(up, (y) * S))))
+    Color grey = { 120, 125, 140, 255 }, dark = { 70, 72, 85, 255 }, neck = { 90, 130, 115, 255 }, pink = { 220, 120, 130, 255 };
+    bool flying = p->phase != 1;
+    if (!flying) for (int s = -1; s <= 1; s += 2) DrawCylinderEx(PG(0.0f, s * 0.03f, 0.0f), PG(0.0f, s * 0.03f, 0.07f), 0.006f * S, 0.006f * S, 6, pink);   // 足
+    float tilt = flying ? 0.0f : -0.02f;
+    LitBlob(PG(0.0f, 0.0f, 0.13f + tilt), f, r, up, 0.13f * S, 0.075f * S, 0.075f * S, grey);         // 胴
+    DrawCylinderEx(PG(-0.12f, 0.0f, 0.14f), PG(-0.22f, 0.0f, 0.12f), 0.045f * S, 0.02f * S, 8, dark);  // 尾
+    float pk = p->peck;
+    Vector3 hd = PG(0.12f + 0.05f * pk, 0.0f, 0.24f - 0.13f * pk);
+    DrawCylinderEx(PG(0.08f, 0.0f, 0.17f), hd, 0.045f * S, 0.035f * S, 8, neck);                     // 首（緑っぽく光る）
+    DrawSphere(hd, 0.042f * S, grey);                                                                  // 頭
+    DrawCylinderEx(Vector3Add(hd, Vector3Scale(f, 0.03f * S)), Vector3Add(hd, Vector3Add(Vector3Scale(f, 0.065f * S), Vector3Scale(up, -0.01f * S))), 0.010f * S, 0.003f * S, 6, (Color){ 60, 55, 50, 255 });   // くちばし
+    for (int s = -1; s <= 1; s += 2) {   // 羽：止まっているときはたたみ、飛ぶときは羽ばたく
+        float a = flying ? 0.9f * sinf(p->wing) : 0.0f;
+        Vector3 root = PG(0.0f, s * 0.05f, 0.16f);
+        Vector3 tip = flying ? Vector3Add(root, Vector3Add(Vector3Scale(r, s * 0.20f * S * cosf(a)), Vector3Scale(up, 0.20f * S * sinf(a))))
+                             : PG(-0.10f, s * 0.07f, 0.15f);
+        DrawCylinderEx(root, tip, 0.035f * S, 0.012f * S, 8, dark);
+    }
+    #undef PG
+    // 追い払うボールキッズ：走る（体が上下に弾む）
+    if (p->kidPhase == 1 || p->kidPhase == 2) {
+        Vector3 kf = { sinf(p->kidYaw), 0.0f, cosf(p->kidYaw) };
+        Vector3 kb = Vector3Add(p->kid, (Vector3){ 0, 0.04f * fabsf(sinf(p->kidRun)), 0 });
+        DrawPerson(kb, kf, 0, (Color){ 110, 60, 150, 255 }, (Color){ 40, 40, 50, 255 }, (Color){ 0 }, (Color){ 225, 185, 150, 255 },
+                   p->kidPhase == 1 ? 0.6f + 0.4f * sinf(p->kidRun) : 0.0f, p->pos);   // 走りながら腕を振って追い払う
     }
 }
 

@@ -15,6 +15,8 @@ CONTROLS (IN A MATCH)
   Q ............... crouch (for low balls)
   X ............... smash your racket (between points). You get FIRED UP for a few points:
                     faster and harder, but more errors. Point penalty from the 3rd time
+  E ............... pump up the crowd (they roar if you just won the point)
+  Z ............... swat the ball into the crowd (code violation, counted like racket abuse)
   R ............... after a point: replay (C switches camera)
   Tab ............. stats
   F1 / F2 ......... screen info / guides

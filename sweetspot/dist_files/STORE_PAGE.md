@@ -23,6 +23,7 @@ SWEET SPOT は、ボールを「どこで」「いつ」捉えるかがすべて
 - 個性の違う 16 人の選手：左利きの粘り屋、片手バックの万能型、ビッグサーバー……。打ち方も、足の速さも、勝負強さも違う
 - グランドスラム：16 人の勝ち抜き。4 大会を続けて回るシーズンも。勝てば組み合わせ表が動き、優勝すればトロフィーを掲げる
 - 試合の空気：観客の歓声とため息、主審のコール、線審の叫び、コートチェンジ、昼・夕方・ナイター、晴れ・くもり
+- テニスの外の楽しみ：観客をあおる、ラケットを叩きつける、球を観客席へかっ飛ばす（行為違反になるが「燃えて」強くなる）。ときどきコートにハトが降りてくる
 - リプレイとハイライト：いいポイントはスローで見直せる。試合の後はハイライトを流す
 - 練習モード：ラリー・リターン・サーブを好きなだけ
 - 難しさは 2 段階（カジュアル・リアル）、AI の強さは 3 段階。はじめての人でも遊べる
@@ -42,6 +43,7 @@ FEATURES
 - 16 players with distinct styles: a left-handed grinder, a one-handed all-courter, big servers… each with their own shots, speed and nerve
 - Grand Slam: a 16-player knockout, or a season of four slams. Watch the draw unfold and lift the trophy
 - Atmosphere: crowd cheers and groans, umpire calls, line judges, changeovers, day / evening / night sessions, sun and clouds
+- More than tennis: pump up the crowd, smash your racket, swat the ball into the stands (code violations, but you get FIRED UP). Sometimes a pigeon lands on court
 - Replays and highlights: watch your best points in slow motion
 - Practice modes: rallies, returns and serves
 - Two styles (Casual / Real) and three AI levels — friendly for beginners

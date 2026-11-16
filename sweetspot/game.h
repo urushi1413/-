@@ -922,7 +922,8 @@ typedef struct {
 void ReadKeyboardMouse(PlayerInput *in, bool mouseActive, bool skipMouseDelta, float aimSens, float dt);
 // キーの割り当て（設定で変えられる）
 typedef enum { ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_AIM_L, ACT_AIM_R, ACT_AIM_DEEP, ACT_AIM_SHORT,
-               ACT_TOP, ACT_SLICE, ACT_FLAT, ACT_LOB, ACT_DROP, ACT_CLICK_FLAT, ACT_CROUCH, ACT_SMASH, ACT_REPLAY, ACT_MUTE, ACT_COUNT } KeyAction;
+               ACT_TOP, ACT_SLICE, ACT_FLAT, ACT_LOB, ACT_DROP, ACT_CLICK_FLAT, ACT_CROUCH, ACT_SMASH, ACT_REPLAY, ACT_MUTE,
+               ACT_TAUNT, ACT_SWAT, ACT_COUNT } KeyAction;
 extern int gKeys[ACT_COUNT];
 void KeysReset(void);
 const char *ActionId(int a);
@@ -950,6 +951,18 @@ enum { TOD_DAY, TOD_EVENING, TOD_NIGHT, TOD_COUNT };
 enum { WX_SUNNY, WX_CLOUDY, WX_COUNT };
 extern int gTimeSetting, gWeatherSetting;   // 設定（0 = おまかせ、1〜 = TOD / WX の番号 + 1）
 extern int gTod, gWx;                       // この試合の時間帯と天気
+// ハプニング：コートに降りてくるハト（events.c）
+typedef struct {
+    bool on; int phase;          // 0 = 降りてくる、1 = 歩く、2 = 飛んでいく
+    float t, yaw, wing, peck, hop;
+    Vector3 pos, target, vel;
+    Vector3 kid; float kidYaw, kidRun; int kidPhase;   // 追い払うボールキッズ：0 = まだ、1 = 走っていく、2 = 戻る、3 = 戻った
+} Pigeon;
+extern Pigeon gPigeon;
+void PigeonStart(void);
+int  PigeonUpdate(float dt);
+bool PigeonKidOut(void);
+void DrawPigeon(void);
 extern int gUmpSide;                        // 審判台とベンチのある側（-1 = 自分から見て左）。コートチェンジで入れ替わる
 void AtmosNewMatch(void);
 const char *AtmosName(void);
