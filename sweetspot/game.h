@@ -741,6 +741,12 @@ extern int   gYouPersona;
 extern char  gPlayerName[16];        // 設定で入れた自分の名前（癖なしの選手のときに出す）
 extern char  gOppName[24];           // 相手の名前（表示用。main が毎フレーム入れる）
 const char *YouName(void);           // 自分の表示名：使っている選手の名前、癖なしなら入れた名前
+extern float gYouRage;       // 自分がラケットを叩きつけて「燃えた」量（0〜1）。走る・打つ・サーブが少し強くなり、ミスも増える。ポイントごとに弱まる
+#define YOU_RAGE_DECAY   0.60f   // 1 ポイントごとに燃えた量がこの割合に弱まる（3〜4 ポイントで元に戻る）
+#define YOU_RAGE_POWER   0.08f   //   打つ強さの上乗せ（割合）
+#define YOU_RAGE_SERVE   8.0f    //   サーブの速さの上乗せ（km/h）
+#define YOU_RAGE_ERR     0.35f   //   ミス（打球のぶれ）の増え方
+#define SMASH_PENALTY_FROM 3     // ラケットの叩きつけは、この回数目からポイントペナルティ（それまでは警告だけ）
 extern float gServeAdd;      // サーブの速さの上乗せ（km/h）。自分のサーブだけ（AI のサーブは打つ前に 0 にする）
 extern float gServeErrMul;   // サーブのぶれの倍率
 extern float gServeSpeedK;   // 速いサーブのぶれの効き（自分 1。AI は安定感とコースの厳しさを別に決めているので小さく）

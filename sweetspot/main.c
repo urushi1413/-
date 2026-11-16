@@ -932,7 +932,7 @@ int main(void)
             score.setsToWin = setsToWin;
             ai.tilt = 0.0f;
             winFx = -1.0f;
-            youSmashes = 0;
+            youSmashes = 0; gYouRage = 0.0f;
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -1563,7 +1563,7 @@ int main(void)
                     if (c.miss == MISS_NONE) {
                         if (c.volley) c.quality += (1.0f - c.quality) * 0.25f * PERSONAS[gYouPersona].volleySkill;   // ボレーのうまい選手は当たりの悪さを少し取り戻す
                         gHumanShot = true;
-                        ball = PlayerShot(&c, ball.pos, target, type, HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge,
+                        ball = PlayerShot(&c, ball.pos, target, type, (HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge) * (1.0f + YOU_RAGE_POWER * gYouRage),   // 燃えていると少し強い
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
@@ -1856,6 +1856,7 @@ int main(void)
                 int gamesBefore = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 int setsBefore = score.nSetsDone;
                 AwardPoint(&score, winner);
+                gYouRage *= YOU_RAGE_DECAY; if (gYouRage < 0.15f) gYouRage = 0.0f;   // 燃えた量はポイントごとに弱まる
                 int gamesAfter = score.games[0] + score.games[1] + 6 * (score.sets[0] + score.sets[1]);
                 {   // コートチェンジ：このセットのゲーム数が奇数になったら
                     bool setEndedCO = score.nSetsDone != setsBefore;
@@ -1893,10 +1894,10 @@ int main(void)
                         smashPrevE = 0.0f;
                         phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.6f);
                         const char *nm = OPP_SHORT;
-                        if (ai.smashes == 1) {
+                        if (ai.smashes < SMASH_PENALTY_FROM) {   // 自分と同じ決まり：それまでは警告だけ
                             snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Warning, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告、%s 選手"), nm, nm);
                         } else {
-                            // 2 回目からはポイントペナルティ（ゲームの始まりなので、これでゲームが終わることはない）
+                            // SMASH_PENALTY_FROM 回目からはポイントペナルティ（ゲームの始まりなので、これでゲームが終わることはない）
                             AwardPoint(&score, 0);
                             snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES HIS RACKET!\nCode violation, racket abuse. Point penalty, Mr. %s", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ、%s 選手"), nm, nm);
                         }
@@ -2015,25 +2016,28 @@ int main(void)
                 float e0 = smashPrevE, e1 = SMASH_TIME - fmaxf(ai.anim.smashT - simDt, 0.0f);
                 const float hits[SMASH_NHITS] = SMASH_HITS;
                 for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, ai.pos), k);
-                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(ai.smashes >= 2 ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング（長いので途中でもう一度）
+                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(ai.smashes >= SMASH_PENALTY_FROM ? 1.0f : 0.75f, 0.35f);   // 観客のブーイング（長いので途中でもう一度）
                 ai.anim.broken = Clamp01((e1 - 0.55f) / 4.9f);   // 叩くたびに曲がっていく
                 smashPrevE = e1;
                 ai.anim.smashT = fmaxf(ai.anim.smashT - simDt, 0.0f);
                 ai.vel = (Vector3){ 0 };
                 ai.anim.velX = ai.anim.velZ = 0.0f;
             }
-            // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。1 回目は警告、2 回目からポイントペナルティ ----
+            // ---- X：自分がラケットを叩きつける（ポイントの間だけ）。観客にブーイングされるが、しばらく「燃えて」強くなる（ミスも増える）。
+            //      1・2 回目は警告だけ、SMASH_PENALTY_FROM 回目からポイントペナルティ ----
             if (IsKeyPressed(KEY_X) && !score.over && P.anim.smashT <= 0.0f && !botControls) {
                 youSmashes++;
                 P.anim.smashT = SMASH_TIME; P.anim.swingT = -1.0f; P.anim.windup = 0.0f; P.anim.celebT = 0.0f;
                 youSmashPrevE = 0.0f;
                 phaseTimer = fmaxf(phaseTimer, SMASH_TIME + 1.2f);
                 const char *nm = gYouPersona ? PERSONAS[gYouPersona].shortName : "YOU";   // テロップは英語
-                if (youSmashes == 1) {
-                    snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES THE RACKET!\nCode violation, racket abuse. Warning.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。警告"), nm);
+                gYouRage = 1.0f;   // 燃える
+                if (youSmashes < SMASH_PENALTY_FROM) {
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s %s THE RACKET!\nCode violation, racket abuse. %s\nFIRED UP: faster and harder for a few points, but more errors", "%s %sがラケットを叩きつけた！\n行為違反、ラケットの乱用。%s\n燃えた：数ポイントの間、速く強くなる。ミスも増える"),
+                             nm, gYouPersona ? "SMASHES" : "SMASH", youSmashes == SMASH_PENALTY_FROM - 1 ? TL("Final warning.", "最後の警告") : TL("Warning.", "警告"));
                 } else {
                     AwardPoint(&score, 1);   // ポイントペナルティ：相手のポイント
-                    snprintf(rageMsg, sizeof(rageMsg), TL("%s SMASHES THE RACKET!\nCode violation, racket abuse. Point penalty.", "%s がラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ"), nm);
+                    snprintf(rageMsg, sizeof(rageMsg), TL("%s %s THE RACKET!\nCode violation, racket abuse. Point penalty.\nFIRED UP: faster and harder for a few points, but more errors", "%s %sがラケットを叩きつけた！\n行為違反、ラケットの乱用。ポイントペナルティ\n燃えた：数ポイントの間、速く強くなる。ミスも増える"), nm, gYouPersona ? "SMASHES" : "SMASH");
                 }
                 rageMsgT = SMASH_TIME + 2.5f;
                 SfxAngry(gYouPersona ? gYouPersona : -1, Vector3Distance(cam.position, P.pos));
@@ -2042,7 +2046,7 @@ int main(void)
                 float e0 = youSmashPrevE, e1 = SMASH_TIME - fmaxf(P.anim.smashT - simDt, 0.0f);
                 const float hits[SMASH_NHITS] = SMASH_HITS;
                 for (int k = 0; k < SMASH_NHITS; k++) if (e0 < hits[k] && e1 >= hits[k]) SfxRacketSmash(Vector3Distance(cam.position, P.pos), k);
-                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(youSmashes >= 2 ? 1.0f : 0.75f, 0.35f);
+                if ((e0 < hits[0] && e1 >= hits[0]) || (e0 < hits[3] && e1 >= hits[3])) SfxBoo(youSmashes >= SMASH_PENALTY_FROM ? 1.0f : 0.75f, 0.35f);
                 P.anim.broken = Clamp01((e1 - 0.55f) / 4.9f);
                 youSmashPrevE = e1;
                 P.anim.smashT = fmaxf(P.anim.smashT - simDt, 0.0f);
@@ -2456,6 +2460,13 @@ int main(void)
             }
         EndMode3D();
         AtmosOverlay(cam);   // 時間帯と天気の色合い、ナイターのライト
+        if (mode == MODE_MATCH && gYouRage > 0.0f && !changeActive) {   // 燃えている：残りの強さを見せる
+            const char *fu = TL("FIRED UP", "燃えている");
+            float pulse = 0.75f + 0.25f * sinf((float)GetTime() * 6.0f);
+            DrawRectangle(18, GetScreenHeight() / 2 - 70, 150, 34, Fade(BLACK, 0.45f));
+            DrawRectangle(18, GetScreenHeight() / 2 - 40, (int)(150 * gYouRage), 4, (Color){ 255, 120, 40, 255 });
+            DrawText(fu, 28, GetScreenHeight() / 2 - 64, 22, Fade((Color){ 255, 140, 60, 255 }, pulse));
+        }
         if (changeActive) {   // コートチェンジ：入れ替わる間は一瞬暗く。休んでいる間は表示
             float mid = changeDur * 0.5f, d = fabsf(changeT - mid);
             if (d < 0.45f) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, 1.0f - d / 0.45f));
@@ -2647,9 +2658,14 @@ int main(void)
             // ラケットを叩きつけた：審判のコール
             if (rageMsgT > 0.0f && rageMsg[0]) {
                 rageMsgT -= frameDt;
-                int w = MeasureText(rageMsg, 26);
+                // 行ごとに測って、いちばん長い行と行の数に合わせた箱にする（説明が長くてもはみ出さない）
+                int w = 0, nl = 0;
+                {
+                    char buf[512]; snprintf(buf, sizeof(buf), "%s", rageMsg);
+                    for (char *ln = strtok(buf, "\n"); ln; ln = strtok(NULL, "\n")) { int lw = MeasureText(ln, 26); if (lw > w) w = lw; nl++; }
+                }
                 float al = Clamp01(rageMsgT / 0.5f);
-                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 18, 290, w + 36, 76, Fade((Color){ 120, 20, 20, 255 }, 0.80f * al));
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 18, 290, w + 36, 20 + nl * 30, Fade((Color){ 120, 20, 20, 255 }, 0.80f * al));
                 DrawText(rageMsg, GetScreenWidth() / 2 - w / 2, 300, 26, Fade(RAYWHITE, al));
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）

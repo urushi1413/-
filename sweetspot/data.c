@@ -27,6 +27,7 @@ int   gYouPersona = 0;
 char  gPlayerName[16] = "PLAYER";
 char  gOppName[24] = "AI";
 const char *YouName(void) { return gYouPersona ? PERSONAS[gYouPersona].shortName : (gPlayerName[0] ? gPlayerName : "PLAYER"); }
+float gYouRage = 0.0f;
 float gServeAdd = 0.0f, gServeErrMul = 1.0f, gServeSpeedK = 1.0f;
 void RestoreHumanContact(void)
 {
@@ -43,15 +44,16 @@ void ApplyHumanTraits(void)
     float ck = pp->clutch * gPointImportance + (gDecidingSet ? mm->decider * (0.5f + 0.5f * gPointImportance) : 0.0f);
     gErrMul = Clamp(pp->errMul * (1.0f - 0.40f * ck)                               // 勝負強い選手は大事なポイントでミスが減る（弱い選手は増える）
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f),   // 得意なコートほどミスが減る
-                    0.6f, 1.4f);                                                 // 自分が使うときは 0.6〜1.4 倍に収める
-    gServeAdd = pp->serveAdd;
+                    0.6f, 1.4f)                                                  // 自分が使うときは 0.6〜1.4 倍に収める
+             * (1.0f + YOU_RAGE_ERR * gYouRage);                                 // ラケットを叩きつけて燃えている：ミスが増える
+    gServeAdd = pp->serveAdd + YOU_RAGE_SERVE * gYouRage;
     gServeErrMul = Clamp(1.0f - 2.0f * pp->serveSkillAdd, 0.6f, 1.4f) * (1.0f + 0.8f * mm->dfNerves * gPointImportance);   // 緊張でサーブがぶれる
     RestoreHumanContact();
 }
 float PlayerRunSpeed(void)
 {
     const Persona *pp = &PERSONAS[gYouPersona % PERSONA_COUNT];
-    return (PLAYER_SPEED + pp->speedAdd + pp->surfSpeed[gSurface]) * (1.0f - HEIGHT_SPEED_PER_CM * HeightDelta(gYouPersona));
+    return (PLAYER_SPEED + pp->speedAdd + pp->surfSpeed[gSurface] + RAGE_SPEED * gYouRage) * (1.0f - HEIGHT_SPEED_PER_CM * HeightDelta(gYouPersona));   // 燃えていると少し速い
 }
 float HumanServeHeightK(void) { return 1.0f + HeightDelta(gYouPersona) / 185.0f; }
 // ツアーごとの選手の並び
