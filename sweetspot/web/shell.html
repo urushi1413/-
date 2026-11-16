@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SWEET SPOT</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #10241f; color: #eee; font-family: sans-serif; overflow: hidden; }
+  #wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+  canvas { display: block; width: 100%; height: 100%; outline: none; }
+  #status { position: fixed; left: 0; right: 0; top: 45%; text-align: center; font-size: 20px; pointer-events: none; }
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas></div>
+<div id="status">読み込み中… / Loading…</div>
+<script>
+  // 右クリック・スペース・矢印キーでページが動いたりメニューが出たりしないように
+  window.addEventListener('keydown', function (e) {
+    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1', 'F2'].indexOf(e.key) >= 0) e.preventDefault();
+  });
+  var statusEl = document.getElementById('status');
+  var Module = {
+    canvas: document.getElementById('canvas'),
+    setStatus: function (t) { statusEl.textContent = t ? t.replace(/Downloading data\.\.\./, '読み込み中… / Loading… ') : ''; },
+    monitorRunDependencies: function (left) { if (!left) statusEl.textContent = ''; },
+    print: function (t) { console.log(t); },
+    printErr: function (t) { console.warn(t); }
+  };
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

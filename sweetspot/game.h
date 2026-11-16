@@ -932,6 +932,14 @@ void KeyAssign(int a, int k);
 bool ActDown(int a);
 bool ActPressed(int a);
 
+// 体験版（make web）：勝利の証明コード（demo.c）
+void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);
+#ifdef DEMO_BUILD
+#define DEMO_ONLY 1
+#else
+#define DEMO_ONLY 0
+#endif
+
 // audio.c：効果音（sounds フォルダの録音ファイル）
 // ---- 時間帯と天気（render.c） ----
 enum { TOD_DAY, TOD_EVENING, TOD_NIGHT, TOD_COUNT };

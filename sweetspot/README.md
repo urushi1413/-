@@ -945,3 +945,22 @@ make
 | `platform_ime.c` | Windows で日本語入力を切る |
 | `sim_core.h` | 画面なしのツール（`tools/`）用に部品をまとめて取り込む |
 
+## ブラウザ版・体験版（make web）
+
+ブラウザで遊べる体験版を作る（売る版の名前、1 セットの試合、グランドスラムなし、スローと自動操作なし）。
+
+1. emsdk を入れる：`git clone https://github.com/emscripten-core/emsdk` → `./emsdk install latest` → `./emsdk activate latest` → `source ./emsdk_env.sh`（Windows は `emsdk_env.bat`）
+2. raylib をブラウザ向けに作る：raylib の `src/` で `make PLATFORM=PLATFORM_WEB`（libraylib.a ができる）
+3. `sweetspot/` で `make web WEB_RAYLIB=<raylib の src>` → `web/out/` に index.html・.js・.wasm・.data
+4. 試すときは `web/out/` で `python3 -m http.server` → ブラウザで http://localhost:8000（ファイルを直接開いても動かない）
+
+ブラウザでは Esc はマウスの固定を外すのに使われる。固定が外れたら Esc と同じに一時停止のメニューを出す。
+画面の大きさはページに合わせる。設定は保存されない（ページを開き直すとはじめから）。
+
+### チャレンジ：AI「ふつう」以上に「リアル」で勝つと、製品版が無料
+
+勝つと結果の画面に「勝利の証明コード」（`SS-XXXXX-XXXXX-XXXXX-XXXXXX`）が出る（C でコピー）。
+コードには相手・AI の強さ・難しさ・ゲーム数・取ったポイント・日付と、秘密の鍵から作った確かめの数字が入っている（demo.c）。
+試合の途中で強さを「やさしい」にしたり難しさを「カジュアル」にしたりすると、コードは出ない。
+確かめるのは `python3 tools/check_code.py <コード>`（同じ鍵 `web/demo_secret.txt` を使う。鍵はリポジトリに入れない）。
+鍵は体験版の中に入っているので、本気で調べれば取り出せる。小さなチャレンジとしては十分だが、配る数が増えたら鍵を変えて作り直す。

@@ -88,3 +88,41 @@ Mouse and keyboard (WASD to move, mouse to aim, click to hit). Keyboard-only pla
    - pixiv アカウントでショップを開く → 商品の登録 → ダウンロード商品
    - zip を登録、値段、説明（日本語）、画像 → 公開。売上の受け取り口座も登録
 6. X（Twitter）に動画と、ストアのリンクを投稿
+
+## ブラウザ体験版とチャレンジ（無料の別ページ）
+
+体験版はブラウザで遊べる版（`make web` で作る `web/out/`）。製品版とは別の、無料の itch.io ページに置く
+（有料のページに置いたブラウザ版は、買った人しか遊べないことがあるため）。体験版のページから製品版のページへリンクする。
+
+- 体験版でできること：試合（1 セットだけ）、練習、選手と試合の設定、キー設定。グランドスラムは製品版だけ
+- 体験版ではスロー（T）と自動操作（B）は使えない（チャレンジのため）
+
+### 体験版のページの文章
+
+- 日本語：
+  ブラウザですぐ遊べる SWEET SPOT の体験版です（1 セットの試合と練習）。
+  【チャレンジ】AI の強さ「ふつう」以上・難しさ「リアル」で試合に勝つと、画面に「勝利の証明コード」が出ます。
+  コードを（連絡先）に送ってくれた方に、製品版を無料でお渡しします（1 つのコードで 1 回。先着、予告なく終わることがあります）。
+- English:
+  Play SWEET SPOT in your browser (1-set matches and practice).
+  CHALLENGE: beat the AI on NORMAL or PRO with the REAL style and you get a proof code on screen.
+  Send the code to (contact) and get the full game free (one copy per code; may end without notice).
+
+（連絡先）はメールアドレスか、受付用のフォームにする。コメント欄に書いてもらうと、ほかの人にコードを見られる。
+
+### 体験版を itch.io に置く
+
+1. `web/out/` の 4 つのファイル（index.html・index.js・index.wasm・index.data）を zip にする（フォルダごとではなく、中身を）
+2. itch.io → Upload new project → Kind of project：HTML → Pricing：No payments
+3. zip を上げて「This file will be played in the browser」にチェック
+4. Embed options：Viewport 1280 × 720、Fullscreen button にチェック、Mobile friendly はなし（キーボードとマウスが要る）
+5. Frame options の「SharedArrayBuffer support」は不要
+
+### 届いたコードを確かめて、製品版の鍵を送る
+
+1. `sweetspot/` で `python3 tools/check_code.py SS-XXXXX-XXXXX-XXXXX-XXXXXX`
+   - `OK`：条件を満たした本物のコード。`web/used_codes.txt` に記録される
+   - `使用済み`：前に受け付けたコード（使い回し）。`だめ`：打ち間違いか、作られたコード
+2. itch.io の製品版のページ → Edit game → Distribute → Download keys → 鍵を作って、その人に送る
+3. 鍵の確かめには `web/demo_secret.txt`（秘密の鍵）が要る。なくすと確かめられないので、パソコンの外にも保管する。
+   リポジトリには入れない（公開しているので、入れるとコードを作られてしまう）

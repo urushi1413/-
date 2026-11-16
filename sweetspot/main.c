@@ -2,6 +2,9 @@
 // ゲームの流れ（メニュー・入力・試合の進行・画面）
 #include "game.h"
 #include <ctype.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>   // ブラウザ版：窓の大きさ、マウスの固定
+#endif
 
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };   // 記録用（英語のまま）
 static const char *ModeName(int m)   // 表示用
@@ -303,7 +306,9 @@ int main(void)
     SfxInit();
     UiFontInit();   // 日本語フォント
     InitBoards();   // 奥の壁の看板とスピードメーター
-    SetTargetFPS(60);
+#ifndef __EMSCRIPTEN__
+    SetTargetFPS(60);   // ブラウザでは、ブラウザが画面を描く間隔に合わせる（raylib が毎フレーム待つ）
+#endif
     srand((unsigned)GetTime() ^ 0x5eed);
     DisableIme(GetWindowHandle());   // 日本語入力が ON だとキーを離したことが届かず、押しっぱなしになることがある
     // マウス：マイクラと同じようにカーソルをウィンドウに固定して隠す。Esc で外す／戻す（Esc で終了しない）
@@ -383,6 +388,10 @@ int main(void)
     char  rageMsg[160] = { 0 };          // ラケットを叩きつけたときの表示（審判のコール）
     float rageMsgT = 0.0f, smashPrevE = 0.0f;            // セット間：統計を見せて、Enter / クリックで次のセットへ
     float summaryT = 0.0f;
+    // 体験版：この試合がずっと「AI ふつう以上・リアル」だったか（途中で変えたら証明コードは出さない）と、勝って出たコード
+    bool demoClean = true;
+    char demoCode[40] = "";
+    bool demoTried = false;   // 勝ったが条件に足りなかった
     bool  showSummary = false;
     int   rallyHits = 0;
     static char outMsg[64];            // 「OUT 12cm」の表示           // このポイントで打った回数（拍手の大きさ）
@@ -454,7 +463,7 @@ int main(void)
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
                        camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting };
         if (LoadSettingsFile(&s)) {
-            setsToWin = Clamp(s.sets, 1, 3); gWomen = s.women != 0;
+            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 1, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
             ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
             ai.level = Clamp(s.level, 0, 2); style = (PlayStyle)Clamp(s.style, 0, STYLE_COUNT - 1); gSurface = (SurfaceType)Clamp(s.court, 0, SURF_COUNT - 1);
@@ -484,6 +493,12 @@ int main(void)
     int prevBounces = 0;
 
     while (!WindowShouldClose() && !quitGame) {
+#ifdef __EMSCRIPTEN__
+        {   // ブラウザ版：ページの大きさが変わったら、ゲームの画面も合わせる
+            int iw = EM_ASM_INT({ return window.innerWidth; }), ih = EM_ASM_INT({ return window.innerHeight; });
+            if (iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
+        }
+#endif
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
@@ -547,11 +562,13 @@ int main(void)
             int items[32], n = 0;
             if (menuPage == 0) {
                 items[n++] = MI_PLAY;
-                if (app == APP_TITLE) items[n++] = MI_TOURNAMENT;
+                if (app == APP_TITLE && !DEMO_ONLY) items[n++] = MI_TOURNAMENT;   // 体験版はグランドスラムなし
                 items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
-                items[n++] = MI_QUIT;
+#ifndef __EMSCRIPTEN__
+                items[n++] = MI_QUIT;   // ブラウザ版は終わる項目なし（ページを閉じる）
+#endif
             } else if (menuPage == 1) {
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
@@ -666,7 +683,7 @@ int main(void)
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
-                    case MI_SETS:   setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; break;
+                    case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin - 1 + 3 + change) % 3 + 1; forceRestart = true; } break;   // 体験版は 1 セットだけ
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
                     case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
                     case MI_TIME:    gTimeSetting = (gTimeSetting + TOD_COUNT + 1 + change) % (TOD_COUNT + 1); AtmosNewMatch(); break;   // 後ろの画面にすぐ出る
@@ -735,6 +752,10 @@ int main(void)
                 DrawText("SWEET SPOT", px + 4, 90 + 4, 96, Fade(BLACK, 0.5f));
                 DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
                 DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
+                if (DEMO_ONLY) {
+                    DrawText(TR("DEMO  -  1-set matches. No Grand Slam.", "体験版  -  1 セットの試合。グランドスラムは製品版で"), px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
+                    DrawText(TR("CHALLENGE: beat AI NORMAL on REAL and get the full game free", "チャレンジ：AI「ふつう」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
+                }
             } else {
                 bool leftPanel = menuPage == 1 || menuPage == 3;
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
@@ -922,7 +943,8 @@ int main(void)
             }
             toastT = 3.0f;
         }
-        if (IsKeyPressed(KEY_T)) slowMo = !slowMo;
+        if (IsKeyPressed(KEY_T) && !DEMO_ONLY) slowMo = !slowMo;   // 体験版はスローなし（チャレンジのため）
+        if (DEMO_ONLY && mode == MODE_MATCH && !score.over && (style != STYLE_REAL || ai.level < 1)) demoClean = false;
         if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
         if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
         // ================= リプレイ（スロー、横からのカメラ） =================
@@ -978,7 +1000,7 @@ int main(void)
             }
             restart = true;
         }
-        if (IsKeyPressed(KEY_B)) autopilot = !autopilot;
+        if (IsKeyPressed(KEY_B) && !DEMO_ONLY) autopilot = !autopilot;   // 体験版は自動操作なし
         if (IsKeyPressed(KEY_TAB)) {
             // Tab：セッションの統計 → （試合中なら）試合の統計 → 閉じる
             if (!showStats && !showSummary) showStats = true;
@@ -1017,6 +1039,7 @@ int main(void)
             ai.tilt = 0.0f;
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
+            demoClean = true; demoCode[0] = 0; demoTried = false;
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
             needSetup = true;
@@ -1122,7 +1145,17 @@ int main(void)
 
         // ---- 入力（キーボード＋マウス）。ゲームパッドや 2 人目も、同じ PlayerInput の形で読む ----
         bool clickConsumed = false;
-        if (IsKeyPressed(KEY_ESCAPE)) {   // Esc：一時停止して設定メニュー
+        bool webEsc = false;
+#ifdef __EMSCRIPTEN__
+        {   // ブラウザでは Esc はブラウザがマウスの固定を外すのに使い、ゲームには届かない。固定が外れたら Esc と同じに扱う
+            static bool hadLock = false;
+            bool lockedNow = EM_ASM_INT({ return document.pointerLockElement ? 1 : 0; }) != 0;
+            if (!mouseLocked) hadLock = false;
+            else if (lockedNow) hadLock = true;
+            else if (hadLock) { webEsc = true; hadLock = false; }
+        }
+#endif
+        if (IsKeyPressed(KEY_ESCAPE) || webEsc) {   // Esc：一時停止して設定メニュー
             app = APP_PAUSE; menuSel = 0;
             mouseLocked = false; EnableCursor();
             P.chargingShot = -1; P.chargingServe = -1;
@@ -2043,6 +2076,12 @@ int main(void)
                     }
                 }
                 // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
+                if (score.over && winner == 0 && DEMO_ONLY && mode == MODE_MATCH) {   // 体験版のチャレンジ
+                    if (demoClean && style == STYLE_REAL && ai.level >= 1)
+                        DemoMakeCode(demoCode, sizeof(demoCode), ai.level, (int)style, ai.persona,
+                                     score.nSetsDone ? score.setScore[0][0] : score.games[0], score.nSetsDone ? score.setScore[0][1] : score.games[1], ms[0].points, ms[1].points);
+                    else demoTried = true;
+                }
                 if (score.over && winner == 0) {
                     SwingAnim *pa = &P.anim;   // 試合が終わると、自動操作でも自分の姿（P.anim）を描く
                     static const int WIN[4] = { CELEB_KNEES, CELEB_ARMS_UP, CELEB_JUMP_FIST, CELEB_RACKET_UP };
@@ -2757,6 +2796,25 @@ int main(void)
             if (score.over && phaseTimer <= 0.0f)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
                                  tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT);
+            if (DEMO_ONLY && score.over && phaseTimer <= 0.0f && (demoCode[0] || demoTried)) {   // 体験版：勝利の証明コード
+                int W = GetScreenWidth(), H = GetScreenHeight(), bw = 760, bh = demoCode[0] ? 128 : 64, bx = W / 2 - bw / 2, by = H - bh - 12;
+                DrawRectangle(bx, by, bw, bh, Fade((Color){ 20, 20, 40, 255 }, 0.92f));
+                DrawRectangleLines(bx, by, bw, bh, (Color){ 255, 215, 70, 255 });
+                if (demoCode[0]) {
+                    if (IsKeyPressed(KEY_C)) { SetClipboardText(demoCode); snprintf(toast, sizeof(toast), "%s", TR("Code copied", "コードをコピーした")); toastT = 2.0f; }
+                    const char *h1 = TR("CHALLENGE CLEARED! Your proof code:", "チャレンジ達成！ 勝利の証明コード：");
+                    DrawText(h1, bx + 20, by + 12, 20, (Color){ 255, 215, 70, 255 });
+                    DrawText(demoCode, bx + bw / 2 - MeasureText(demoCode, 34) / 2, by + 42, 34, RAYWHITE);
+                    const char *h2 = TR("Write it down (C: copy). Send it as the store page says to get the full game free.", "書き留めておく（C：コピー）。ストアページの案内のとおり送ると、製品版が無料でもらえる");
+                    int f2 = 18; while (f2 > 12 && MeasureText(h2, f2) > bw - 30) f2--;
+                    DrawText(h2, bx + bw / 2 - MeasureText(h2, f2) / 2, by + 92, f2, LIGHTGRAY);
+                } else {
+                    const char *h1 = TR("Win against AI NORMAL or PRO on REAL (whole match) to get the free full game code.", "AI「ふつう」以上・難しさ「リアル」のまま勝つと、製品版が無料になるコードがもらえる");
+                    int f1 = 20; while (f1 > 12 && MeasureText(h1, f1) > bw - 30) f1--;
+                    DrawText(h1, bx + bw / 2 - MeasureText(h1, f1) / 2, by + 22, f1, (Color){ 255, 215, 70, 255 });
+                }
+            }
+            if (score.over && phaseTimer <= 0.0f) { }   // 試合の結果は上で出した（下の 2 つは出さない）
             else if (setBreak && phaseTimer <= 0.0f)
                 DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT);
             else if (showSummary)

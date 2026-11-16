@@ -9,3 +9,6 @@ sweetspot_settings.txt
 sweetspot_sale
 sweetspot_sale.exe
 dist/
+web/out/
+web/demo_secret.txt
+web/used_codes.txt
