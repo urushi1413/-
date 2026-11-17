@@ -676,7 +676,7 @@ int main(void)
 #endif
             } else if (menuPage == 1) {
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
-                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; if (mode == MODE_MATCH) items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;   // 練習では試合の長さは出さない
             } else if (menuPage == 4) {
                 items[n++] = MI_BACK;
             } else if (menuPage == 5) {
@@ -818,7 +818,7 @@ int main(void)
             }
             if (activate && n > 0) {
                 if (it == MI_PLAY && app == APP_TITLE) {   // タイトルの「プレイ」：選手と試合を決めて、「試合を始める」で始める
-                    menuPage = 1; menuSel = MOBILE_ONLY ? 8 : 10;   // 「試合を始める」を選んだ状態で開く
+                    menuPage = 1; menuSel = MOBILE_ONLY ? 8 : (mode == MODE_MATCH ? 10 : 9);   // 「試合を始める」を選んだ状態で開く
                 } else if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
                     tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
                     mode = MODE_RALLY; battle = false; assistLevel = 2;
