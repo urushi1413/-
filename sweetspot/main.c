@@ -617,6 +617,8 @@ int main(void)
     float swatCatchT = 0.0f;      // かっ飛ばした球が観客席に届くまで（届いたら観客が捕って沸く）
     // バトルモード（試合に体力をつける）：ポイントを取られる・体にボールを当てられると体力が減り、0 になったら K.O. 負け
     bool  battle = false;
+    bool  targetChal = false;      // 的あて（60 秒）：ラリー練習の中の挑戦（相手は打ち返さない）
+    int   rallyStreak = 0, lastStreak = 0; float streakPopT = 9.0f;   // ラリー練習：このラリーで自分が入れた数、前のラリーの数、節目の演出の時間
     float hp[2] = { BATTLE_HP, BATTLE_HP }, hpShown[2] = { BATTLE_HP, BATTLE_HP };   // 体力（見せる値は少し遅れて減る）
     float koT = -1.0f;            // K.O. の文字を出している時間
     // 撮影モード（F3）：画面の文字や印を消して、カメラを映画のような位置に（宣伝の画像・動画用）。0 = なし
@@ -1414,7 +1416,7 @@ int main(void)
             if (slowMo && matchLive) matchAssisted = true;
         }
         if (DEMO_ONLY && mode == MODE_MATCH && !score.over && (style != STYLE_REAL || ai.level < 1)) demoClean = false;
-        if (IsKeyPressed(KEY_V) && !matchLive) proFeed = !proFeed;   // 球出しの設定：試合では意味がない
+        if (IsKeyPressed(KEY_V) && !matchLive && !targetChal) { proFeed = !proFeed; rallyStreak = 0; }   // 球出しの設定：試合では意味がない（的あての間は変えない）
         if (IsKeyPressed(KEY_F) && !matchLive) feedTimer = 0.0f;
         // ================= リプレイ（スロー、横からのカメラ） =================
         if (rp.on) {
@@ -1549,7 +1551,8 @@ int main(void)
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
             demoClean = true; demoCode[0] = 0; demoTried = false;
-            matchAssisted = autopilot || slowMo;   // 自動操作・スローのまま始めた試合も、記録に数えない
+            matchAssisted = autopilot || slowMo;
+            rallyStreak = 0;   // 自動操作・スローのまま始めた試合も、記録に数えない
             hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
             if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
@@ -2441,6 +2444,10 @@ int main(void)
             bounceT = 0.0f;
             if (ball.bounces == 1) {
                 if (mode == MODE_MATCH) MLogLand(&ball);
+                if (mode == MODE_RALLY && tut < 0 && !targetChal && ball.lastHitter == HITTER_PLAYER && ball.result == RESULT_IN && !ball.isServe) {   // ラリー練習：連続ラリーを数える
+                    rallyStreak++;
+                    if (rallyStreak == 10 || rallyStreak == 20 || rallyStreak == 30 || rallyStreak == 50 || rallyStreak % 100 == 0) { streakPopT = 0.0f; SfxOoh(0.4f); }
+                }
                 if (ball.lastHitter == HITTER_PLAYER && ball.result == RESULT_IN && !ball.isServe && !botControls && !slowMo && (mode != MODE_MATCH || !matchAssisted)) {
                     float old = gCareer.bestShotKmh;   // 記録：最速ショット（入った球。サーブ以外）
                     if (CareerBestF(&gCareer.bestShotKmh, P.lastKmh)) { NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Fastest shot", "最速ショット"), TextFormat("%.0f km/h", P.lastKmh)); CareerSave(); }
@@ -3115,6 +3122,18 @@ int main(void)
         // 次の球出し（ラリー練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
         if (mode == MODE_RALLY) {
             bool rallyOver = (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE));   // 相手も打ち返すので、決まるかミスするまで続く
+            static bool streakDone = false;   // このラリーの終わりを 1 回だけ数える
+            if (rallyOver && !streakDone) {
+                streakDone = true;
+                if (rallyStreak > 0) {   // 連続ラリーの記録（5 本以上で自己ベストを超えたら「新記録！」）
+                    float old = (float)gCareer.rallyBest;
+                    if (!slowMo && tut < 0 && !targetChal && CareerBestI(&gCareer.rallyBest, rallyStreak)) {
+                        if (rallyStreak >= 5) NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Rally streak", "連続ラリー"), TextFormat(TR("%d shots", "%d 本"), rallyStreak));
+                        CareerSave();
+                    }
+                    lastStreak = rallyStreak; rallyStreak = 0;
+                }
+            } else if (!rallyOver) streakDone = false;
             if (rallyOver) {
                 feedTimer -= frameDt;
                 // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
@@ -3926,7 +3945,16 @@ int main(void)
             DrawText(TextFormat(TR("%s  %.0f km/h  depth %.1f m%s", "%s  %.0f km/h  深さ %.1f m%s"), ServeNameUI(P.chargingServe), Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
                                 sd > SERVICE_Z ? TR("  LONG", "  長い") : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
         }
-        bigT += frameDt;
+        bigT += frameDt; streakPopT += frameDt;
+        if (mode == MODE_RALLY && !targetChal && tut < 0 && hudLevel <= 2 && !summaryUp) {   // ラリー練習：連続ラリーの数（上の真ん中）
+            float pop = streakPopT < 0.6f ? 1.0f + 0.4f * (1.0f - streakPopT / 0.6f) : 1.0f;
+            int rs = (int)(40 * pop), W = GetScreenWidth();
+            const char *rt = TextFormat(TR("RALLY %d", "ラリー %d"), rallyStreak);
+            DrawText(rt, W / 2 - MeasureText(rt, rs) / 2 + 2, 14 + 2, rs, Fade(BLACK, 0.6f));
+            DrawText(rt, W / 2 - MeasureText(rt, rs) / 2, 14, rs, streakPopT < 0.6f ? (Color){ 255, 215, 70, 255 } : RAYWHITE);
+            const char *rb = TextFormat(TR("Best %d   Last %d", "自己ベスト %d   前回 %d"), gCareer.rallyBest, lastStreak);
+            DrawText(rb, W / 2 - MeasureText(rb, 18) / 2, 14 + rs + 4, 18, LIGHTGRAY);
+        }
         if (mode == MODE_MATCH && bigKind && bigT < 2.4f && !score.over && !summaryUp) {   // MATCH POINT などの見出し（画面の表示が「なし」でも出す。中継でも出るものなので）
             float al = bigT < 0.25f ? bigT / 0.25f : bigT > 2.0f ? 1.0f - (bigT - 2.0f) / 0.4f : 1.0f;
             const char *bt = bigKind == 3 ? TL("MATCH POINT", "マッチポイント") : bigKind == 2 ? TL("SET POINT", "セットポイント") : TL("BREAK POINT", "ブレークポイント");
