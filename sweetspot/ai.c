@@ -795,6 +795,12 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
             ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
         }
     }
+    // ネットに触れない・すり抜けない（AI の側は z<0）。ネットの幅（ポストの外 0.5m まで）の所だけ
+    if (fabsf(ai->pos.x) < NET_POST_X + 0.5f && ai->pos.z > -NET_AI_KEEP) {
+        ai->pos.z = -NET_AI_KEEP;
+        if (ai->vel.z > 0.0f) ai->vel.z = 0.0f;
+        ai->sliding = false;
+    }
     ai->anim.sliding = ai->sliding;
     if (Vector3Length(ai->vel) > 0.3f) ai->anim.slideSide = -ai->vel.x;   // AI は +z 向きなので右＝-x
     // 打つ 0.6 秒前から構える（見た目）

@@ -1566,7 +1566,8 @@ int main(void)
             }
             P.pos = Vector3Add(P.pos, Vector3Scale(P.vel, simDt));
             P.pos.x = Clamp(P.pos.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
-            P.pos.z = Clamp(P.pos.z, 0.5f, HALF_LEN + 5.0f);
+            P.pos.z = Clamp(P.pos.z, NET_STOP_Z, HALF_LEN + 5.0f);   // ネットはすり抜けない（近づきすぎるとネットタッチ：試合なら失点）
+            if (P.pos.z <= NET_STOP_Z && P.vel.z < 0.0f) { P.vel.z = 0.0f; P.sliding = false; }
         }
 
         // 見た目のタイマー
@@ -2269,7 +2270,7 @@ int main(void)
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
             bool returnShot = retPending && !ball.isServe;   // 今飛んでいるのはリターン
-            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト 5=体に当てた（ボディショット）
+            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト 5=体に当てた（ボディショット） 6=ネットタッチ
             bool bodyDone = false;                           // 体に当たった球：下のふつうの判定はしない
             if (bodyVictim >= 0 && bodyVictim == 1 - hitter) {
                 // ボディショット（現実のルール）：生きている球が相手の体に当たったら、打った方のポイント。
@@ -2371,6 +2372,20 @@ int main(void)
                     if (ball.isServe) { pointMsg = (hitter == 0) ? TL("Your ace / unreturned serve", "自分のサービスエース") : TL("AI ace / unreturned serve", "相手のサービスエース");
                                         mst[hitter][4]++; retPending = false; }
                     else              pointMsg = (hitter == 0) ? TL("Your winner", "自分のウィナー") : TL("AI winner", "相手のウィナー");
+                }
+            }
+            if (winner < 0 && !bodyDone && phase == PH_PLAY) {
+                // ネットタッチ（現実のルール）：球が生きている間に体がネットに触れたら、触れた方の失点（AI はネットに近づかないので、ほぼ自分）
+                Vector3 youW = botControls ? Rot180(bot.pos) : P.pos;
+                int toucher = (fabsf(youW.x) < NET_POST_X && youW.z < NET_TOUCH_Z) ? 0 : (fabsf(ai.pos.x) < NET_POST_X && -ai.pos.z < NET_TOUCH_Z) ? 1 : -1;
+                if (toucher >= 0) {
+                    winner = 1 - toucher; endKind = 6;
+                    hitter = toucher;   // 記録の「終わらせた方」は触れた方
+                    retPending = false;
+                    pointMsg = toucher == 0 ? TL("Your net touch", "自分のネットタッチ") : TL("AI net touch", "相手のネットタッチ");
+                    SfxNet(3.0f, Vector3Distance(cam.position, (Vector3){ youW.x, 1.0f, 0.0f }));
+                    SfxOoh(0.5f);
+                    TraceLog(LOG_INFO, "NET TOUCH by %s", toucher == 0 ? "YOU" : "AI");
                 }
             }
             if (winner >= 0) {
@@ -2569,7 +2584,7 @@ int main(void)
                 }
                 // ---- 試合の記録 ----
                 {
-                    const char *ek = endKind == 1 ? "ace" : endKind == 2 ? "winner" : endKind == 4 ? "double_fault" : endKind == 5 ? "body_shot"
+                    const char *ek = endKind == 1 ? "ace" : endKind == 2 ? "winner" : endKind == 4 ? "double_fault" : endKind == 5 ? "body_shot" : endKind == 6 ? "net_touch"
                                    : (ball.result == RESULT_NET ? "error_net" : "error_out");
                     bool youEnd = hitter == 0;
                     ShotType et = youEnd ? (botControls ? bot.lastType : P.lastType) : ai.lastType;

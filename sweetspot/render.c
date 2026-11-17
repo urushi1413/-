@@ -1452,7 +1452,10 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     Vector3 stRoot = { stDir.x * stS * stE, 0.0f, stDir.y * stS * stE };   // 腰を出す量（体の単位）
     Vector3 pos0 = pos;                                                    // 腰を出す前の位置（後ろ足が残る所）
     pos = LocalToWorld(pos, facingNegZ, (Vector3){ MX * stRoot.x * sc, 0.0f, stRoot.z * sc });
-    (void)pos0;
+    if (stOn && fabsf(pos.x) < NET_POST_X + 0.5f) {   // 伸びても、体はネットを越えない（ネットの手前で止める。めり込んで見えないように）
+        float sd = pos0.z >= 0.0f ? 1.0f : -1.0f, lim = fminf(sd * pos0.z, NET_STOP_Z);
+        if (sd * pos.z < lim) pos.z = sd * lim;
+    }
     // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す。伸びて取るときは体について動く
     if (!gOutline) {
         rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）

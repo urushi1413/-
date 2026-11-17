@@ -281,6 +281,10 @@ extern bool gDecidingSet;   // 最終セット
 #define BODY_HIT_R         0.24f   // 円柱の半径（m）：肩幅の半分 ＋ 球の半径
 #define BODY_CROUCH_K      0.35f   // しゃがむ（Q）と、円柱の高さがこの割合だけ低くなる（ネット前で顔をよける）
 #define BODY_DODGE         0.75f   // AI が見送る球が体に向かってくるとき、横へよける距離（m）
+// ネット：選手はネットをすり抜けない。ポイント中にネットに触れたら、触れた選手の失点（現実のルール）
+#define NET_STOP_Z         0.30f   // 体の中心は、ネットからこれより近づけない（m）。伸びて取る見た目も、ここで止める
+#define NET_TOUCH_Z        0.40f   // ポイント中に体の中心がネットからこれより近づいたら、ネットに触れた（体の厚み＋足・ラケット）
+#define NET_AI_KEEP        0.45f   // AI（自動操作も）はこれより前へ出ない（ネットに触れない）
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
 // 「お静かに」：サーブの前に観客がざわつく（QUIET_TIME 秒）→ 残り QUIET_SAY 秒で主審が注意 → 残り QUIET_THANKS 秒で「ありがとう」→ サーブ
