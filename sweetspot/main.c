@@ -181,7 +181,7 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo, shake; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
@@ -190,6 +190,7 @@ static void SaveSettingsFile(const Settings *s)
     fprintf(f, "hint_real=%d\n", s->hintReal);
     fprintf(f, "feedback=%d\n", s->feedback);
     fprintf(f, "tempo=%d\n", s->tempo);
+    fprintf(f, "hit_shake=%d\n", s->shake);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -229,6 +230,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "hit_shake")) s->shake = iv;
         else if (!strcmp(key, "tempo")) s->tempo = iv;
         else if (!strcmp(key, "feedback")) s->feedback = iv;
         else if (!strcmp(key, "hint_real")) s->hintReal = iv;
@@ -458,6 +460,9 @@ static float PointImportance(const Score *sc)
     if (sc->tiebreak || (sc->points[0] >= 2 && sc->points[1] >= 2)) return 0.5f;                   // 30-30、デュース、タイブレーク
     return 0.0f;
 }
+// 芯の手応え（設定）：芯で捉えたら、ほんの一瞬時間が止まって画面が小さく揺れる（揺れが苦手な人は切れる）
+static bool gShakeOn = true;
+
 // ポイント間のテンポ（設定）：0 = 速い、1 = ふつう（初め）、2 = 中継（前と同じ長さ）。ポイントの後の間・コートチェンジ・AI のボールつき・「お静かに」に効く
 static int gTempo = 1;
 static float TempoK(void) { static const float K[3] = { 0.45f, 0.70f, 1.0f }; return K[gTempo % 3]; }
@@ -547,7 +552,8 @@ int main(void)
     Vector3 protestTo = { 0 };           // 抗議で歩いていく先（審判台の前）
 #define PROTEST_WALK 2.0f                // 審判の方へ歩く速さ（m/s）                // 自分がラケットを叩きつけた回数（2 回目からポイントペナルティ）
     float sweetT = 9.0f; Vector3 sweetPos = { 0 }; float sweetQ = 0.0f;   // いい当たりの演出（経過時間・位置・強さ）
-#define SWEET_Q 0.80f   // これ以上の当たりで演出を出す             // 試合に勝った演出の経過時間（-1 = なし）
+float hitStopT = 0.0f, shakeT = 0.0f;   // 芯の手応え：時間が止まる残り・画面の揺れの残り（秒）
+    #define SWEET_Q 0.80f   // これ以上の当たりで演出を出す             // 試合に勝った演出の経過時間（-1 = なし）
     Vector3 trail[TRAIL_N];
     int trailCount = 0;
     float trailTimer = 0.0f;
@@ -679,10 +685,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gShakeOn }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gShakeOn };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
@@ -700,6 +706,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
+            gShakeOn = s.shake != 0;
             gTempo = Clamp(s.tempo, 0, 2);
             feedbackLevel = Clamp(s.feedback, 0, 1);
             hintRealDone = s.hintReal != 0;
@@ -738,6 +745,7 @@ int main(void)
 #endif
         float frameDt = fminf(GetFrameTime(), 0.1f);
         float simDt = frameDt * (slowMo ? 0.25f : 1.0f);
+        if (hitStopT > 0.0f) { hitStopT -= frameDt; simDt = 0.0f; }   // 芯：ほんの一瞬だけ時間を止める（入力の時間は止めない）
         crowdExcite = fmaxf(crowdExcite - frameDt * 0.35f, 0.0f);
         gBattle = battle && mode == MODE_MATCH;
         gRallyPartner = mode == MODE_RALLY;
@@ -807,7 +815,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -826,7 +834,7 @@ int main(void)
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
-                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
             } else if (menuPage == 7) {   // ルール
@@ -855,7 +863,7 @@ int main(void)
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
                 items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_TEMPO; items[n++] = MI_FEED; items[n++] = MI_SOUND;
-                items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
+                items[n++] = MI_LOOK; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (selWant >= 0) { for (int q = 0; q < n; q++) if (items[q] == selWant) menuSel = q; selWant = -1; }   // 前のページへ戻ったとき、開いた項目を選ぶ
             if (menuSel >= n) menuSel = 0;
@@ -976,6 +984,7 @@ int main(void)
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
                     case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
                     case MI_TEMPO:     gTempo = (gTempo + 3 + change) % 3; break;
+                    case MI_SHAKE:     gShakeOn = !gShakeOn; break;
                     case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
                     case MI_RULE_BODY: gRuleBodyShot = !gRuleBodyShot; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
@@ -1223,6 +1232,7 @@ int main(void)
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
+                    case MI_SHAKE:     label = TR("Hit impact (pause + shake)", "芯の手応え（一瞬止まる＋揺れ）"); value = gShakeOn ? TR("ON", "あり") : TR("OFF", "なし"); break;
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
                     case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
@@ -1910,7 +1920,8 @@ int main(void)
                         plog.pendingLaunch = atan2f(ball.vel.y, sqrtf(ball.vel.x * ball.vel.x + ball.vel.z * ball.vel.z)) * RAD2DEG;
                         plog.pendingApex = ball.pos.y;
                         trailColor = SERVES[type].color;
-                        if (q >= SWEET_Q + 0.08f) { sweetT = 0.0f; sweetPos = hb.pos; sweetQ = q; trailColor = (Color){ 255, 210, 60, 255 }; }   // いい当たりのサーブ
+                        if (q >= SWEET_Q + 0.08f) { sweetT = 0.0f; sweetPos = hb.pos; sweetQ = q; trailColor = (Color){ 255, 210, 60, 255 };
+                                                    if (gShakeOn && !botControls) { float k = Clamp01((q - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; shakeT = 0.16f; } }   // いい当たりのサーブ
                         trailCount = 0;
                         serveAce = false;
                         P.sv = SV_FLIGHT;
@@ -2219,7 +2230,8 @@ int main(void)
                             plog.pendingVy = c.vyBall; plog.hasVy = !c.volley;
                         }
                         trailColor = SHOTS[type].color;
-                        if (c.quality >= SWEET_Q) { sweetT = 0.0f; sweetPos = ball.pos; sweetQ = c.quality; trailColor = (Color){ 255, 210, 60, 255 }; }   // いい当たり：金色の軌跡と光
+                        if (c.quality >= SWEET_Q) { sweetT = 0.0f; sweetPos = ball.pos; sweetQ = c.quality; trailColor = (Color){ 255, 210, 60, 255 };
+                                                    if (gShakeOn && !botControls) { float k = Clamp01((c.quality - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; shakeT = 0.16f; } }   // いい当たり：金色の軌跡と光
                         trailCount = 0;
                         stats[type][0]++;
                         scoredLast = false;
@@ -2935,7 +2947,7 @@ int main(void)
                     Vector3 d = Vector3Subtract(protestTo, ai.pos); d.y = 0.0f;
                     float dl = Vector3Length(d);
                     if (dl > 0.05f) {
-                        ai.vel = Vector3Scale(d, fminf(PROTEST_WALK, dl / simDt) / dl);
+                        ai.vel = Vector3Scale(d, fminf(PROTEST_WALK, simDt > 0.0f ? dl / simDt : 0.0f) / dl);
                         ai.pos = Vector3Add(ai.pos, Vector3Scale(ai.vel, simDt));
                         ai.anim.velX = -ai.vel.x; ai.anim.velZ = ai.vel.z;   // AI は +z 向き
                         ai.anim.runPhase += Vector3Length(ai.vel) * simDt * 2.2f;
@@ -3143,6 +3155,11 @@ int main(void)
             // 少し高く後ろから：上から見る角度があると、奥行き（ボールまでの距離）が読みやすい
             cam.position = (Vector3){ P.pos.x * 0.6f, 4.6f, P.pos.z + 7.5f };
             cam.target   = (Vector3){ P.pos.x * 0.3f, 0.3f, P.pos.z - 7.0f };
+            if (shakeT > 0.0f) {   // 芯の手応え：画面を小さく揺らす（プレイ中のカメラだけ）
+                float a = 0.05f * (shakeT / 0.16f), t = (float)GetTime();
+                cam.position.x += a * sinf(t * 91.0f); cam.position.y += a * cosf(t * 73.0f);
+                shakeT -= frameDt;
+            }
         } else if (camMode == 1) { // 真横（弾道が一番わかる）
             cam.position = (Vector3){ 22.0f, 2.5f, 0.0f };
             cam.target   = (Vector3){ 0.0f, 1.0f, 0.0f };
