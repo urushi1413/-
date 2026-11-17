@@ -170,7 +170,7 @@ Ball MakeShot(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm
     Vector3 axis = Vector3Normalize(Vector3CrossProduct((Vector3){ 0, 1, 0 }, dirFlat));
     b.spin = Vector3Scale(axis, rpm * RPM_TO_RADS);
     b.active = true;
-    b.side = (dirFlat.z < 0.0f) ? -1 : 1;
+    b.side = (from.z > 0.0f) ? -1 : 1;   // 相手のコートの向き：打った人のいる側で決める（打ち出しの向きで決めると、ネット際で横へ角度をつけた球が自分のコートに落ちてもインになる）
     b.netClearance = -99.0f;
     return b;
 }
