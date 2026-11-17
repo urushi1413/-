@@ -43,7 +43,7 @@ int CoachTips(CoachSnap a, CoachSnap b, const MatchStats ms[2], const int mst[2]
     if (n == 0) {
         int sh = d.in + d.out + d.net;
         if (won) TIP("%s", TR("Great match! Next time, try one AI level up", "いい試合！ 次は AI の強さを 1 つ上げてみよう"));
-        else     TIP(TR("So close. Shots in: %d%%", "あと少し。入った率は %d%%"), sh > 0 ? d.in * 100 / sh : 0);
+        else if (sh > 0) TIP(TR("So close. Shots in: %d%%", "あと少し。入った率は %d%%"), d.in * 100 / sh);   // 自分の打球がない（自動操作）なら言わない
     }
     #undef TIP
     return n;

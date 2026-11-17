@@ -96,7 +96,7 @@ static void HudText(const char *t, int x, int y, int fs, Color c)
     DrawText(t, x, y, fs, c);
 }
 
-static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp, int rightLimit)
+static void DrawMatchSummary(const char *title, const char *sub, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp, int rightLimit)
 {
     int W = GetScreenWidth();
     int pw = SUMMARY_W, rowH = SUMMARY_ROW_H, nRows = SUMMARY_ROWS;
@@ -116,6 +116,12 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     { int tfs = 36; while (tfs > 18 && MeasureText(title, tfs) > pw - 48 - setsW - 24) tfs--;
       DrawText(title, px + 24, py + 18 + (36 - tfs) / 2, tfs, RAYWHITE); }
     int y = py + 74;
+    if (sub && sub[0]) {   // 見出しの下の 1 行（負けたときの「惜しさ」、今日のコーチ）。行を少し詰めて、表の高さは変えない
+        DrawRectangle(px, y, pw, 30, (Color){ 50, 30, 85, 245 });
+        int sf = 20; while (sf > 12 && MeasureText(sub, sf) > pw - 40) sf--;
+        DrawText(sub, px + 20, y + 5 + (20 - sf) / 2, sf, RAYWHITE);
+        y += 32; rowH = SUMMARY_ROW_H - 3;
+    }
     DrawRectangle(px, y, pw, 40, rowB);
     {   // 名前：長い名前でも表の外にはみ出さない・真ん中にかからない大きさに（左右それぞれ幅 240 まで）
         const char *nm[2] = { YouName(), opp };
@@ -3907,11 +3913,27 @@ int main(void)
                 }
             }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
-            if (score.over && phaseTimer <= 0.0f)
-                DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
-                                 TextFormat("%s%s", tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"),
-                                            matchAssisted ? TR("    (assisted: slow / autopilot / style changed)", "    （補助を使った試合：スロー・自動操作・難しさの変更）") : ""),
+            if (score.over && phaseTimer <= 0.0f) {
+                bool lost = score.sets[1] > score.sets[0];
+                // 見出しの下の 1 行：負けたら「惜しさ」＋コーチの 1 つ目、勝ったらコーチの 1 つ目
+                static char subBuf[256]; const char *sub = NULL;
+                if (lost) {
+                    const char *close;
+                    int ls = score.nSetsDone > 0 ? score.nSetsDone - 1 : 0, a = score.setScore[ls][0], b = score.setScore[ls][1];
+                    int G = score.setGames > 0 ? score.setGames : 6, hi = a > b ? a : b, lo = a > b ? b : a;
+                    if (score.tbOnly && b - a <= 2) close = TextFormat(TR("So close! Just %d points away.", "惜しい！ あと %d ポイントだった"), b - a);
+                    else if (!score.tbOnly && (hi - lo <= 1 || (hi == G + 1 && lo >= G - 1))) close = TextFormat(TR("Last set %d-%d. So close!", "最後のセットは %d-%d。あと少し！"), a, b);
+                    else close = TextFormat(TR("Points won: %d - %d", "取ったポイント %d 対 %d"), ms[0].points, ms[1].points);
+                    snprintf(subBuf, sizeof(subBuf), "%s%s%s", close, nTips > 0 ? "   " : "", nTips > 0 ? tips[0] : "");
+                    sub = subBuf;
+                } else if (nTips > 0) sub = tips[0];
+                const char *next = tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト")
+                                 : (lost && !oppRandom) ? TR("Enter: rematch (same opponent)   R: highlights   Esc: menu", "Enter：もう一度（同じ相手）   R：ハイライト   Esc：メニュー")
+                                 : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト");
+                DrawMatchSummary(!lost ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT), sub,
+                                 TextFormat("%s%s", next, matchAssisted ? TR("    (assisted: slow / autopilot / style changed)", "    （補助を使った試合：スロー・自動操作・難しさの変更）") : ""),
                                  &score, ms, mst, OPP_SHORT, GetScreenWidth());
+            }
             if (DEMO_ONLY && score.over && phaseTimer <= 0.0f && (demoCode[0] || demoTried)) {   // 体験版：勝利の証明コード
                 // 結果の表の上の空き（表は画面の真ん中、上に約 60px 空く）に 2 行で
                 int W = GetScreenWidth(), bw = 660, bh = 54, bx = W / 2 - bw / 2, by = 4;   // 右上の点数の表示にかからない幅
@@ -3933,9 +3955,9 @@ int main(void)
             }
             if (score.over && phaseTimer <= 0.0f) { }   // 試合の結果は上で出した（下の 2 つは出さない）
             else if (setBreak && phaseTimer <= 0.0f)
-                DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT, GetScreenWidth());
+                DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), NULL, TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT, GetScreenWidth());
             else if (showSummary)
-                DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT, sx);   // 試合中：右上のスコア表は出したまま、表をその左に収める
+                DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), NULL, TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT, sx);   // 試合中：右上のスコア表は出したまま、表をその左に収める
         }
 
         // 統計（Tab）
