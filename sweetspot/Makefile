@@ -35,7 +35,7 @@ GIT_DIRTY  := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/nu
 BUILD_ID   := $(if $(GIT_ID),$(GIT_ID)$(GIT_DIRTY)  $(GIT_BRANCH),unknown)
 VERFLAGS    = -DBUILD_ID='"$(BUILD_ID)"'
 
-SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c touch.c storage.c
+SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c touch.c storage.c career.c
 
 $(TARGET): $(SRC) game.h ja_glyphs.h
 	$(CC) $(CFLAGS) $(VERFLAGS) $(SRC) -o $(TARGET) $(LIBS)

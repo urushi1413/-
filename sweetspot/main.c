@@ -41,6 +41,13 @@ static void BodyDeflect(Ball *b, bool battle)
     b->bounces = 3;
 }
 
+// 記録の「新記録！」の知らせ。前の記録が 0（初めての記録）なら出さない（最初の 1 球ごとに出るとうるさい）
+static void NewRecordToast(char *toast, int n, float *toastT, float old, const char *what, const char *value)
+{
+    if (old <= 0.0f) return;
+    snprintf(toast, n, TR("NEW RECORD!  %s  %s", "新記録！  %s  %s"), what, value); *toastT = 2.5f; SfxOoh(0.5f);
+}
+
 // 当たりの説明（かんたん）：直すことを 1 つ、言葉で。当たった球は、タイミング・距離・高さの一番悪いもの（0.75 未満なら）
 static const char *ShotFixText(const Contact *c, ShotType type)
 {
@@ -714,6 +721,7 @@ int main(void)
         }
         AtmosNewMatch();
     }
+    CareerLoad();   // 記録（通算成績・自己ベスト）
     if (MOBILE_ONLY) { setsToWin = 0; mode = MODE_MATCH; style = STYLE_CASUAL; hudLevel = 1; }   // スマホ版：タイブレークの試合、かんたん、説明の行なし
 
     // 直前のフレームの物理ステップごとのボールの状態。
@@ -1103,6 +1111,9 @@ int main(void)
                 DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
                 DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
                 if (firstRun && !MOBILE_ONLY) DrawText(TR("New here? Start with the 1-minute lesson (Enter)", "はじめての方は、まず 1 分の練習から（Enter）"), px + 4, 232, 20, YELLOW);
+                if (CareerPlayed() > 0)   // 記録：通算成績・最速サーブ・優勝
+                    DrawText(TextFormat(TR("Record %d-%d   Fastest serve %.0f km/h   Titles %d", "通算 %d 勝 %d 敗   最速サーブ %.0f km/h   優勝 %d"),
+                                        CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, firstRun ? 258 : 232, 18, (Color){ 200, 220, 255, 255 });
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
                     DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
@@ -1326,6 +1337,11 @@ int main(void)
                     DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 0 ? TR("tiebreak", "タイブレーク") : setsToWin == 4 ? TR("short set", "ショートセット") : setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
                 } else
                 DrawText(TextFormat(TR("%s  -  %s court  -  %s", "%s  -  %s コート  -  %s"), LevelNameUI(ai.level), SurfNameUI(gSurface), ModeName(mode)), bx0 + 14, by + 90, 18, LIGHTGRAY);
+                if (menuPage == 1 && !oppRandom && gCareer.vsPlayed[ai.persona % PERSONA_COUNT] > 0) {   // 記録：この相手との対戦成績
+                    int vp = gCareer.vsPlayed[ai.persona % PERSONA_COUNT], vw = gCareer.vsWon[ai.persona % PERSONA_COUNT];
+                    const char *h2h = TextFormat(TR("Head to head: %d-%d", "対戦成績：%d 勝 %d 敗"), vw, vp - vw);
+                    DrawText(h2h, bx0 + bw0 - 14 - MeasureText(h2h, 18), by + 90, 18, YELLOW);
+                }
             }
             // ---- 下の案内 ----
             const char *hint = MOBILE_ONLY ? TR("Tap: choose / change", "タップ：選ぶ・変える") : TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
@@ -1463,7 +1479,8 @@ int main(void)
         }
         if (!suggested && mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
-                { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
+                { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }
+                if (tour.champion && !autopilot && !matchAssisted) { gCareer.titles[tour.slam % SLAM_COUNT]++; CareerSave(); }   // 記録：優勝   // 結果を 1 試合ずつ見せる
                 app = APP_BRACKET; bracketWait = 0.4f; mouseLocked = false; EnableCursor();
                 continue;
             }
@@ -1532,7 +1549,7 @@ int main(void)
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
             demoClean = true; demoCode[0] = 0; demoTried = false;
-            matchAssisted = false;
+            matchAssisted = autopilot || slowMo;   // 自動操作・スローのまま始めた試合も、記録に数えない
             hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
             if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
@@ -1953,6 +1970,8 @@ int main(void)
                 bool in = ball.result == RESULT_IN;
                 if (in) {
                     svStats[serveNo - 1][1]++;
+                    if (!slowMo) { float old = gCareer.bestServeKmh;   // 記録：最速サーブ（入った球）
+                                   if (CareerBestF(&gCareer.bestServeKmh, P.lastServeKmh)) { NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Fastest serve", "最速サーブ"), TextFormat("%.0f km/h", P.lastServeKmh)); CareerSave(); } }
                     serveMsg = "IN";
                 } else if (serveNo == 1) {
                     serveMsg = (ball.result == RESULT_NET) ? TR("FAULT (net)", "フォルト（ネット）") : (serveMsg[0] ? serveMsg : TR("FAULT (out)", "フォルト（アウト）"));
@@ -2422,6 +2441,10 @@ int main(void)
             bounceT = 0.0f;
             if (ball.bounces == 1) {
                 if (mode == MODE_MATCH) MLogLand(&ball);
+                if (ball.lastHitter == HITTER_PLAYER && ball.result == RESULT_IN && !ball.isServe && !botControls && !slowMo && (mode != MODE_MATCH || !matchAssisted)) {
+                    float old = gCareer.bestShotKmh;   // 記録：最速ショット（入った球。サーブ以外）
+                    if (CareerBestF(&gCareer.bestShotKmh, P.lastKmh)) { NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Fastest shot", "最速ショット"), TextFormat("%.0f km/h", P.lastKmh)); CareerSave(); }
+                }
                 markPos = ball.firstBounce; markT = 0.0f;
                 // 際どい球（ラインから 8cm 以内）：ホークアイのような拡大図を出す
                 if (fabsf(ball.lineDist - BALL_R) < 0.08f && !ball.hitNet) { hawk = ball; hawkPending = true; }   // ラリー中は出さない（画面がふさがる）
@@ -2542,6 +2565,8 @@ int main(void)
                 if (ball.result == RESULT_IN) {
                     serveJudged = true;
                     retPending = true; retServer = hitter;
+                    if (hitter == 0 && !autopilot && !slowMo && !matchAssisted) { float old = gCareer.bestServeKmh;   // 記録：最速サーブ（入った球）
+                        if (CareerBestF(&gCareer.bestServeKmh, P.lastServeKmh)) { NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Fastest serve", "最速サーブ"), TextFormat("%.0f km/h", P.lastServeKmh)); CareerSave(); } }
                 } else if (serveNo == 1) {
                     serveNo = 2;
                     pointMsg = (ball.result == RESULT_NET) ? TL("Fault (net)", "フォルト（ネット）") : TL("Fault", "フォルト");
@@ -2634,6 +2659,12 @@ int main(void)
                     for (int k = 0; k < 2; k++) if (netFlag[k]) { ms[k].netPts++; if (winner == k) ms[k].netWon++; }
                     if (endKind == 1) { ms[hitter].aces++; ms[hitter].winners++; }
                     if (endKind == 2 || endKind == 5) ms[hitter].winners++;   // ボディショットもウィナーに数える
+                    if (!autopilot && !slowMo && !matchAssisted) {   // 記録：最長ラリー・エース・ウィナー（自分の）
+                        float old = (float)gCareer.longestRally;
+                        if (CareerBestI(&gCareer.longestRally, rallyHits)) NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Longest rally", "最長ラリー"), TextFormat(TR("%d shots", "%d 本"), rallyHits));
+                        if (winner == 0 && endKind == 1) gCareer.aces++;
+                        if (winner == 0 && endKind == 2) gCareer.winners++;
+                    }
                     if (endKind == 3 && !returnShot) {
                         // アンフォーストエラー：来た球が遅めで、飛びつきでも伸びきりでもなかったのにミス
                         const Contact *hc = (hitter == 1) ? &ai.anim.lastContact
@@ -2785,6 +2816,13 @@ int main(void)
                         DemoMakeCode(demoCode, sizeof(demoCode), ai.level, (int)style, ai.persona,
                                      score.nSetsDone ? score.setScore[0][0] : score.games[0], score.nSetsDone ? score.setScore[0][1] : score.games[1], ms[0].points, ms[1].points);
                     else demoTried = true;
+                }
+                if (score.over && mode == MODE_MATCH && !battle && !autopilot && !slowMo && !matchAssisted) {   // 記録：勝敗・相手ごと・連敗（補助を使った試合は数えない）
+                    int lv = Clamp(ai.level, 0, 2), st = style == STYLE_CASUAL ? 1 : 0, pe = ai.persona % PERSONA_COUNT;
+                    gCareer.played[lv][st]++; gCareer.vsPlayed[pe]++;
+                    if (winner == 0) { gCareer.won[lv][st]++; gCareer.vsWon[pe]++; gCareer.lossStreak = 0; }
+                    else gCareer.lossStreak++;
+                    CareerSave();
                 }
                 if (score.over && winner == 0) {
                     SwingAnim *pa = &P.anim;   // 試合が終わると、自動操作でも自分の姿（P.anim）を描く
@@ -3552,7 +3590,7 @@ int main(void)
 
         // ポイントの後：リプレイの案内
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)
-            DrawText(TR("R: replay   Enter: next", "R：リプレイ　Enter：次へ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay   Enter: next", "R：リプレイ　Enter：次へ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
+            DrawText(TR("R: replay   Enter: next", "R：リプレイ   Enter：次へ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay   Enter: next", "R：リプレイ   Enter：次へ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         else if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over && !aiTossing && ai.anim.celebT > 0.3f && hudLevel <= 2)   // AI がボールをついている間
             DrawText(TR("Enter: skip", "Enter：飛ばす"), GetScreenWidth() / 2 - MeasureText(TR("Enter: skip", "Enter：飛ばす"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
@@ -3974,6 +4012,7 @@ int main(void)
         }
     }
 
+    CareerSave();
     LogFlush(&plog, "?");
     if (plog.f) fclose(plog.f);
     SfxClose();

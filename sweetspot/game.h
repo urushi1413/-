@@ -1113,4 +1113,26 @@ void  SfxSetLineJudges(bool human);             // 線審が声でアウトを�
 void  SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay);   // 主審のスコアコール（kind 0 ポイント / 1 ゲーム / 2 セット）
 const char *SfxDir(void);
 
+// 記録（career.c → sweetspot_records.txt）：通算成績と自己ベスト。自動操作・スロー・難しさの切り替えを使った試合は数えない
+typedef struct {
+    int   played[3][2], won[3][2];                 // [AI の強さ][難しさ 0=REAL 1=CASUAL]
+    int   vsPlayed[PERSONA_COUNT], vsWon[PERSONA_COUNT];
+    int   lossStreak;                              // 続けて負けた数（3 連敗で補助ありを提案）
+    float bestServeKmh, bestShotKmh;               // 入った球だけ
+    int   longestRally;                            // 試合の 1 ポイントの最長の打数
+    int   rallyBest;                               // ラリー練習の連続ラリー
+    int   targetBest;                              // 的あて 60 秒
+    int   aces, winners;
+    int   titles[SLAM_COUNT];
+    bool  hintLower;                               // 「補助あり」の提案を出した
+} Career;
+extern Career gCareer;
+void CareerLoad(void);
+void CareerSave(void);
+bool CareerBestF(float *slot, float v);   // 新記録なら書き換えて true（演出は呼んだ側）
+bool CareerBestI(int *slot, int v);
+int  CareerPlayed(void);
+int  CareerWon(void);
+int  CareerTitles(void);
+
 #endif
