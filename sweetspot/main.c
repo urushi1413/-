@@ -644,7 +644,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -659,7 +659,7 @@ int main(void)
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
             } else if (menuPage == 1 && MOBILE_ONLY) {
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
-                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
                 items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_BACK;
             } else if (menuPage == 0) {
@@ -674,7 +674,7 @@ int main(void)
 #endif
             } else if (menuPage == 1) {
                 items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
-                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_BACK;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 4) {
                 items[n++] = MI_BACK;
             } else if (menuPage == 5) {
@@ -772,7 +772,7 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it >= MI_KEY0;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -820,6 +820,9 @@ int main(void)
                     mode = MODE_RALLY; battle = false; assistLevel = 2;
                     forceRestart = true; app = APP_PLAY;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
+                } else if (it == MI_START) {   // 選手と試合：この設定で始める（タイトルからでも、試合の途中からでも新しく）
+                    forceRestart = true; app = APP_PLAY;
+                    if (!MOBILE_ONLY) { mouseLocked = true; DisableCursor(); skipMouseDelta = true; }
                 } else if (it == MI_PLAY || it == MI_RESTART) {
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
                     app = APP_PLAY;
@@ -986,6 +989,7 @@ int main(void)
                                      value = SfxGetVolume() > 0.0f ? TextFormat("%.0f%%", SfxGetVolume() * 100.0f) : TR("OFF", "なし"); break;
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
+                    case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SLIDE:   label = TR("Slide into shots", "滑り込み"); value = gSlideOn ? TR("ON (slide when stopping while charging)", "あり（溜めながら止まると滑る）") : TR("OFF (always stop sharply)", "なし（いつもピタッと止まる）"); break;
                     case MI_TUTORIAL: label = TR("HOW TO PLAY", "はじめての人へ"); value = TR("4 short steps", "4 つの短い練習"); break;
                     case MI_LOOK:    label = TR("Look", "見た目"); value = gLook == 2 ? TR("PIXEL", "ドット風") : gLook ? TR("TOON (outlines)", "アニメ調（輪郭線）") : TR("STANDARD", "ふつう"); break;
