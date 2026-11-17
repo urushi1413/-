@@ -41,6 +41,14 @@ static void BodyDeflect(Ball *b, bool battle)
     b->bounces = 3;
 }
 
+// 左上の当たりの分析の文字：「すっきり」では箱を描かないので、黒い影を付けてコートの上でも読めるように
+static bool sHudShadow = false;
+static void HudText(const char *t, int x, int y, int fs, Color c)
+{
+    if (sHudShadow) DrawText(t, x + 1, y + 1, fs, Fade(BLACK, 0.85f * c.a / 255.0f));
+    DrawText(t, x, y, fs, c);
+}
+
 static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp, int rightLimit)
 {
     int W = GetScreenWidth();
@@ -597,7 +605,8 @@ int main(void)
 #define OPP_SHORT ((ai.persona == 0 && tour.active && oppShort[0]) ? oppShort : PERSONAS[ai.persona].shortName)
     int slamSel = 0;                     // メニューで選んだグランドスラム（4 = シーズン）
     // 画面の表示：0 FULL（全部）1 CLEAN（操作説明と状態の行を消す）2 MINIMAL（スコアと溜めのゲージだけ）3 OFF（中継のようにスコアだけ）
-    int hudLevel = 0;
+    int hudLevel = 1;   // 画面の表示：初めての人は「すっきり」から（全部は F1）
+    float lastShotT = 99.0f;   // 最後に自分が打ってからの時間（すっきりでは、打ってから 3 秒だけ当たりの分析を出す）
     // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
     int guideLevel = 0;
     static const char *HUD_NAMES_EN[4] = { "FULL", "CLEAN (no help lines)", "MINIMAL (score + gauge)", "OFF (TV style)" };
@@ -1295,6 +1304,7 @@ int main(void)
             continue;
         }
 
+        lastShotT += frameDt;
         camMode = 0;   // プレイ中は後ろからのカメラだけ（カメラの切り替えはリプレイのときに C）
         if (IsKeyPressed(KEY_F1)) { hudLevel = (hudLevel + 1) % 4; snprintf(toast, sizeof(toast), TR("SCREEN INFO: %s  (F1)", "画面の表示：%s（F1）"), HUD_NAMES[hudLevel]); toastT = 2.0f; SaveSettings(); }
         if (IsKeyPressed(KEY_F2)) { guideLevel = (guideLevel + 1) % 3; snprintf(toast, sizeof(toast), TR("GUIDES: %s  (F2)", "ガイド：%s（F2）"), GUIDE_NAMES[guideLevel]); toastT = 2.0f; SaveSettings(); }
@@ -2072,7 +2082,7 @@ int main(void)
                         P.anim.staggerSide = c.forehand ? 1.0f : -1.0f;
                     }
 
-                    P.hasLast = true;
+                    P.hasLast = true; lastShotT = 0.0f;
                     P.lastContact = c;
                     P.lastType = type;
 
@@ -3478,55 +3488,58 @@ int main(void)
         // ---- HUD ----
         // 左上のパネルは小さく薄く（相手コートの奥を隠さないように）
         int y = 20;
-        if (hudLevel <= 1 && !summaryUp) {   // 左上：当たりの分析（MINIMAL と OFF では出さない。統計の表の間も）
-        DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         bool showServeInfo = (mode == MODE_SERVE) || (playerServing && mode == MODE_MATCH);
+        // 左上：当たりの分析（MINIMAL と OFF では出さない。統計の表の間も）。
+        //   全部：今まで通り（ただし中身が 1 行だけのときは箱を描かない）。すっきり：箱なし・影つきの文字で、自分のサーブの説明と、打ってから 3 秒だけ
+        if (!summaryUp && (hudLevel == 0 || (hudLevel == 1 && (showServeInfo || (P.hasLast && lastShotT < 3.0f))))) {
+        sHudShadow = hudLevel == 1;
+        if (hudLevel == 0 && (showServeInfo || P.hasLast)) DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         if (showServeInfo) {
-            DrawText(TextFormat("%s serve  -  %s court", serveNo == 1 ? "1st" : "2nd", deuceSide ? "deuce" : "ad"),
+            HudText(TextFormat("%s serve  -  %s court", serveNo == 1 ? "1st" : "2nd", deuceSide ? "deuce" : "ad"),
                      20, y, 22, RAYWHITE); y += 30;
             if (P.lastServeKmh > 0.0f || serveMsg[0]) {
                 if (P.lastServeKmh > 0.0f) {
-                    DrawText(TextFormat("%s  %.0f km/h", ServeNameUI(P.lastServeType), P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
-                    DrawText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
+                    HudText(TextFormat("%s  %.0f km/h", ServeNameUI(P.lastServeType), P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
+                    HudText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
                              20, y, 18, QualityColor(P.lastServeQ)); y += 22;
                 } else {
-                    DrawText(ServeNameUI(P.lastServeType), 20, y, 18, SERVES[P.lastServeType].color); y += 44;
+                    HudText(ServeNameUI(P.lastServeType), 20, y, 18, SERVES[P.lastServeType].color); y += 44;
                 }
                 if (ball.netClearance > -50.0f)
-                    DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
+                    HudText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
                 y += 22;
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
-                DrawText(serveMsg, 20, y, 22, mc); y += 30;
+                HudText(serveMsg, 20, y, 22, mc); y += 30;
             } else if (MOBILE_ONLY) {   // スマホ版のサーブの説明
-                DrawText(TR("Press a button to toss, release at the top to hit.", "ボタンを押してトス、いちばん高い所で離して打つ"), 20, y, 18, RAYWHITE); y += 22;
-                DrawText(TR("Kick = safe, Flat = fast. Slide your finger to aim.", "キック＝入りやすい、フラット＝速い。押したまま指を動かすと狙い"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("Press a button to toss, release at the top to hit.", "ボタンを押してトス、いちばん高い所で離して打つ"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("Kick = safe, Flat = fast. Slide your finger to aim.", "キック＝入りやすい、フラット＝速い。押したまま指を動かすと狙い"), 20, y, 18, RAYWHITE); y += 22;
             } else {
-                DrawText(TR("A/D: position.  Mouse: left/right.  Later release = deeper", "A/D：立ち位置。マウス：左右。遅く離すほど深い"), 20, y, 18, RAYWHITE); y += 22;
-                DrawText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
-                DrawText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("A/D: position.  Mouse: left/right.  Later release = deeper", "A/D：立ち位置。マウス：左右。遅く離すほど深い"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
             }
         } else if (P.hasLast) {
             const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
-                DrawText(MissText(c->miss), 20, y, 22, RED); y += 30;
+                HudText(MissText(c->miss), 20, y, 22, RED); y += 30;
                 if (c->miss != MISS_NO_BALL) {
-                    DrawText(TextFormat(TR("Ball was %.2f m from you, %+.0f deg (side=0, front=90), %.2f m high", "球は %.2f m 先、%+.0f 度（横 0、前 90）、高さ %.2f m"),
+                    HudText(TextFormat(TR("Ball was %.2f m from you, %+.0f deg (side=0, front=90), %.2f m high", "球は %.2f m 先、%+.0f 度（横 0、前 90）、高さ %.2f m"),
                                         c->side, c->angleDeg, c->height), 20, y, 16, RAYWHITE); y += 20;
-                    DrawText(TR("White ring on the ground = ideal distance, faint ring = max reach", "地面の白い輪 = 理想の距離、薄い輪 = 届く限界"), 20, y, 16, LIGHTGRAY); y += 20;
+                    HudText(TR("White ring on the ground = ideal distance, faint ring = max reach", "地面の白い輪 = 理想の距離、薄い輪 = 届く限界"), 20, y, 16, LIGHTGRAY); y += 20;
                 }
             } else {
                 const char *stroke = c->overhead ? TR("Overhead", "頭上") : (c->forehand ? TR("Forehand", "フォア") : TR("Backhand", "バック"));
                 // バウンド後の球：上がり際（ライジング）・頂点・落ち際
                 const char *tag = c->dive ? TR(" DIVE!", " 飛びつき！") : (c->volley ? TR(" volley", " ボレー")
                                 : (c->vyBall > 0.6f ? TR(" on the rise", " 上がり際") : (c->vyBall > -0.6f ? TR(" at the top", " 頂点") : TR(" dropping", " 落ち際"))));
-                DrawText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
+                HudText(TextFormat("%s%s %s  quality %.0f%%", stroke, tag,
                                     c->overhead && P.lastType != SHOT_SLICE && P.lastType < SHOT_NORMAL_COUNT ? TR("SMASH", "スマッシュ") : ShotNameUI(P.lastType),
                                     c->quality * 100.0f), 20, y, 22, QualityColor(c->quality));
                 y += 30;
                 if (c->overhead) {
                     const char *tStr = c->height > OVERHEAD_IDEAL_H + 0.15f ? TR("early", "早い") : (c->height < OVERHEAD_IDEAL_H - 0.15f ? TR("late", "遅い") : TR("good", "良い"));
-                    DrawText(TextFormat(TR("Timing  height %.2f m (ideal %.2f) %-5s %3.0f%%", "タイミング  高さ %.2f m（理想 %.2f）%s %3.0f%%"), c->height, OVERHEAD_IDEAL_H, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
-                    DrawText(TextFormat(TR("Position under the ball         %3.0f%%", "球の下の位置  %3.0f%%"), c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    HudText(TextFormat(TR("Timing  height %.2f m (ideal %.2f) %-5s %3.0f%%", "タイミング  高さ %.2f m（理想 %.2f）%s %3.0f%%"), c->height, OVERHEAD_IDEAL_H, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    HudText(TextFormat(TR("Position under the ball         %3.0f%%", "球の下の位置  %3.0f%%"), c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
                     y += 22;
                 } else {
                     float idealAng = c->volley ? VOLLEY_ANGLE : IDEAL_ANGLE;
@@ -3534,24 +3547,24 @@ int main(void)
                     const char *dStr = c->side < IDEAL_R - 0.15f ? TR("jammed", "近すぎ") : (c->side > IDEAL_R + 0.15f ? TR("stretched", "遠すぎ") : TR("good", "良い"));
                     const char *hStr = c->height < SHOTS[P.lastType].idealHeight - 0.2f ? TR("low", "低い")
                                      : (HeightErr(&SHOTS[P.lastType], c->height, c->easeKmh) > 0.2f ? TR("high", "高い") : TR("good", "良い"));
-                    DrawText(TextFormat(TR("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", "タイミング  %+3.0f 度（%+.0f ms）%s %3.0f%%"), c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
-                    DrawText(TextFormat(TR("Distance %.2f m  %-9s %3.0f%%", "距離  %.2f m  %s %3.0f%%"), c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
-                    DrawText(TextFormat(TR("Height   %.2f m  %-9s %3.0f%%", "高さ  %.2f m  %s %3.0f%%"), c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
+                    HudText(TextFormat(TR("Timing   %+3.0f deg (%+.0f ms) %-5s %3.0f%%", "タイミング  %+3.0f 度（%+.0f ms）%s %3.0f%%"), c->angleDeg - idealAng, c->timeErrMs, tStr, c->qTiming * 100.0f), 20, y, 18, QualityColor(c->qTiming)); y += 22;
+                    HudText(TextFormat(TR("Distance %.2f m  %-9s %3.0f%%", "距離  %.2f m  %s %3.0f%%"), c->side, dStr, c->qDist * 100.0f), 20, y, 18, QualityColor(c->qDist)); y += 22;
+                    HudText(TextFormat(TR("Height   %.2f m  %-9s %3.0f%%", "高さ  %.2f m  %s %3.0f%%"), c->height, hStr, c->qHeight * 100.0f), 20, y, 18, QualityColor(c->qHeight)); y += 22;
                 }
-                DrawText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, P.lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TextFormat("%.0f km/h in -> %.0f km/h out  step %+.1f m/s", c->inKmh, P.lastKmh, c->stepIn), 20, y, 18, RAYWHITE); y += 22;
                 if (ball.lastHitter == HITTER_PLAYER) {
                     if (ball.netClearance > -50.0f)
-                        DrawText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
-                    DrawText(ResultTextUI(ball.result), 300, y, 22, ball.result == RESULT_IN ? GREEN : RED);
+                        HudText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
+                    HudText(ResultTextUI(ball.result), 300, y, 22, ball.result == RESULT_IN ? GREEN : RED);
                 }
                 y += 24;
             }
         } else {
-            DrawText(TR("Move to the ball. Hold longer = deeper. Release to swing", "球の所へ動く。長く押すほど深い。離して振る"), 20, y, 18, RAYWHITE);
+            HudText(TR("Move to the ball. Hold longer = deeper. Release to swing", "球の所へ動く。長く押すほど深い。離して振る"), 20, y, 18, RAYWHITE);
         }
         }   // 左上のパネル
         // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ（統計の表の間は出さない：表の下の案内にかかる）
-        if (hudLevel == 0 && !summaryUp) {
+        if (hudLevel == 0 && !summaryUp && tut < 0) {   // はじめての人への練習の間は出さない（右上の課題の箱で足りる）
         y = GetScreenHeight() - 98;
         if (mode == MODE_SERVE)
             DrawText(TextFormat(TR("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d", "ファースト %d/%d   セカンド %d/%d   エース %d   ダブルフォールト %d"),
