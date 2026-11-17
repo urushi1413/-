@@ -41,6 +41,13 @@ static void BodyDeflect(Ball *b, bool battle)
     b->bounces = 3;
 }
 
+// 的あて（60 秒）の的：x は右が +、z は相手のコート（負）。シングルスの中、ベースラインは z = -11.885
+static const Vector2 TARGETS[] = { { -3.0f, -10.2f }, { 3.0f, -10.2f }, { 0.0f, -10.4f },   // 深い左・右・真ん中
+                                   { -3.2f, -5.0f },  { 3.2f, -5.0f },                      // 短いアングル
+                                   { -1.8f, -8.0f },  { 1.8f, -8.0f } };                    // 中くらい
+#define N_TARGETS ((int)(sizeof(TARGETS) / sizeof(TARGETS[0])))
+static int NextTarget(int cur) { int t = GetRandomValue(0, N_TARGETS - 2); return t >= cur ? t + 1 : t; }   // 同じ所が 2 回続かない
+
 // 記録の「新記録！」の知らせ。前の記録が 0（初めての記録）なら出さない（最初の 1 球ごとに出るとうるさい）
 static void NewRecordToast(char *toast, int n, float *toastT, float old, const char *what, const char *value)
 {
@@ -618,7 +625,12 @@ int main(void)
     // バトルモード（試合に体力をつける）：ポイントを取られる・体にボールを当てられると体力が減り、0 になったら K.O. 負け
     bool  battle = false;
     bool  targetChal = false;      // 的あて（60 秒）：ラリー練習の中の挑戦（相手は打ち返さない）
-    int   rallyStreak = 0, lastStreak = 0; float streakPopT = 9.0f;   // ラリー練習：このラリーで自分が入れた数、前のラリーの数、節目の演出の時間
+    int   rallyStreak = 0, lastStreak = 0; float streakPopT = 9.0f;
+    // 的あて（60 秒）：残り時間、点、連続（20 点以上が続いた数）、内訳（100/50/20/5/0）、今の的、点を数えた球、終わった、始まった（最初の球を出した）
+    float chalT = 60.0f; int chalScore = 0, chalCombo = 0, chalHits[5] = { 0 }, chalTarget = 0, chalLastShot = -1; bool chalOver = false, chalStarted = false;
+    bool  chalBallScored = true;   // 今の球で点を数えた（数えないまま終わった球は 0 点）
+    bool  chalPrevFeed = false, chalFeedSaved = false;   // 挑戦の間は球出しを「クラブ」に固定し、終わったら戻す
+    float chalPopT = 9.0f; int chalPopPts = 0; Vector3 chalPopPos = { 0 };   // 入った点の数字を浮かせる   // ラリー練習：このラリーで自分が入れた数、前のラリーの数、節目の演出の時間
     float hp[2] = { BATTLE_HP, BATTLE_HP }, hpShown[2] = { BATTLE_HP, BATTLE_HP };   // 体力（見せる値は少し遅れて減る）
     float koT = -1.0f;            // K.O. の文字を出している時間
     // 撮影モード（F3）：画面の文字や印を消して、カメラを映画のような位置に（宣伝の画像・動画用）。0 = なし
@@ -975,9 +987,10 @@ int main(void)
                     case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。Enter で選手と試合へ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
                     /* fall through */
                     case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
-                        int idx = battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);
-                        idx = (idx + MODE_COUNT + 1 + change) % (MODE_COUNT + 1);
-                        battle = idx == 1; mode = idx <= 1 ? MODE_MATCH : (PracticeMode)(idx - 1);
+                        int idx = targetChal ? MODE_COUNT + 1 : battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);   // 最後に「的あて（60 秒）」
+                        idx = (idx + MODE_COUNT + 2 + change) % (MODE_COUNT + 2);
+                        targetChal = idx == MODE_COUNT + 1; battle = idx == 1;
+                        mode = idx <= 1 ? MODE_MATCH : targetChal ? MODE_RALLY : (PracticeMode)(idx - 1);
                         forceRestart = true;
                     } break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
@@ -1036,7 +1049,7 @@ int main(void)
                     menuPage = 1; menuSel = MOBILE_ONLY ? 8 : (mode == MODE_MATCH ? 10 : 9);   // 「試合を始める」を選んだ状態で開く
                 } else if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
                     tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
-                    mode = MODE_RALLY; battle = false; assistLevel = 2;
+                    mode = MODE_RALLY; battle = false; targetChal = false; assistLevel = 2;
                     forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_START) {   // 選手と試合：この設定で始める（タイトルからでも、試合の途中からでも新しく）
@@ -1067,7 +1080,7 @@ int main(void)
                     menuPage = 0; menuSel = 0;
                     if (suggestKind == 3 && !yes) { mode = MODE_MATCH; app = APP_TITLE; SaveSettings(); }   // 初めての試合はやめてタイトルへ
                     else {
-                        if (suggestKind == 3) { ai.level = 0; style = STYLE_CASUAL; setsToWin = 0; battle = false; mode = MODE_MATCH; }
+                        if (suggestKind == 3) { ai.level = 0; style = STYLE_CASUAL; setsToWin = 0; battle = false; targetChal = false; mode = MODE_MATCH; }
                         SaveSettings();
                         forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                         if (!MOBILE_ONLY) { mouseLocked = true; DisableCursor(); skipMouseDelta = true; }
@@ -1207,7 +1220,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
-                                     if (app == APP_TITLE && !MOBILE_ONLY) value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode);
+                                     if (app == APP_TITLE && !MOBILE_ONLY) value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode);
 
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
@@ -1218,7 +1231,7 @@ int main(void)
                     case MI_BACK:    label = TR("BACK", "戻る"); break;
                     case MI_NAME:    label = TR("Your name (Enter to edit)", "名前（Enter で入力）");
                                      value = nameEdit ? TextFormat("%s%s", gPlayerName, fmodf((float)GetTime(), 1.0f) < 0.5f ? "_" : " ") : gPlayerName; break;
-                    case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); break;
+                    case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 4 ? TR("SHORT SET (first to 4 games)", "ショートセット（4 ゲーム先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
                     case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
@@ -1460,11 +1473,12 @@ int main(void)
             continue;
         }
 
+        if (mode == MODE_RALLY && targetChal && chalOver && IsKeyPressed(KEY_ENTER)) forceRestart = true;   // 的あて：もう一度
         bool restart = forceRestart;
         forceRestart = false;
         if (IsKeyPressed(KEY_G)) {
             if (matchLive) MATCH_LOCKED_TOAST();
-            else { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
+            else { mode = (PracticeMode)((mode + 1) % MODE_COUNT); targetChal = false; restart = true; }
         }
         for (int k = 0; k < 3; k++) if ((mode == MODE_MATCH || mode == MODE_RETURN) && IsKeyPressed(KEY_ONE + k)) {   // リターン練習のサーブも AI の強さで変わる
             if (matchLive) MATCH_LOCKED_TOAST();
@@ -1552,7 +1566,11 @@ int main(void)
             youSmashes = 0; gYouRage = 0.0f;
             demoClean = true; demoCode[0] = 0; demoTried = false;
             matchAssisted = autopilot || slowMo;
-            rallyStreak = 0;   // 自動操作・スローのまま始めた試合も、記録に数えない
+            rallyStreak = 0;
+            chalT = 60.0f; chalScore = chalCombo = 0; memset(chalHits, 0, sizeof(chalHits)); chalOver = false; chalStarted = false;
+            chalTarget = GetRandomValue(0, N_TARGETS - 1); chalLastShot = -1; chalBallScored = true; chalPopT = 9.0f;
+            if (targetChal) { if (!chalFeedSaved) { chalPrevFeed = proFeed; chalFeedSaved = true; } proFeed = false; }   // 記録を比べられるように、球出しはクラブに固定
+            else if (chalFeedSaved) { proFeed = chalPrevFeed; chalFeedSaved = false; }   // 自動操作・スローのまま始めた試合も、記録に数えない
             hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
             if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
@@ -2306,7 +2324,7 @@ int main(void)
 
         // ---- AI：反応して走る ----
         if (mode == MODE_MATCH && phase == PH_PLAY) AiUpdate(&ai, &ball, simDt);
-        else if (mode == MODE_RALLY && !feedSwing && ball.active) AiUpdate(&ai, &ball, simDt);   // ラリー練習：相手も走って打ち返す
+        else if (mode == MODE_RALLY && !feedSwing && ball.active && !targetChal) AiUpdate(&ai, &ball, simDt);   // 的あてでは相手は打ち返さない   // ラリー練習：相手も走って打ち返す
 
         // ---- 物理（固定ステップ）----
         int bodyVictim = -1;   // このフレームで、打った球が体に当たった選手（0=自分 1=AI）。ボディショット
@@ -2444,6 +2462,19 @@ int main(void)
             bounceT = 0.0f;
             if (ball.bounces == 1) {
                 if (mode == MODE_MATCH) MLogLand(&ball);
+                if (targetChal && !chalOver && chalStarted && ball.lastHitter == HITTER_PLAYER && ball.shotId != chalLastShot) {   // 的あて：最初に弾んだ所と的の中心の距離で点
+                    chalLastShot = ball.shotId; chalBallScored = true;
+                    float dx = ball.firstBounce.x - TARGETS[chalTarget].x, dz = ball.firstBounce.z - TARGETS[chalTarget].y, d = sqrtf(dx * dx + dz * dz);
+                    int base = 0, slot = 4;
+                    if (ball.result == RESULT_IN) { if (d <= 0.6f) { base = 100; slot = 0; } else if (d <= 1.2f) { base = 50; slot = 1; } else if (d <= 2.0f) { base = 20; slot = 2; } else { base = 5; slot = 3; } }
+                    float mult = 1.0f + 0.25f * (chalCombo < 4 ? chalCombo : 4);
+                    int pts = (int)lroundf(base * mult);
+                    chalScore += pts; chalHits[slot]++;
+                    chalCombo = base >= 20 ? chalCombo + 1 : 0;
+                    chalPopT = 0.0f; chalPopPts = pts; chalPopPos = ball.firstBounce;
+                    if (base == 100) { snprintf(toast, sizeof(toast), "%s", TR("BULLSEYE!", "ど真ん中！")); toastT = 1.2f; SfxOoh(0.5f); }
+                    chalTarget = NextTarget(chalTarget);
+                }
                 if (mode == MODE_RALLY && tut < 0 && !targetChal && ball.lastHitter == HITTER_PLAYER && ball.result == RESULT_IN && !ball.isServe) {   // ラリー練習：連続ラリーを数える
                     rallyStreak++;
                     if (rallyStreak == 10 || rallyStreak == 20 || rallyStreak == 30 || rallyStreak == 50 || rallyStreak % 100 == 0) { streakPopT = 0.0f; SfxOoh(0.4f); }
@@ -3121,7 +3152,25 @@ int main(void)
         }
         // 次の球出し（ラリー練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
         if (mode == MODE_RALLY) {
-            bool rallyOver = (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE));   // 相手も打ち返すので、決まるかミスするまで続く
+            bool rallyOver = (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE));
+            if (targetChal)   // 的あて：自分の球は 1 回弾んだら終わり、相手の球は 2 回弾んだら終わり（相手は打ち返さない）
+                rallyOver = !ball.active || ball.hitNet || (ball.lastHitter == HITTER_PLAYER ? ball.bounces >= 1 : (ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN)));
+            if (targetChal && chalStarted && !chalOver) {
+                chalT -= frameDt;
+                static bool chalBallDone = false;
+                if (rallyOver && !chalBallDone) {   // 1 球の終わり：点を数えないまま終わった球（空振り・見送り・ネット）は 0 点、連続は 0 に
+                    chalBallDone = true;
+                    if (!chalBallScored) { chalHits[4]++; chalCombo = 0; chalBallScored = true; chalTarget = NextTarget(chalTarget); }
+                } else if (!rallyOver) chalBallDone = false;
+                if (chalT <= 0.0f) {
+                    chalT = 0.0f; feedTimer = 99.0f; feedSwing = false;   // 時間切れ：もう球を出さない。飛んでいる球は数える
+                    if (rallyOver) {
+                        chalOver = true;
+                        float old = (float)gCareer.targetBest;
+                        if (!slowMo && CareerBestI(&gCareer.targetBest, chalScore)) { NewRecordToast(toast, sizeof(toast), &toastT, old, TR("Target 60s", "的あて"), TextFormat(TR("%d pts", "%d 点"), chalScore)); CareerSave(); }
+                    }
+                }
+            }   // 相手も打ち返すので、決まるかミスするまで続く
             static bool streakDone = false;   // このラリーの終わりを 1 回だけ数える
             if (rallyOver && !streakDone) {
                 streakDone = true;
@@ -3137,7 +3186,8 @@ int main(void)
             if (rallyOver) {
                 feedTimer -= frameDt;
                 // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
-                if (!feedSwing && feedTimer <= SWING_LEAD) {
+                if (!feedSwing && feedTimer <= SWING_LEAD && !(targetChal && (chalOver || chalT <= 0.0f))) {
+                    if (targetChal) { chalStarted = true; chalBallScored = false; }   // 的あて：最初の球を出したときから時間を数える
                     feedNext = MachineFeed(proFeed);
                     feedSwing = true;
                     ai.anim = (SwingAnim){ .swingT = 0.0f };
@@ -3418,6 +3468,12 @@ int main(void)
                 }
             }
 
+            if (mode == MODE_RALLY && targetChal && !chalOver) {   // 的あての的：外から白（2.0m）・黄（1.2m）・赤（0.6m、塗り）
+                Vector3 tc = { TARGETS[chalTarget].x, 0.015f, TARGETS[chalTarget].y };
+                DrawCircle3D(tc, 2.0f, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.7f));
+                DrawCircle3D(tc, 1.2f, (Vector3){ 1, 0, 0 }, 90.0f, YELLOW);
+                DrawCylinder((Vector3){ tc.x, 0.004f, tc.z }, 0.6f, 0.6f, 0.01f, 24, Fade((Color){ 230, 50, 40, 255 }, 0.75f));
+            }
             // 狙い：相手コートに印（溜めている間は球種の色、それ以外は白）
             if (!botControls && guideLevel <= 1 && (playerServing || (mode != MODE_SERVE && (P.chargingShot >= 0 || (ball.active && ball.lastHitter == HITTER_OPP))))) {
                 // 左右はマウス、深さは押している長さ。押していない間は、浅い〜深いの範囲を線で出す
@@ -3946,6 +4002,29 @@ int main(void)
                                 sd > SERVICE_Z ? TR("  LONG", "  長い") : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
         }
         bigT += frameDt; streakPopT += frameDt;
+        if (mode == MODE_RALLY && targetChal) {   // 的あて：上に残り時間・点・倍率。入った点を浮かせる。終わったら結果
+            int W = GetScreenWidth(), H = GetScreenHeight();
+            const char *tt = TextFormat(TR("TARGET  %d.%d s   %d pts   x%.2f", "的あて  残り %d.%d 秒   %d 点   ×%.2f"), (int)chalT, (int)(chalT * 10.0f) % 10, chalScore, 1.0f + 0.25f * (chalCombo < 4 ? chalCombo : 4));
+            DrawRectangle(W / 2 - MeasureText(tt, 30) / 2 - 16, 10, MeasureText(tt, 30) + 32, 44, Fade(BLACK, 0.55f));
+            DrawText(tt, W / 2 - MeasureText(tt, 30) / 2, 18, 30, chalT < 10.0f && !chalOver ? (Color){ 255, 120, 90, 255 } : RAYWHITE);
+            if (!chalStarted) { const char *g = TR("Hit the ball onto the target. 60 seconds from the first feed.", "球を的に落とす。最初の球から 60 秒"); DrawText(g, W / 2 - MeasureText(g, 20) / 2, 62, 20, YELLOW); }
+            chalPopT += frameDt;
+            if (chalPopT < 0.8f) {
+                Vector2 sp = GetWorldToScreen((Vector3){ chalPopPos.x, 0.3f + chalPopT * 1.2f, chalPopPos.z }, cam);
+                const char *pp = TextFormat("+%d", chalPopPts);
+                DrawText(pp, (int)sp.x - MeasureText(pp, 34) / 2, (int)sp.y, 34, Fade(chalPopPts >= 100 ? (Color){ 255, 215, 70, 255 } : chalPopPts > 0 ? RAYWHITE : RED, 1.0f - chalPopT / 0.8f));
+            }
+            if (chalOver) {
+                int pw = 560, ph = 300, px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+                DrawRectangle(px, py, pw, ph, Fade((Color){ 10, 20, 40, 255 }, 0.94f)); DrawRectangleLines(px, py, pw, ph, YELLOW);
+                const char *h1 = TR("TIME UP", "終了"); DrawText(h1, W / 2 - MeasureText(h1, 40) / 2, py + 18, 40, YELLOW);
+                const char *h2 = TextFormat(TR("%d pts", "%d 点"), chalScore); DrawText(h2, W / 2 - MeasureText(h2, 56) / 2, py + 70, 56, RAYWHITE);
+                const char *h3 = TextFormat(TR("Best %d", "自己ベスト %d"), gCareer.targetBest); DrawText(h3, W / 2 - MeasureText(h3, 22) / 2, py + 136, 22, LIGHTGRAY);
+                const char *h4 = TextFormat(TR("100 x%d   50 x%d   20 x%d   5 x%d   0 x%d", "100 点 %d   50 点 %d   20 点 %d   5 点 %d   0 点 %d"), chalHits[0], chalHits[1], chalHits[2], chalHits[3], chalHits[4]);
+                DrawText(h4, W / 2 - MeasureText(h4, 20) / 2, py + 180, 20, RAYWHITE);
+                const char *h5 = TR("Enter: again   Esc: menu", "Enter：もう一度   Esc：メニュー"); DrawText(h5, W / 2 - MeasureText(h5, 20) / 2, py + ph - 44, 20, LIGHTGRAY);
+            }
+        }
         if (mode == MODE_RALLY && !targetChal && tut < 0 && hudLevel <= 2 && !summaryUp) {   // ラリー練習：連続ラリーの数（上の真ん中）
             float pop = streakPopT < 0.6f ? 1.0f + 0.4f * (1.0f - streakPopT / 0.6f) : 1.0f;
             int rs = (int)(40 * pop), W = GetScreenWidth();
