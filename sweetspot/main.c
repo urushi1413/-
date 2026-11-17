@@ -1498,6 +1498,11 @@ int main(void)
                 hintRealDone = true; SaveSettings();
                 suggestKind = 1; suggested = true;
             }
+            // 提案：リアルで 3 連敗したら、補助ありを 1 回だけ勧める（押しつけない。断ったらもう聞かない）
+            if (!suggested && !gCareer.hintLower && style == STYLE_REAL && gCareer.lossStreak >= 3 && score.sets[1] > score.sets[0]) {
+                gCareer.hintLower = true; CareerSave();
+                sugLosses = gCareer.lossStreak; suggestKind = 2; suggested = true;
+            }
             if (suggested) { app = APP_PAUSE; menuPageReq = 6; menuSel = 0; mouseLocked = false; EnableCursor(); }
         }
         if (!suggested && mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
