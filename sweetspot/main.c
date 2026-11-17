@@ -451,7 +451,8 @@ int main(void)
     int lastPtWinner = -1;        // 直前のポイントを取った方
     int tauntIdx = 0, taunts = 0, tauntGame = -1;   // あおった回数（同じゲームの中で）
     float quietT = 0.0f;          // 「お静かに」の残り時間（サーブの前：ざわつく → 主審が注意 → 静まる → サーブ）
-    bool  quietPending = false;   // 次のサーブの前に「お静かに」が起きる
+    bool  quietPending = false;
+    float inputLockT = 0.0f;      // 試合・練習に入った直後：この間は打つ・サーブの入力を受けない   // 次のサーブの前に「お静かに」が起きる
     float youSwatPrevE = 0.0f;
     float swatCatchT = 0.0f;      // かっ飛ばした球が観客席に届くまで（届いたら観客が捕って沸く）
     // バトルモード（試合に体力をつける）：ポイントを取られる・体にボールを当てられると体力が減り、0 になったら K.O. 負け
@@ -620,7 +621,7 @@ int main(void)
                         for (char *c = oppShort; *c; c++) *c = (char)toupper((unsigned char)*c);
                     }
                     ai.persona = op; gWomen = tour.women; gSurface = (SurfaceType)tour.surface; setsToWin = tour.setsToWin;
-                    mode = MODE_MATCH; forceRestart = true; app = APP_PLAY;
+                    mode = MODE_MATCH; forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else {
                     tour.active = false; app = APP_TITLE; menuSel = 0;
@@ -654,7 +655,7 @@ int main(void)
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
             int items[32], n = 0;
             if (menuPage == 0 && MOBILE_ONLY) {   // スマホ版：タイブレークの試合だけ。キーボードを使う項目はなし
-                items[n++] = MI_PLAY; items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
+                items[n++] = MI_PLAY; if (app == APP_PAUSE) items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
             } else if (menuPage == 1 && MOBILE_ONLY) {
@@ -666,7 +667,8 @@ int main(void)
                 items[n++] = MI_PLAY;
                 if (app == APP_TITLE) items[n++] = MI_TUTORIAL;
                 if (app == APP_TITLE && !DEMO_ONLY) items[n++] = MI_TOURNAMENT;   // 体験版はグランドスラムなし
-                items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
+                if (app == APP_PAUSE) items[n++] = MI_PG_MATCH;   // タイトルでは「プレイ」から選手と試合へ
+                items[n++] = MI_PG_SETTINGS;
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
 #ifndef __EMSCRIPTEN__
@@ -765,7 +767,7 @@ int main(void)
                 menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
@@ -776,7 +778,7 @@ int main(void)
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
-                    case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
+                    case MI_PLAY:   break;   // モードは「プレイ」の先の選手と試合で選ぶ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
                     /* fall through */
                     case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
                         int idx = battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);
@@ -815,17 +817,19 @@ int main(void)
                 if (it != MI_TOURNAMENT) SaveSettings();
             }
             if (activate && n > 0) {
-                if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
+                if (it == MI_PLAY && app == APP_TITLE) {   // タイトルの「プレイ」：選手と試合を決めて、「試合を始める」で始める
+                    menuPage = 1; menuSel = MOBILE_ONLY ? 8 : 10;   // 「試合を始める」を選んだ状態で開く
+                } else if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
                     tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
                     mode = MODE_RALLY; battle = false; assistLevel = 2;
-                    forceRestart = true; app = APP_PLAY;
+                    forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_START) {   // 選手と試合：この設定で始める（タイトルからでも、試合の途中からでも新しく）
-                    forceRestart = true; app = APP_PLAY;
+                    forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     if (!MOBILE_ONLY) { mouseLocked = true; DisableCursor(); skipMouseDelta = true; }
                 } else if (it == MI_PLAY || it == MI_RESTART) {
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
-                    app = APP_PLAY;
+                    app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_TOURNAMENT) {
                     menuPage = 3; menuSel = 8;   // グランドスラムの準備のページへ。「大会を始める」を選んだ状態で開く（すぐ始められるように）
@@ -845,7 +849,7 @@ int main(void)
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
                 else if (it == MI_BACK) {
                     int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
@@ -954,7 +958,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
-                                     if (app == APP_TITLE) { value = MOBILE_ONLY ? TR("TIEBREAK", "タイブレーク") : (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); }
+
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
                     case MI_SLAM_GO:    label = TR("START TOURNAMENT", "大会を始める"); break;
@@ -1379,6 +1383,11 @@ int main(void)
         }
         skipMouseDelta = false;   // メニューから戻った直後のマウスの跳びは無視した
 
+        if (inputLockT > 0.0f) {   // メニューで押したボタン・クリックで、サーブや打球が始まらないように
+            inputLockT -= frameDt;
+            in.shot = -1; in.serve = -1;
+            for (int q = 0; q < SRC_COUNT; q++) in.released[q] = false;
+        }
         // ---- 移動。加速・減速あり ----
         Vector3 move = { in.move.x, 0.0f, -in.move.y };   // 自分は -z を向いているので、前は -z
         if (botControls) {

@@ -250,6 +250,7 @@ extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつ
 #define QUIET_TIME   4.2f
 #define QUIET_SAY    3.0f
 #define QUIET_THANKS 1.0f
+#define INPUT_LOCK 0.6f   // 試合・練習に入った直後、打つ・サーブの入力を受けない時間（秒）
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）
 #define DIVE_DOWN_TIME   1.10f   // 飛びついた後、起き上がるまでの時間（秒）
