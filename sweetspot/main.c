@@ -1204,6 +1204,7 @@ int main(void)
             }
         }
         if (restart) {
+            pointMsg = ""; scoreCall[0] = 0; serveMsg = ""; rageMsgT = 0.0f; toastT = 0.0f; hawkT = 10.0f; hawkPending = false;   // 前の試合のテロップを消す
             feedTimer = 0.5f;
             ball = (Ball){ 0 };
             P.chargingShot = -1; P.chargingServe = -1;
@@ -2747,9 +2748,15 @@ int main(void)
             DrawFigure(P.pos, true, youShirt, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_RALLY || mode == MODE_RETURN) {   // 練習：球を出す相手を描く（選んでいる相手の選手）
-                ai.anim.lefty = false; ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
+                ai.anim.lefty = mode == MODE_RALLY && PERSONAS[ai.persona].lefty;   // ラリー練習は選手の利き手で（球出しの構えは右利きで計算しているので、リターン練習は右のまま）
+                ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 ApplyLook(&ai.anim, ai.persona);
                 DrawFigure(mode == MODE_RALLY ? ai.pos : feederPos, false, PersonaShirt(ai.persona), &ai.anim, mode == MODE_RALLY ? Vector3Length(ai.vel) : 0.0f);
+                if (mode == MODE_RETURN && feedSwing && feedTimer > 0.0f) {   // リターン練習：サーブのトス（手から上がって、打点で打たれる）
+                    float lead = AI_TOSS_HIT_T * 0.5f, t = Clamp(lead - feedTimer, 0.0f, lead), y0 = 1.9f;
+                    float v0 = (feedNext.pos.y - y0 + 4.9f * lead * lead) / lead;
+                    DrawSphere((Vector3){ feedNext.pos.x, y0 + v0 * t - 4.9f * t * t, feedNext.pos.z }, BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });
+                }
             }
             if (mode == MODE_MATCH)
             {
