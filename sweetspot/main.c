@@ -358,6 +358,39 @@ static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm
     DrawText(tab, W / 2 - MeasureText(tab, 16) / 2, H - 28, 16, LIGHTGRAY);
 }
 
+// ポイントの大事さ（0 / 0.5 / 1）：ブレーク・セット・マッチポイントは 1、30-30・デュース・タイブレークは 0.5。試合とリターン練習で同じ決め方
+static float PointImportance(const Score *sc)
+{
+    int sv = CurrentServer(sc), rv = 1 - sv;
+    Score t1 = *sc, t2 = *sc;
+    AwardPoint(&t1, rv); AwardPoint(&t2, sv);
+    bool rvGame = t1.games[rv] != sc->games[rv] || t1.sets[rv] != sc->sets[rv];
+    bool setPt  = t1.sets[rv] != sc->sets[rv] || t2.sets[sv] != sc->sets[sv];
+    if (rvGame || setPt) return 1.0f;                                                              // ブレーク／セット／マッチポイント
+    if (sc->tiebreak || (sc->points[0] >= 2 && sc->points[1] >= 2)) return 0.5f;                   // 30-30、デュース、タイブレーク
+    return 0.0f;
+}
+// AI がサーブの構えに入る：サーブ前の儀式（選手ごと。大事なポイントほど長い）を始めて、構えてからトスまでの時間を返す。
+//   試合とリターン練習の両方がこれを使う（サーブまでの間が同じになるように）
+static float AiServePrep(Opponent *ai, int serveNo)
+{
+    float wait = RandRange(1.2f, 2.2f);   // 構えてからトスまで（毎回同じリズムだと読めてしまう）
+    if (gBounceRit) {   // サーブ前の儀式：選手ごと（ジョコビッチは何度もつく、ナダルは肩・鼻・耳を触る…）。大事なポイントほど長い
+        const Mental *mm = &MENTAL[ai->persona % PERSONA_COUNT];
+        int nb = GetRandomValue(mm->bMin, mm->bMax) + (gPointImportance >= 0.5f ? mm->bBig : 0);
+        if (serveNo == 2 && mm->serveRit != RIT_BOUNCE) nb = GetRandomValue(1, 3);   // セカンドは短く
+        int kind = serveNo == 2 && mm->serveRit == RIT_STRINGS ? RIT_BOUNCE : mm->serveRit;
+#ifdef SALE_BUILD
+        kind = RIT_BOUNCE;   // 売る版：決まったルーティン（儀式・髪・ガット）はなく、ボールをつくだけ
+#endif
+        ai->anim.celebKind = kind; ai->anim.ritBounces = nb;
+        ai->anim.celebDur = RitualDuration(kind, nb); ai->anim.celebT = ai->anim.celebDur;
+        ai->anim.swingT = -1.0f; ai->anim.windup = 0.0f;
+        wait = ai->anim.celebDur + RandRange(0.15f, 0.45f);
+    }
+    return wait;
+}
+
 int main(void)
 {
     SetConfigFlags(FLAG_MSAA_4X_HINT | (MOBILE_ONLY ? 0 : FLAG_WINDOW_RESIZABLE));   // スマホ版は 1280×720 のまま（ページの方で縮めて出す）
@@ -402,9 +435,10 @@ int main(void)
     Vector3 feederPos = { 0.0f, 0.0f, -HALF_LEN - 0.6f };   // 練習で球を出す相手の立ち位置
     bool  feedSwing = false; Ball feedNext = { 0 };          // 球出しの振り：振り始めたら、当たる瞬間に球を出す
     // リターン練習の中のスコア（相手がずっとサーブするゲーム）。試合と同じように、ポイントのあとに主審がスコアをコールする
+    //   サーブは試合の AI のサーブと同じ処理（AiServePrep → トス → AiServe）。RET_WAIT：次のサーブを待つ（feedTimer）、RET_SERVE：構え・儀式・トス、RET_LIVE：球が生きている
     Score retScore = { .server = 1 };
-    bool  retLive = false;           // サーブが出て、まだ結果を決めていない
-    bool  retGrunt = false;          // サーブの前の声を出した（当たる音に声を重ねる）
+    enum { RET_WAIT, RET_SERVE, RET_LIVE };
+    int   retPhase = RET_WAIT;
     float winFx = -1.0f;
     int   youSmashes = 0; float youSmashPrevE = 0.0f;
     int   speedBoardKmh = 0;             // 奥の壁のスピードメーター（最後のサーブ）
@@ -1197,7 +1231,7 @@ int main(void)
         bool restart = forceRestart;
         forceRestart = false;
         if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
-        for (int k = 0; k < 3; k++) if (mode == MODE_MATCH && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }
+        for (int k = 0; k < 3; k++) if ((mode == MODE_MATCH || mode == MODE_RETURN) && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }   // リターン練習のサーブも AI の強さで変わる
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
                 { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
@@ -1228,7 +1262,8 @@ int main(void)
         if (restart) {
             pointMsg = ""; scoreCall[0] = 0; serveMsg = ""; rageMsgT = 0.0f; toastT = 0.0f; hawkT = 10.0f; hawkPending = false;   // 前の試合のテロップを消す
             feedTimer = 0.5f;
-            retScore = (Score){ .server = 1 }; retLive = false; retGrunt = false;
+            retScore = (Score){ .server = 1 }; retPhase = RET_WAIT;
+            aiTossing = false; aiTossT = 0.0f; aiUnderarm = false;
             ball = (Ball){ 0 };
             P.chargingShot = -1; P.chargingServe = -1;
             P.sv = SV_READY; serveNo = 1; svTimer = 0.0f; serveMsg = "";
@@ -1281,14 +1316,7 @@ int main(void)
             netFlag[0] = netFlag[1] = false;
             // このポイントの大事さ（勝負強い選手が強くなる）
             {
-                int sv = CurrentServer(&score), rv = 1 - sv;
-                Score t1 = score, t2 = score;
-                AwardPoint(&t1, rv); AwardPoint(&t2, sv);
-                bool rvGame = t1.games[rv] != score.games[rv] || t1.sets[rv] != score.sets[rv];
-                bool setPt  = t1.sets[rv] != score.sets[rv] || t2.sets[sv] != score.sets[sv];
-                if (rvGame || setPt)                      gPointImportance = 1.0f;   // ブレーク／セット／マッチポイント
-                else if (score.tiebreak || (score.points[0] >= 2 && score.points[1] >= 2)) gPointImportance = 0.5f;   // 30-30、デュース、タイブレーク
-                else                                      gPointImportance = 0.0f;
+                gPointImportance = PointImportance(&score);
                 gDecidingSet = score.setsToWin > 1 && score.sets[0] == score.setsToWin - 1 && score.sets[1] == score.setsToWin - 1;   // 最終セット
             }
             bool deuce = DeuceCourt(&score);
@@ -1322,21 +1350,8 @@ int main(void)
                 P.pos = HumanReturnPos(deuce, serveNo == 2);
                 ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                 ai.standPos = ai.pos;
-                phaseTimer = RandRange(1.2f, 2.2f);   // 構えてからトスまで（毎回同じリズムだと読めてしまう）
+                phaseTimer = AiServePrep(&ai, serveNo);   // サーブ前の儀式と、構えてからトスまでの間（リターン練習も同じ）
                 aiTossing = false;
-                if (gBounceRit) {   // サーブ前の儀式：選手ごと（ジョコビッチは何度もつく、ナダルは肩・鼻・耳を触る…）。大事なポイントほど長い
-                    const Mental *mm = &MENTAL[ai.persona % PERSONA_COUNT];
-                    int nb = GetRandomValue(mm->bMin, mm->bMax) + (gPointImportance >= 0.5f ? mm->bBig : 0);
-                    if (serveNo == 2 && mm->serveRit != RIT_BOUNCE) nb = GetRandomValue(1, 3);   // セカンドは短く
-                    int kind = serveNo == 2 && mm->serveRit == RIT_STRINGS ? RIT_BOUNCE : mm->serveRit;
-#ifdef SALE_BUILD
-                    kind = RIT_BOUNCE;   // 売る版：決まったルーティン（儀式・髪・ガット）はなく、ボールをつくだけ
-#endif
-                    ai.anim.celebKind = kind; ai.anim.ritBounces = nb;
-                    ai.anim.celebDur = RitualDuration(kind, nb); ai.anim.celebT = ai.anim.celebDur;
-                    ai.anim.swingT = -1.0f; ai.anim.windup = 0.0f;
-                    phaseTimer = ai.anim.celebDur + RandRange(0.15f, 0.45f);
-                }
             }
             phase = PH_SERVE;
             serveJudged = false;
@@ -1707,8 +1722,10 @@ int main(void)
             }
         }
 
-        // ---- 試合：AI のサーブ ----
-        if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over) {
+        // ---- AI のサーブ（試合と、リターン練習。同じ処理：間・トス・声・球速・回転・コース・フォルト） ----
+        bool retServing = mode == MODE_RETURN && retPhase == RET_SERVE;
+        if ((mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over) || retServing) {
+            bool svDeuce = DeuceCourt(retServing ? &retScore : &score);
             // サーブのモーション：構え → トスを上げる（ラケットを担ぐ）→ 一番上を少し過ぎたところで打つ
             if (!aiTossing) {
                 phaseTimer -= simDt;
@@ -1723,7 +1740,7 @@ int main(void)
                     aiTossing = true; aiTossT = 0.0f;
                     ai.anim.celebT = 0.0f;
                     SfxStopApplause();
-                    bool dc = DeuceCourt(&score);
+                    bool dc = svDeuce;
                     Vector3 me = { dc ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };
                     ball = (Ball){ 0 };
                     ball.pos = Rot180((Vector3){ me.x + (PERSONAS[ai.persona].lefty ? -0.25f : 0.25f), 1.9f, me.z - 0.35f });
@@ -1744,17 +1761,18 @@ int main(void)
             if (aiTossing && aiTossT >= AI_TOSS_HIT_T) {
                 aiTossing = false;
                 ai.anim.windup = 0.0f;
-                ball = aiUnderarm ? AiServeUnderarm(&ai, DeuceCourt(&score)) : AiServe(&ai, DeuceCourt(&score), serveNo == 1);
+                ball = aiUnderarm ? AiServeUnderarm(&ai, svDeuce) : AiServe(&ai, svDeuce, serveNo == 1);
+                if (retServing) ai.netRush = false;   // リターン練習：打ったら動かない（リターンの練習なので、ラリーにはしない）
                 speedBoardKmh = (int)roundf(ai.lastKmh);
                 SfxServe(ai.anim.lastContact.quality, ai.lastKmh, aiGrunt, Vector3Distance(cam.position, ball.pos));
                 P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // レシーバーのスプリットステップ
-                MLogShot(mlPoint, ++mlShot, true, "SERVE", ai.lastKmh, ai.anim.lastContact.quality, false, false, false, false, ai.pos, ball.pos.y, P.pos, Vector3Length(P.vel));
+                if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, true, "SERVE", ai.lastKmh, ai.anim.lastContact.quality, false, false, false, false, ai.pos, ball.pos.y, P.pos, Vector3Length(P.vel));
                 youMinDist = 99.0f;
                 aiGrunt = false;
                 rallyHits = 1;
                 trailColor = SERVES[serveNo == 1 ? SERVE_FLAT : SERVE_KICK].color;
                 trailCount = 0;
-                phase = PH_PLAY;
+                if (retServing) retPhase = RET_LIVE; else phase = PH_PLAY;
                 serveJudged = false;
             }
         }
@@ -2622,84 +2640,100 @@ int main(void)
             scoredLast = true;
         }
 
-        // 次の球出し（練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
-        if (mode == MODE_RALLY || mode == MODE_RETURN) {
-            bool rallyOver = mode == MODE_RALLY
-                ? (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE))   // 相手も打ち返すので、決まるかミスするまで続く
-                : (!ball.active || ball.hitNet || (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1) || (ball.lastHitter == HITTER_OPP && ball.bounces >= 2));
-            static bool retRit = false;   // リターン練習：次のサーブの前のボールつきを始めた
-            if (rallyOver && mode == MODE_RETURN && retLive) {
-                // リターン練習：ポイントが決まった。試合と同じ声を同じ間で（アウトのコールはすぐ、主審のスコアコールは 1.1 秒後）
-                retLive = false;
-                bool retIn = ball.lastHitter == HITTER_PLAYER && !ball.hitNet && ball.bounces >= 1 && ball.result == RESULT_IN;
-                int winner = retIn ? 0 : 1;   // リターンが入れば自分のポイント、入らない・返せないならサーバーのポイント
-                if (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1 && ball.result == RESULT_OUT) SfxCallOut();
-                int gamesBefore = retScore.games[0] + retScore.games[1];
-                AwardPoint(&retScore, winner);
-                bool gameEnded = retScore.games[0] + retScore.games[1] != gamesBefore;
-                if (gameEnded) snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s", "ゲーム %s"), winner == 0 ? YouName() : OPP_SHORT);
-                else           snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&retScore));
-                SfxScoreCall(&retScore, 1, winner, gameEnded ? 1 : 0, 1.1f);
-                if (gameEnded) retScore = (Score){ .server = 1 };   // 次のゲームも相手のサーブ（セットは数えない）
-                feedTimer = RETURN_POINT_GAP + RETURN_PREP;
-            }
-            if (rallyOver) {
-                float feedPrev = feedTimer;
+        // ---- リターン練習：試合の AI のサーブと同じ流れ（儀式 → トス → サーブ。フォルトならセカンド）。リターンが落ちたらポイントが決まる ----
+        //   意図して試合と違えている所：ラリーにはしない（相手は打ち返さない。リターンだけを繰り返し練習するため）、観客はいない
+        if (mode == MODE_RETURN) {
+            if (retPhase == RET_LIVE) {
+                bool srv = ball.lastHitter == HITTER_OPP;   // まだサーブのまま（自分が触っていない）
+                int res = 0;                                // 1 = フォルト、2 = レット、3 = サーバーのポイント、4 = 自分のポイント
+                if (srv) {
+                    if (ball.hitNet || (ball.bounces >= 1 && ball.result != RESULT_IN)) res = 1;
+                    else if (ball.bounces >= 1 && ball.netCord) res = 2;
+                    else if (ball.bounces >= 2 || !ball.active) res = 3;   // 返せなかった
+                } else {
+                    if (ball.hitNet) res = 3;
+                    else if (ball.bounces >= 1) res = ball.result == RESULT_IN ? 4 : 3;
+                    else if (!ball.active) res = 3;
+                }
+                if (res == 2) {   // レット：同じ番目のサーブを打ち直す
+                    pointMsg = TL("Let", "レット");
+                    retPhase = RET_WAIT; feedTimer = 1.5f;
+                } else if (res == 1 && serveNo == 1) {   // フォルト：セカンドサーブへ（試合と同じコールと間）
+                    serveNo = 2;
+                    pointMsg = ball.hitNet ? TL("Fault (net)", "フォルト（ネット）") : TL("Fault", "フォルト");
+                    if (!ball.hitNet && ball.result == RESULT_OUT) { snprintf(outMsg, sizeof(outMsg), TL("Fault (OUT %.0fcm)", "フォルト（アウト %.0fcm）"), fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = outMsg; }
+                    SfxCallFault();
+                    retPhase = RET_WAIT; feedTimer = 1.5f;
+                } else if (res != 0) {
+                    // ポイントが決まった。試合と同じ声を同じ間で（フォルト・アウトのコールはすぐ、主審のスコアコールは 1.1 秒後）
+                    static char retMsg[96];
+                    int winner = (res == 4 || res == 1) ? 0 : 1;   // リターンが入った・ダブルフォールトは自分、入らない・返せないはサーバー
+                    if (res == 1) { pointMsg = TL("Double fault", "ダブルフォールト"); SfxCallFault(); }
+                    else if (res == 4) { snprintf(retMsg, sizeof(retMsg), TL("%s return IN", "%s リターンが入った"), YouName()); pointMsg = retMsg; }
+                    else if (srv) { snprintf(retMsg, sizeof(retMsg), TL("%s ace / unreturned serve", "%sのサービスエース"), gOppName); pointMsg = retMsg; }
+                    else if (ball.result == RESULT_OUT && !ball.hitNet) {
+                        SfxCallOut();
+                        snprintf(retMsg, sizeof(retMsg), TL("%s error (OUT %.0fcm)", "%sのミス（アウト %.0fcm）"), YouName(), fmaxf(ball.outBy * 100.0f, 1.0f)); pointMsg = retMsg;
+                    } else { snprintf(retMsg, sizeof(retMsg), TL("%s error (net)", "%sのミス（ネット）"), YouName()); pointMsg = retMsg; }
+                    int gamesBefore = retScore.games[0] + retScore.games[1];
+                    AwardPoint(&retScore, winner);
+                    bool gameEnded = retScore.games[0] + retScore.games[1] != gamesBefore;
+                    if (gameEnded) snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s", "ゲーム %s"), winner == 0 ? YouName() : OPP_SHORT);
+                    else           snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&retScore));
+                    SfxScoreCall(&retScore, 1, winner, gameEnded ? 1 : 0, 1.1f);
+                    if (gameEnded) retScore = (Score){ .server = 1 };   // 次のゲームも相手のサーブ（セットは数えない）
+                    serveNo = 1;
+                    retPhase = RET_WAIT; feedTimer = RETURN_POINT_GAP;
+                }
+            } else if (retPhase == RET_WAIT) {
                 feedTimer -= frameDt;
-                if (mode == MODE_RETURN && retRit && !retGrunt) {   // サーブの前の声：試合と同じく、打つ少し前（選手ごとの長さ）に、選手ごとの割合で
-                    float gl = SfxServeLead(ai.persona);
-                    if (feedPrev > gl && feedTimer <= gl && RandRange(0.0f, 1.0f) < SfxServeChance(ai.persona))
-                        retGrunt = SfxServePreBy(ai.persona, Vector3Distance(cam.position, feederPos));
-                }
-                if (mode == MODE_RETURN && !feedSwing && !retRit && feedTimer < RETURN_PREP) {
-                    scoreCall[0] = 0;
-                    // サーブの前：相手がボールをつく（実際の試合と同じく、間を取ってから打つ）。自分はリターンの位置へ
-                    retRit = true;
-                    float d = RitualDuration(RIT_BOUNCE, 3);
+                if (feedTimer <= 0.0f) {
+                    // 次のサーブの準備（試合のポイントの準備と同じ）：相手はサーブの位置、自分はリターンの位置へ。相手は儀式（ボールつき）を始める
+                    bool deuce = DeuceCourt(&retScore);
+                    pointMsg = ""; scoreCall[0] = 0;
+                    gPointImportance = PointImportance(&retScore); gDecidingSet = false;
+                    ball = (Ball){ 0 }; trailCount = 0;
+                    ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;
+                    ai.vel = (Vector3){ 0 }; ai.downTimer = 0.0f; ai.sliding = false;
                     ai.anim = (SwingAnim){ .swingT = -1.0f };
-                    ai.anim.celebKind = RIT_BOUNCE; ai.anim.ritBounces = 3; ai.anim.celebDur = d; ai.anim.celebT = d;
-                    feederPos = (Vector3){ -0.6f + 0.25f, 0.0f, -HALF_LEN - 0.05f };
-                    feedTimer = fmaxf(feedTimer, d + AI_TOSS_HIT_T * 0.5f + 0.2f);
-                    P.pos = HumanReturnPos(true, false); P.vel = (Vector3){ 0 };
+                    ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
+                    ai.standPos = ai.pos;
+                    P.pos = HumanReturnPos(deuce, serveNo == 2); P.vel = (Vector3){ 0 };
+                    P.anim = (SwingAnim){ .swingT = -1.0f };
+                    P.downT = 0.0f; P.recoverT = 0.0f; P.sliding = false; P.chargingShot = -1;
+                    phaseTimer = AiServePrep(&ai, serveNo);
+                    aiTossing = false;
+                    retPhase = RET_SERVE;
                 }
-                if (mode == MODE_RETURN && ai.anim.celebT > 0.0f) ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
+            } else if (ai.anim.celebT > 0.0f) ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);   // RET_SERVE：儀式（ボールつき）を進める。トスとサーブは上の「AI のサーブ」で
+            if (ai.anim.swingT >= 0.0f) ai.anim.swingT = fminf(ai.anim.swingT + simDt, 5.0f);   // サーブの振りを進める
+        }
+        // 次の球出し（ラリー練習）：打球が落ちた / 打ち損ねて2バウンド / 止まった
+        if (mode == MODE_RALLY) {
+            bool rallyOver = (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE));   // 相手も打ち返すので、決まるかミスするまで続く
+            if (rallyOver) {
+                feedTimer -= frameDt;
                 // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
-                float lead = mode == MODE_RETURN ? AI_TOSS_HIT_T * 0.5f : SWING_LEAD;
-                if (!feedSwing && feedTimer <= lead) {
-                    feedNext = mode == MODE_RETURN ? MachineServe() : MachineFeed(proFeed);
+                if (!feedSwing && feedTimer <= SWING_LEAD) {
+                    feedNext = MachineFeed(proFeed);
                     feedSwing = true;
                     ai.anim = (SwingAnim){ .swingT = 0.0f };
-                    if (mode == MODE_RETURN) {   // サーブ：頭上で打つ（打点の右後ろに立つ）
-                        feederPos = (Vector3){ feedNext.pos.x + 0.25f, 0.0f, feedNext.pos.z - 0.35f };
-                        ai.anim.lastContact = (Contact){ .overhead = true, .forehand = true, .quality = 0.9f };
-                        ai.anim.contactLocal = (Vector3){ 0.25f, feedNext.pos.y, 0.35f };
-                    } else {                     // ストローク：フォアで打つ（球は体の右＝世界の -x 側）
-                        feederPos = (Vector3){ feedNext.pos.x + 0.70f, 0.0f, feedNext.pos.z - 0.30f };
-                        ai.anim.lastContact = (Contact){ .forehand = true, .quality = 0.8f, .height = feedNext.pos.y };
-                        ai.anim.contactLocal = (Vector3){ 0.70f, feedNext.pos.y, 0.30f };
-                        ai.anim.slice = feedNext.spin.x < 0.0f;
-                    }
-                    ai.anim.swingT = fmaxf(0.0f, (mode == MODE_RETURN ? 0.0f : SWING_LEAD) - feedTimer);
+                    // ストローク：フォアで打つ（球は体の右＝世界の -x 側）
+                    feederPos = (Vector3){ feedNext.pos.x + 0.70f, 0.0f, feedNext.pos.z - 0.30f };
+                    ai.anim.lastContact = (Contact){ .forehand = true, .quality = 0.8f, .height = feedNext.pos.y };
+                    ai.anim.contactLocal = (Vector3){ 0.70f, feedNext.pos.y, 0.30f };
+                    ai.anim.slice = feedNext.spin.x < 0.0f;
+                    ai.anim.swingT = fmaxf(0.0f, SWING_LEAD - feedTimer);
                     ai.pos = feederPos;
                 }
                 if (feedTimer <= 0.0f) {
-                    if (mode == MODE_RETURN) {
-                        ball = feedSwing ? feedNext : MachineServe();
-                        retRit = false;
-                        retLive = true;
-                        // 当たる音（声を出していれば声も）。試合の AI のサーブと同じ
-                        ai.lastKmh = Vector3Length(ball.vel) * 3.6f; ai.lastServe = true;
-                        SfxServe(0.9f, ai.lastKmh, retGrunt, Vector3Distance(cam.position, ball.pos));
-                        retGrunt = false;
-                    } else {
-                        ball = feedSwing ? feedNext : MachineFeed(proFeed);
-                        ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;   // 相手：次の球に備える
-                        ai.downTimer = 0.0f; ai.vel = (Vector3){ 0 };
-                    }
+                    ball = feedSwing ? feedNext : MachineFeed(proFeed);
+                    ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;   // 相手：次の球に備える
+                    ai.downTimer = 0.0f; ai.vel = (Vector3){ 0 };
                     feedSwing = false;
                     trailColor = Fade(LIGHTGRAY, 0.6f);
                     trailCount = 0;
-                    feedTimer = mode == MODE_RETURN ? RETURN_WAIT : 1.2f;   // リターン練習は、返した後に間を取る
+                    feedTimer = 1.2f;
                     P.anim.splitT = SPLIT_TIME;
                 }
             }
@@ -2822,19 +2856,14 @@ int main(void)
             // サーブの構え（トスの前）：横向きに立ち、左手にボール
             P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY && P.anim.celebT <= 0.0f;   // ボールをついている間は構えない
             bot.anim.serveStance = bot.anim.holdBall = false;
-            ai.anim.serveStance = ai.anim.holdBall = mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !aiTossing && !score.over && ai.anim.celebT <= 0.0f;
+            ai.anim.serveStance = ai.anim.holdBall = ((mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over) || (mode == MODE_RETURN && retPhase == RET_SERVE)) && !aiTossing && ai.anim.celebT <= 0.0f;
             DrawFigure(P.pos, true, youShirt, botControls ? &bot.anim : &P.anim,
                        Vector3Length(P.vel));
             if (mode == MODE_RALLY || mode == MODE_RETURN) {   // 練習：球を出す相手を描く（選んでいる相手の選手）
-                ai.anim.lefty = mode == MODE_RALLY && PERSONAS[ai.persona].lefty;   // ラリー練習は選手の利き手で（球出しの構えは右利きで計算しているので、リターン練習は右のまま）
+                ai.anim.lefty = PERSONAS[ai.persona].lefty;   // 選手の利き手で（リターン練習のサーブも、試合と同じく左利きは左で打つ）
                 ai.anim.oneHanded = PERSONAS[ai.persona].oneHanded;
                 ApplyLook(&ai.anim, ai.persona);
-                DrawFigure(mode == MODE_RALLY ? ai.pos : feederPos, false, PersonaShirt(ai.persona), &ai.anim, mode == MODE_RALLY ? Vector3Length(ai.vel) : 0.0f);
-                if (mode == MODE_RETURN && feedSwing && feedTimer > 0.0f) {   // リターン練習：サーブのトス（手から上がって、打点で打たれる）
-                    float lead = AI_TOSS_HIT_T * 0.5f, t = Clamp(lead - feedTimer, 0.0f, lead), y0 = 1.9f;
-                    float v0 = (feedNext.pos.y - y0 + 4.9f * lead * lead) / lead;
-                    DrawSphere((Vector3){ feedNext.pos.x, y0 + v0 * t - 4.9f * t * t, feedNext.pos.z }, BALL_R * 1.2f, (Color){ 220, 255, 60, 255 });
-                }
+                DrawFigure(ai.pos, false, PersonaShirt(ai.persona), &ai.anim, mode == MODE_RALLY ? Vector3Length(ai.vel) : 0.0f);   // リターン練習のトスは本物の球（試合と同じ）
             }
             if (mode == MODE_MATCH)
             {
@@ -3268,16 +3297,34 @@ int main(void)
           DrawText(cl, 20, y, cfs, LIGHTGRAY); } y += 18;
         if (mode == MODE_MATCH)
             DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
+        else if (mode == MODE_RETURN)   // リターン練習のサーブは試合の AI と同じ（速さ・コース・フォルトは AI の強さで変わる）
+            DrawText(TextFormat(TR("G mode: %s   1/2/3 AI level: %s   F next serve  T slow", "G モード：%s   1/2/3 AI の強さ：%s   F 次のサーブ  T スロー"), ModeName(mode), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else
             DrawText(TextFormat(TR("G mode: %s   V feed: %s   F feed  T slow", "G モード：%s   V 球出し：%s   F 球出し  T スロー"), ModeName(mode), proFeed ? TR("PRO", "プロ") : TR("CLUB", "クラブ")),
                      20, y, 16, LIGHTGRAY);
         }
 
-        if (mode == MODE_RETURN && scoreCall[0] && hudLevel <= 2) {   // リターン練習：主審がコールするスコア（試合と同じ場所に）
-            const char *call = TextToUpper(scoreCall);
-            int w = MeasureText(call, 48);
-            DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
-            DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
+        if (mode == MODE_RETURN && hudLevel <= 2) {   // リターン練習：ポイントの結果と、主審がコールするスコア（試合と同じ場所に）
+            if (pointMsg[0]) {
+                int w = MeasureText(pointMsg, 34);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));
+                DrawText(pointMsg, GetScreenWidth() / 2 - w / 2, 158, 34, YELLOW);
+            }
+            if (scoreCall[0]) {
+                const char *call = TextToUpper(scoreCall);
+                int w = MeasureText(call, 48);
+                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
+                DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
+            }
+            if (hudLevel <= 1) {   // 右上：サーバー・何本目か・ゲームの中のポイント・最後のサーブの速さ
+                int sbw = 300, sx = GetScreenWidth() - sbw - 10, sy = 10;
+                DrawRectangle(sx, sy, sbw, 58, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
+                DrawCircle(sx + 16, sy + 19, 6, YELLOW);
+                DrawText(TextFormat("%s  %s", OPP_SHORT, serveNo == 2 ? "2nd" : "1st"), sx + 30, sy + 8, 20, (Color){ 140, 170, 255, 255 });
+                const char *pl = TextFormat("%s - %s", PointLabel(&retScore, 1), PointLabel(&retScore, 0));
+                DrawText(pl, sx + sbw - 12 - MeasureText(pl, 22), sy + 7, 22, YELLOW);
+                if (ai.lastKmh > 0.0f) DrawText(TextFormat(TR("AI last: %s %.0f km/h", "相手の最後の球：%s %.0f km/h"), TR("SERVE", "サーブ"), ai.lastKmh), sx + 8, sy + 36, 16, LIGHTGRAY);
+            }
         }
         // スコア（試合）
         if (mode == MODE_MATCH) {

@@ -110,28 +110,6 @@ Ball HitServe(Vector3 contact, Vector3 target, ServeType type, float charge, flo
     return b;
 }
 
-// サーブマシン：相手のベースラインの高さ 2.8m から、自分のデュースコートのサービスボックスへ
-// 7 割がファースト（フラットかスライスで T かワイド）、3 割がセカンド（キックでどこでも）
-Ball MachineServe(void)
-{
-    Vector3 from = { -0.6f, 2.8f, -HALF_LEN + 0.3f };
-    const float courseX[3] = { 0.35f, 3.75f, 2.0f };   // センター / ワイド / ボディ
-    bool second = rand() % 10 < 3;
-    ServeType t = second ? SERVE_KICK : (rand() % 2 ? SERVE_FLAT : SERVE_SLICE);
-    Vector3 target = { courseX[rand() % (second ? 3 : 2)], 0.0f, RandRange(5.3f, 6.0f) };
-    float charge = second ? RandRange(0.4f, 0.8f) : RandRange(0.7f, 1.0f);
-    const ServeSpec *sp = &SERVES[t];
-    float kmh = Lerp(sp->minKmh, sp->maxKmh, charge);
-    Vector3 spin = { Lerp(sp->top0, sp->top1, charge), Lerp(sp->side0, sp->side1, charge), Lerp(sp->gyro0, sp->gyro1, charge) };
-    // マシンは相手側（+z 向き）に打つので、スライスの曲がる向きもマシンから見て左
-    Vector3 dir; float pitch;
-    SolveServe(from, target, kmh / 3.6f, spin, &dir, &pitch);
-    Ball b = MakeServeBall(from, dir, kmh / 3.6f, pitch, spin);
-    b.boxX0 = 0.0f; b.boxX1 = SINGLES_W * 0.5f;
-    b.lastHitter = HITTER_OPP;
-    return b;
-}
-
 // 球出しマシン：相手のベースラインから、ランダムな場所・球種で出す
 // pro=false: 打ち出し 70〜105km/h くらい（スクール）、pro=true: 105〜140km/h（プロのラリー）
 Ball MachineFeed(bool pro)
