@@ -3185,7 +3185,12 @@ int main(void)
                     DrawCircle(sx + 16, ry + 13, 6, YELLOW);
                     if (serveNo == 2) DrawText("2nd", sx + 26, ry + 6, 14, YELLOW);
                 }
-                DrawText(k == 0 ? YouName() : OPP_SHORT, sx + 58, ry + 3 + (k == 1 && strlen(OPP_SHORT) > 8 ? 3 : 0), k == 0 ? 24 : (strlen(OPP_SHORT) > 8 ? 16 : 20), nameC);   // 長い名前は小さく
+                {   // 名前：終わったセットの列（またはゲーム数）の手前に収まる大きさに
+                    const char *nm = k == 0 ? YouName() : OPP_SHORT;
+                    int room = 170 - 58 - 8, nfs = k == 0 ? 24 : 20;
+                    while (nfs > 12 && MeasureText(nm, nfs) > room) nfs--;
+                    DrawText(nm, sx + 58, ry + 3 + (24 - nfs) / 2, nfs, nameC);
+                }
                 for (int i = 0; i < score.nSetsDone; i++) {
                     bool won = score.setScore[i][k] > score.setScore[i][1 - k];
                     DrawText(TextFormat("%d", score.setScore[i][k]), sx + 170 + i * 30, ry + 3, 24, won ? RAYWHITE : GRAY);
