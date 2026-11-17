@@ -626,6 +626,7 @@ int main(void)
     bool  battle = false;
     bool  targetChal = false;      // 的あて（60 秒）：ラリー練習の中の挑戦（相手は打ち返さない）
     int   rallyStreak = 0, lastStreak = 0; float streakPopT = 9.0f;
+    CoachSnap coachStart = { 0 }; int nTips = 0; const char *tips[3] = { 0 };   // 今日のコーチ：試合の始めのプレイ記録、試合の後の言葉
     // 的あて（60 秒）：残り時間、点、連続（20 点以上が続いた数）、内訳（100/50/20/5/0）、今の的、点を数えた球、終わった、始まった（最初の球を出した）
     float chalT = 60.0f; int chalScore = 0, chalCombo = 0, chalHits[5] = { 0 }, chalTarget = 0, chalLastShot = -1; bool chalOver = false, chalStarted = false;
     bool  chalBallScored = true;   // 今の球で点を数えた（数えないまま終わった球は 0 点）
@@ -1567,6 +1568,7 @@ int main(void)
             demoClean = true; demoCode[0] = 0; demoTried = false;
             matchAssisted = autopilot || slowMo;
             rallyStreak = 0;
+            coachStart = CoachTake(&plog); nTips = 0;   // 今日のコーチ：試合の始めの値
             chalT = 60.0f; chalScore = chalCombo = 0; memset(chalHits, 0, sizeof(chalHits)); chalOver = false; chalStarted = false;
             chalTarget = GetRandomValue(0, N_TARGETS - 1); chalLastShot = -1; chalBallScored = true; chalPopT = 9.0f;
             if (targetChal) { if (!chalFeedSaved) { chalPrevFeed = proFeed; chalFeedSaved = true; } proFeed = false; }   // 記録を比べられるように、球出しはクラブに固定
@@ -2862,6 +2864,7 @@ int main(void)
                     else gCareer.lossStreak++;
                     CareerSave();
                 }
+                if (score.over) nTips = CoachTips(coachStart, CoachTake(&plog), ms, mst, winner == 0, tips);   // 今日のコーチ
                 if (score.over && winner == 0) {
                     SwingAnim *pa = &P.anim;   // 試合が終わると、自動操作でも自分の姿（P.anim）を描く
                     static const int WIN[4] = { CELEB_KNEES, CELEB_ARMS_UP, CELEB_JUMP_FIST, CELEB_RACKET_UP };
@@ -3937,11 +3940,17 @@ int main(void)
 
         // 統計（Tab）
         if (showStats) {
-            int bx = 240, by = 100, bw = 800, bh = 540;
+            bool coachOn = nTips > 0 && mode == MODE_MATCH && score.over;
+            int bx = 240, by = coachOn ? 40 : 100, bw = 800, bh = coachOn ? 640 : 540;   // 今日のコーチの分だけ上に伸ばす
             DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.85f));
             int ty = by + 16;
             #define LINE(...) do { DrawText(TextFormat(__VA_ARGS__), bx + 20, ty, 20, RAYWHITE); ty += 26; } while (0)
             DrawText(PN(TR("SESSION STATS  (Tab to close)   saved to playlog.csv", "今回の成績（Tab で閉じる）  playlog.csv に保存"), TR("SESSION STATS  (Tab to close)", "今回の成績（Tab で閉じる）")), bx + 20, ty, 22, YELLOW); ty += 36;
+            if (coachOn) {   // 今日のコーチ（試合の後）：一番上に 3 つまで
+                DrawText(TR("TODAY'S COACH", "今日のコーチ"), bx + 20, ty, 20, YELLOW); ty += 26;
+                for (int k = 0; k < nTips; k++) { int f = 18; while (f > 12 && MeasureText(tips[k], f) > bw - 60) f--; DrawText(TextFormat("%d. %s", k + 1, tips[k]), bx + 30, ty, f, (Color){ 255, 230, 150, 255 }); ty += 24; }
+                ty += 8;
+            }
             int sw = plog.swings > 0 ? plog.swings : 1;
             LINE(TR("Swings %d:  hit %d (%d%%)   whiff %d (%d%%)", "振った %d：当たった %d（%d%%）  空振り %d（%d%%）"), plog.swings, plog.hits, plog.hits * 100 / sw, plog.whiffs, plog.whiffs * 100 / sw);
             LINE(TR("  whiffs: early %d  late %d  far %d  high %d  low %d", "  空振り：早い %d  遅い %d  遠い %d  高い %d  低い %d"),

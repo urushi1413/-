@@ -1135,4 +1135,9 @@ int  CareerPlayed(void);
 int  CareerWon(void);
 int  CareerTitles(void);
 
+// 今日のコーチ（coach.c）：試合の後に、次に直すことを 1〜3 個
+typedef struct { int swings, hits, whiffs, early, late, onTime, pos, timing, noSwing, in, out, net; } CoachSnap;
+CoachSnap CoachTake(const PlayLog *L);   // 今の合計を写す
+int CoachTips(CoachSnap start, CoachSnap now, const MatchStats ms[2], const int mst[2][6], bool won, const char *out[3]);   // 戻り値は数。out は TR 済みの文
+
 #endif
