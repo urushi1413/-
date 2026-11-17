@@ -90,7 +90,8 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
         y += rowH;
     }
     DrawRectangle(px, y, pw, 40, Fade(BLACK, 0.75f));
-    DrawText(footer, px + pw / 2 - MeasureText(footer, 20) / 2, y + 10, 20, LIGHTGRAY);
+    { int ff = 20; while (ff > 12 && MeasureText(footer, ff) > pw - 20) ff--;   // 長い案内は小さくして表の幅に収める
+      DrawText(footer, px + pw / 2 - MeasureText(footer, ff) / 2, y + 10, ff, LIGHTGRAY); }
 }
 
 // 体勢が崩れて取った球か（ラケットでぎりぎり取って地面に当たる音を鳴らす）：飛びついた、または手が届くぎりぎり。
@@ -505,6 +506,7 @@ int main(void)
     float summaryT = 0.0f;
     // 体験版：この試合がずっと「AI ふつう以上・リアル」だったか（途中で変えたら証明コードは出さない）と、勝って出たコード
     bool demoClean = true;
+    bool matchAssisted = false;   // この試合で自動操作・スロー・難しさの切り替えを使った（記録に数えない）
     char demoCode[40] = "";
     bool demoTried = false;   // 勝ったが条件に足りなかった
     bool demoCounted = false; // この試合を、遊んだ試合の数に入れた
@@ -870,7 +872,9 @@ int main(void)
                         forceRestart = true;
                     } break;
                     case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin + 4 + change) % 4; forceRestart = true; } break;   // タイブレーク → 1 セット → 3 → 5。体験版は 1 セットだけ
-                    case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
+                    case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT);
+                                    if (app == APP_PAUSE && mode == MODE_MATCH && !score.over) matchAssisted = true;   // 試合の途中で難しさを変えた
+                                    break;
                     case MI_COURT: {   // コート：ハード → クレー → 芝 → ランダム
                         int k = courtRandom ? SURF_COUNT : (int)gSurface;
                         k = (k + SURF_COUNT + 1 + change) % (SURF_COUNT + 1);
@@ -1200,10 +1204,16 @@ int main(void)
             }
             toastT = 3.0f;
         }
-        if (IsKeyPressed(KEY_T) && !DEMO_ONLY) slowMo = !slowMo;   // 体験版はスローなし（チャレンジのため）
+        // 試合の途中は、1 キーでモード・強さ・難しさを変えない（G で試合が消える事故があった）。変えるのは Esc のメニューから
+        bool matchLive = mode == MODE_MATCH && !score.over && tut < 0;
+        #define MATCH_LOCKED_TOAST() do { snprintf(toast, sizeof(toast), "%s", TR("Can't change during a match (Esc > Players & match)", "試合中は変えられません（Esc → 選手と試合）")); toastT = 2.0f; } while (0)
+        if (IsKeyPressed(KEY_T) && !DEMO_ONLY && !(SALE_ONLY && matchLive)) {   // 体験版はスローなし（チャレンジのため）。売る版は試合中もなし
+            slowMo = !slowMo;
+            if (slowMo && matchLive) matchAssisted = true;
+        }
         if (DEMO_ONLY && mode == MODE_MATCH && !score.over && (style != STYLE_REAL || ai.level < 1)) demoClean = false;
-        if (IsKeyPressed(KEY_V)) proFeed = !proFeed;
-        if (IsKeyPressed(KEY_F)) feedTimer = 0.0f;
+        if (IsKeyPressed(KEY_V) && !matchLive) proFeed = !proFeed;   // 球出しの設定：試合では意味がない
+        if (IsKeyPressed(KEY_F) && !matchLive) feedTimer = 0.0f;
         // ================= リプレイ（スロー、横からのカメラ） =================
         if (rp.on) {
             int n = 0; const char *cap = "REPLAY";
@@ -1248,8 +1258,14 @@ int main(void)
 
         bool restart = forceRestart;
         forceRestart = false;
-        if (IsKeyPressed(KEY_G)) { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
-        for (int k = 0; k < 3; k++) if ((mode == MODE_MATCH || mode == MODE_RETURN) && IsKeyPressed(KEY_ONE + k)) { ai.level = k; restart = true; }   // リターン練習のサーブも AI の強さで変わる
+        if (IsKeyPressed(KEY_G)) {
+            if (matchLive) MATCH_LOCKED_TOAST();
+            else { mode = (PracticeMode)((mode + 1) % MODE_COUNT); restart = true; }
+        }
+        for (int k = 0; k < 3; k++) if ((mode == MODE_MATCH || mode == MODE_RETURN) && IsKeyPressed(KEY_ONE + k)) {   // リターン練習のサーブも AI の強さで変わる
+            if (matchLive) MATCH_LOCKED_TOAST();
+            else { ai.level = k; restart = true; }
+        }
         if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
                 { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
@@ -1258,7 +1274,10 @@ int main(void)
             }
             restart = true;
         }
-        if (IsKeyPressed(KEY_B) && !DEMO_ONLY) autopilot = !autopilot;   // 体験版は自動操作なし
+        if (IsKeyPressed(KEY_B) && !DEMO_ONLY && !(SALE_ONLY && tour.active && matchLive)) {   // 体験版は自動操作なし。売る版の大会の試合中もなし
+            autopilot = !autopilot;
+            if (autopilot && matchLive) matchAssisted = true;
+        }
         if (IsKeyPressed(KEY_TAB)) {
             // Tab：セッションの統計 → （試合中なら）試合の統計 → 閉じる
             if (!showStats && !showSummary) showStats = true;
@@ -1266,7 +1285,11 @@ int main(void)
             else { showStats = false; showSummary = false; }
         }
         if (IsKeyPressed(KEY_H)) assistLevel = (assistLevel + 2) % 3;
-        if (IsKeyPressed(KEY_N)) style = (PlayStyle)((style + 1) % STYLE_COUNT);
+        if (IsKeyPressed(KEY_N)) {
+            if (matchLive) MATCH_LOCKED_TOAST();
+            else style = (PlayStyle)((style + 1) % STYLE_COUNT);
+        }
+        #undef MATCH_LOCKED_TOAST
         plog.assist = assistLevel;
         plog.style = style;
         bot.level = ai.level;
@@ -1312,6 +1335,7 @@ int main(void)
             winFx = -1.0f;
             youSmashes = 0; gYouRage = 0.0f;
             demoClean = true; demoCode[0] = 0; demoTried = false;
+            matchAssisted = false;
             hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
             if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
@@ -3321,7 +3345,9 @@ int main(void)
         y += 20;
         { const char *cl = ControlsLine(); int cfs = 16; while (cfs > 12 && MeasureText(cl, cfs) > GetScreenWidth() - 30) cfs--;   // 画面の幅に収める
           DrawText(cl, 20, y, cfs, LIGHTGRAY); } y += 18;
-        if (mode == MODE_MATCH)
+        if (mode == MODE_MATCH && !score.over)   // 試合の途中は 1 キーで設定を変えない（Esc のメニューから）
+            DrawText(TR("Esc: menu", "Esc：メニュー"), 20, y, 16, LIGHTGRAY);
+        else if (mode == MODE_MATCH)
             DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else if (mode == MODE_RETURN)   // リターン練習のサーブは試合の AI と同じ（速さ・コース・フォルトは AI の強さで変わる）
             DrawText(TextFormat(TR("G mode: %s   1/2/3 AI level: %s   F next serve  T slow", "G モード：%s   1/2/3 AI の強さ：%s   F 次のサーブ  T スロー"), ModeName(mode), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
@@ -3442,7 +3468,9 @@ int main(void)
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
-                                 tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT, GetScreenWidth());
+                                 TextFormat("%s%s", tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"),
+                                            matchAssisted ? TR("    (assisted: slow / autopilot / style changed)", "    （補助を使った試合：スロー・自動操作・難しさの変更）") : ""),
+                                 &score, ms, mst, OPP_SHORT, GetScreenWidth());
             if (DEMO_ONLY && score.over && phaseTimer <= 0.0f && (demoCode[0] || demoTried)) {   // 体験版：勝利の証明コード
                 // 結果の表の上の空き（表は画面の真ん中、上に約 60px 空く）に 2 行で
                 int W = GetScreenWidth(), bw = 660, bh = 54, bx = W / 2 - bw / 2, by = 4;   // 右上の点数の表示にかからない幅
