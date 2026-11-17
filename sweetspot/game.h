@@ -290,7 +290,14 @@ extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつ
 // 踏み込み（ランジ）：打点に入れていない球へ、体ごと倒れ込んで届かせる。止まっていても使える
 #define STRETCH_VOLLEY   0.80f   // ボレーで届く範囲の上乗せ（m）。ネット前で横を抜かれにくくなる
 #define STRETCH_GROUND   0.50f   // ストローク（バウンド後）の上乗せ
-#define STRETCH_QUALITY  0.50f   // 当たりの質はこの割合に落ちる（面を合わせるだけ）
+// ぎりぎり届く球は、足を大きく踏み出し、腕とラケットを伸ばしきって取る（現実のテニスと同じ）。
+//   届く限界は体の大きさで決まる：身長 185cm で、踏み出し＋体の傾き＋肩＋腕＋ラケット ≒ 2.6m（REACH_SIDE ＋ STRETCH_GROUND）。
+//   背が高いほど遠くまで届き、低いほど届かない。伸びるほど面を合わせるだけになる（当たりの質が落ちる）。
+//   走っていても、伸びて届く球には飛びつかずに伸びて取る（飛びつきは、伸びても届かない球だけ）
+#define STRETCH_Q_NEAR   0.70f   // 伸びて取った球の当たりの質の倍率：届く範囲を少し超えただけのとき
+#define STRETCH_Q_FAR    0.35f   //   伸びきって、ぎりぎり届いたとき（面を合わせるだけ）
+#define STRETCH_PER_CM   0.0095f // 伸びきったときの届く範囲が、身長 1cm あたりどれだけ変わるか（m）。ふつうの届く範囲の分（REACH_PER_CM）と合わせて 2.6m ÷ 185cm
+#define STRETCH_TIME     0.60f   // 伸びた体を戻すまでの見た目の長さ（秒）。STRETCH_RECOVER と同じ
 #define STRETCH_RECOVER  0.60f   // 打ったあと、体勢を立て直すまで（秒）。この間は動きが遅い
 #define STRETCH_MOVE     0.35f   //   その間の走る速さの割合
 #define OVERHEAD_MIN_H   1.85f   // これより高い球は頭上で打つ（スマッシュ・ハイボレー）
@@ -439,6 +446,7 @@ typedef struct {
     bool  isReturn;    // サーブのリターン
     bool  lunge;       // 足を大きく踏み出して（跳んで）伸びて取った
     bool  stretch;     // 届く範囲を超えた球に、体ごと倒れ込んで届かせた（体勢が崩れる）
+    float stretchK;    //   どれだけ伸びたか（0 = 届く範囲を少し超えた、1 = 伸びきってぎりぎり）
     float sit;         // 上から叩ける球の度合い（0〜1）。高くて遅い球ほど大きい
     float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
@@ -463,6 +471,7 @@ typedef struct {
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
     float   crouch;        // しゃがみ（0〜1、見た目）
     float   lungeT;        // 跳んで伸びて取った後の残り時間（見た目）
+    float   lungeDur;      //   その見た目の長さ（0 なら LUNGE_TIME。伸びきって取ったときは STRETCH_TIME：ゆっくり戻る）
     float   lungeSide;     // 跳んだ向き（体から見て右 +1、左 -1）
     bool    atNet;         // ネット前にいる（ボレーの構え：ラケットを前に出して小さく構える）
     bool    lefty;         // 左利き（見た目を左右反転して描く）

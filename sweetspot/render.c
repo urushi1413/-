@@ -1412,15 +1412,6 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
-    // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
-    if (!gOutline) {
-        rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
-        if (FX_SOFT_SHADOW && gLook == 0) FigureShadow(pos, sc);   // 柔らかい影（ふつうの見た目だけ。アニメ調・ドット風は下の今までの影）
-        else
-        for (int k = 0; k < 3; k++)
-            DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
-        rlDrawRenderBatchActive(); rlEnableDepthMask();
-    }
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
     if (a->lefty) {
@@ -1432,6 +1423,45 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float MX = a->lefty ? -1.0f : 1.0f;
     #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x) * sc, (y) * sc, (z) * sc })
     #define WV(v) W((v).x, (v).y, (v).z)
+
+    // ---- 伸びて取る：ぎりぎり届く球へ、足を大きく踏み出して体ごと球の方へ出て、腕とラケットを伸ばしきる ----
+    //   取った球の位置（contactLocal）から、腕とラケットを伸ばしても届かない分だけ、体（腰）を球の方へ出す（stS）。
+    //   体の大きさ（sc）の単位で計算するので、背の高い選手ほど遠くまで届いて見える（判定の届く範囲も身長で変わる）。
+    //   stE：取った瞬間に伸びきり、少し止まってから戻る。stDir：球の向き（体から見て x = 右、z = 前）
+    float stS = 0.0f, stE = 0.0f, stDeep = 0.0f, stLean = 0.28f, stHipY = 0.76f, stYaw = 0.0f;
+    Vector2 stDir = { a->lungeSide >= 0.0f ? 1.0f : -1.0f, 0.0f };
+    Vector3 stBall = { 0 };   // 球の位置（体の単位。腰を出す前の体から見て）
+    bool stOn = a->lungeT > 0.0f && a->downT <= 0.0f && !a->lastContact.overhead;
+    if (stOn) {
+        float dur = a->lungeDur > 0.0f ? a->lungeDur : LUNGE_TIME, el = dur - a->lungeT;
+        stE = el < 0.07f ? Smooth01(el / 0.07f) : 1.0f - Smooth01((el - 0.24f) / fmaxf(dur - 0.24f, 0.05f));
+        stBall = (Vector3){ a->contactLocal.x / sc, Clamp(a->contactLocal.y / sc, 0.15f, 2.0f), a->contactLocal.z / sc };
+        float rc = sqrtf(stBall.x * stBall.x + stBall.z * stBall.z);
+        if (rc > 0.3f) stDir = (Vector2){ stBall.x / rc, stBall.z / rc };
+        stDeep = Clamp01((rc - LUNGE_R) / (REACH_SIDE + STRETCH_GROUND - LUNGE_R));   // 0 = 少し遠い、1 = 伸びきる（2.6m）
+        stLean = 0.28f + 0.14f * stDeep;          // 上体を球の方へ倒す
+        stHipY = 0.76f - 0.20f * stDeep;          // 深く踏み込むほど腰が落ちる
+        // 打つ方の肩を球へ向ける（バックは背中を半分ネットに向けて、片手を伸ばす）
+        stYaw = Clamp(atan2f(-stDir.y, stDir.x), -115.0f * DEG2RAD, 60.0f * DEG2RAD);
+        float shw0 = 0.20f, shY = stHipY + 0.55f;
+        float shAlong = stLean + shw0 * (cosf(stYaw) * stDir.x - sinf(stYaw) * stDir.y);   // 肩が球の方へどれだけ出ているか
+        float dy = shY - stBall.y, armR = 1.06f;                                            // 腕 0.60 ＋ ラケットの面の中心まで 0.50（少し曲げた分を引く）
+        float hr = sqrtf(fmaxf(armR * armR - dy * dy, 0.09f));
+        stS = Clamp(rc - (shAlong + hr), 0.0f, 1.20f);
+    }
+    Vector3 stRoot = { stDir.x * stS * stE, 0.0f, stDir.y * stS * stE };   // 腰を出す量（体の単位）
+    Vector3 pos0 = pos;                                                    // 腰を出す前の位置（後ろ足が残る所）
+    pos = LocalToWorld(pos, facingNegZ, (Vector3){ MX * stRoot.x * sc, 0.0f, stRoot.z * sc });
+    (void)pos0;
+    // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す。伸びて取るときは体について動く
+    if (!gOutline) {
+        rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
+        if (FX_SOFT_SHADOW && gLook == 0) FigureShadow(pos, sc);   // 柔らかい影（ふつうの見た目だけ。アニメ調・ドット風は下の今までの影）
+        else
+        for (int k = 0; k < 3; k++)
+            DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
+        rlDrawRenderBatchActive(); rlEnableDepthMask();
+    }
 
     if (a->downT > 0.0f) {
         // 飛びついて倒れている
@@ -1456,6 +1486,12 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 
     // ---- 体のひねり：構えで横を向き、振りながら前へ戻る ----
     int stroke; Vector3 nrm, hand, rdir; bool hasHand;
+    SwingAnim stA;
+    if (stOn) {   // 伸びて取る：球の位置を、腰を出した後の体から見た位置に（振りの「当たる点」が実際の球の所に来る）
+        stA = *a;
+        stA.contactLocal = (Vector3){ stBall.x - stRoot.x, stBall.y, stBall.z - stRoot.z };
+        a = &stA;
+    }
     Vector3 rl = RacketPose(a, &stroke, &nrm, &hand, &rdir, &hasHand);
     float sgnK = (stroke == 1) ? -1.0f : 1.0f;
     float yaw = 0.0f;
@@ -1469,6 +1505,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     else if (a->windup > 0)  yaw = sgnK * turn * Clamp01(a->windup * 1.4f);
     else if (a->serveStance) yaw = 80.0f;                     // サーブの構え：横を向く
     yaw *= DEG2RAD;
+    float stW = stOn ? stE * Smooth01((stDeep - 0.10f) / 0.25f) : 0.0f;   // 伸びた形の効き具合（少し遠いだけの球は今までどおり）
+    yaw = Lerp(yaw, stYaw, stW);
     float hipYaw = yaw * 0.6f;
     // 走り方：横へゆっくりなら、足を交差させずに横へ跳ねる（サイドステップ。体はネットを向いたまま）。
     //   横へ速く長く走るときは、体を走る向きへ回して走る。打つ準備（溜め）に入ったら正面へ戻す
@@ -1582,12 +1620,14 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 
     // ---- 跳んで伸びて取る（リターンなどで遠い球）：球の方へ跳び、体を倒して足を大きく開く ----
     bool lunging = a->lungeT > 0.0f && !overheadPose;
+    float stHop = 0.0f;
     if (lunging) {
-        float pr = 1.0f - a->lungeT / LUNGE_TIME;
-        pos.y += 0.22f * sinf(PI * Clamp01(pr * 1.3f));
-        leanV = (Vector3){ a->lungeSide * 0.28f, 0.0f, 0.10f };
-        hipY = 0.76f;
-        hipYaw = 0.0f;
+        float pr = 1.0f - a->lungeT / (a->lungeDur > 0.0f ? a->lungeDur : LUNGE_TIME);
+        stHop = 0.22f * sinf(PI * Clamp01(pr * 1.3f)) * (1.0f - 0.75f * stW);   // 深く踏み込むときは跳ばない（足を地面に残して伸びる）
+        pos.y += stHop;
+        leanV = (Vector3){ stDir.x * Lerp(0.28f, stLean, stW), 0.0f, 0.10f + stDir.y * stLean * stW };
+        hipY = Lerp(0.76f, stHipY, stW);
+        hipYaw = stYaw * 0.5f * stW;
     }
 
     // ---- 脚：ショーツ（太ももの半分まで）、脚、白いソックス、シューズ ----
@@ -1596,9 +1636,20 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         // スライド・飛びつき：腰を落として足を大きく開く。スライドは足元に滑った跡
         float sd = lunging ? a->lungeSide : (a->slideSide >= 0.0f ? 1.0f : -1.0f);
         if (!lunging) hipY = 0.70f;
-        float lift = lunging ? 0.10f : 0.0f;
+        float lift = lunging ? 0.10f * (1.0f - stW) : 0.0f;
         hips[0] = (Vector3){ sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f };  feet[0] = (Vector3){ sd * 0.85f, 0.07f, 0.10f };
         hips[1] = (Vector3){ -sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }; feet[1] = (Vector3){ -sd * 0.40f, 0.07f + lift, -0.20f };
+        if (lunging && stW > 0.0f) {
+            // 伸びて取る：前の足は球の方へ大きく踏み出し、後ろの足は元の場所に残す（届かなくなったら、つま先を引きずってついてくる）。
+            //   脚の長さ（0.90）を超えないように、足を置く所を腰から届く範囲に収める
+            float legH = sqrtf(fmaxf(0.88f * 0.88f - (hipY - 0.07f) * (hipY - 0.07f), 0.04f));   // 腰の高さから、足が横へ届く距離
+            Vector3 lead = { hips[0].x + stDir.x * legH * 0.92f, 0.07f, hips[0].z + stDir.y * legH * 0.92f + 0.06f };
+            Vector3 trail = { -stRoot.x - sd * 0.22f, 0.07f, -stRoot.z - 0.14f };                 // 元の立ち位置のあたり
+            float tx = trail.x - hips[1].x, tz = trail.z - hips[1].z, tl = sqrtf(tx * tx + tz * tz);
+            if (tl > legH) { trail.x = hips[1].x + tx * legH / tl; trail.z = hips[1].z + tz * legH / tl; }
+            feet[0] = Vector3Lerp(feet[0], lead, stW);
+            feet[1] = Vector3Lerp(feet[1], trail, stW);
+        }
         knees[0] = TwoBone(hips[0], feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
         knees[1] = TwoBone(hips[1], feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
         toes[0] = sd * 1.0f; toes[1] = sd * 0.6f;
@@ -2031,6 +2082,24 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             Vector3 nf = Vector3CrossProduct(rdir, (Vector3){ 0, 1, 0 });
             if (Vector3Length(nf) > 1e-3f) nrm = Vector3Normalize(nf);
         }
+    }
+    // 伸びて取る：肩から球へ、腕とラケットをまっすぐ伸ばす（面の中心が球の所に来る）。面はネットの方へ向けて合わせるだけ
+    float stArm = (stOn && hasHand && stroke != 2) ? stW : 0.0f;
+    if (stArm > 0.0f) {
+        Vector3 bl = { stBall.x - stRoot.x, stBall.y - stHop / sc, stBall.z - stRoot.z };   // 球（今の体から見て）
+        Vector3 u = Vector3Subtract(bl, rShoulder);
+        float D = Vector3Length(u);
+        if (D > 1e-3f) {
+            u = Vector3Scale(u, 1.0f / D);
+            Vector3 hs = Vector3Add(rShoulder, Vector3Scale(u, Clamp(D - RACKET_REACH, 0.25f, 0.61f)));
+            hand = Vector3Lerp(hand, hs, stArm);
+            Vector3 dmix = Vector3Lerp(rdir, u, stArm);
+            if (Vector3Length(dmix) > 1e-3f) rdir = Vector3Normalize(dmix);
+            Vector3 nmix = Vector3Lerp(nrm, (Vector3){ 0.0f, 0.30f, 1.0f }, stArm);
+            Vector3 nf = Vector3Subtract(nmix, Vector3Scale(rdir, Vector3DotProduct(nmix, rdir)));
+            if (Vector3Length(nf) > 1e-3f) nrm = Vector3Normalize(nf);
+        }
+        if (stArm > 0.4f) twoHands = false;   // 両手バックでも、伸びきるときは片手で届かせる（左手はバランス）
     }
     Vector3 neck = Vector3Add(hand, Vector3Scale(rdir, 0.28f));       // ラケットの首（のど）
     Vector3 shoulder = rShoulder, other = lShoulder;

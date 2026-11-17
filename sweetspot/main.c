@@ -1910,7 +1910,7 @@ int main(void)
                     // スイングの見た目と、理想の打点との比較用
                     Vector3 sb = (bestIdx >= 0) ? history[bestIdx].pos : ball.pos;
                     P.anim.lastContact = c;
-                    if (c.miss == MISS_NONE && c.lunge && !c.dive) { P.anim.lungeT = LUNGE_TIME; P.anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
+                    if (c.miss == MISS_NONE && c.lunge && !c.dive) { P.anim.lungeDur = c.stretch ? STRETCH_TIME : LUNGE_TIME; P.anim.lungeT = P.anim.lungeDur; P.anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
                     P.anim.slice = IsSliceShot(type);
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
                     P.anim.swingT = 0.0f;
@@ -2907,10 +2907,13 @@ int main(void)
             } else if (!playerServing && mode != MODE_SERVE && !botControls && guideLevel == 0) {
                 // 届く範囲（地面の輪）：内側の輪が理想の距離、外側が届く限界
                 DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, IDEAL_R, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.35f));
-                {   // 届く限界：溜めている球種（スライスは広い）、スライド、簡単モードで広がる
+                {   // 届く限界：溜めている球種（スライスは広い）、スライド、簡単モード、身長で広がる
                     float rr = REACH_SIDE + (P.chargingShot >= 0 ? SHOTS[P.chargingShot].reach : 0.0f)
-                             + (P.sliding ? SLIDE_REACH : 0.0f) + (style == STYLE_CASUAL ? CASUAL_REACH : 0.0f);
+                             + (P.sliding ? SLIDE_REACH : 0.0f) + (style == STYLE_CASUAL ? CASUAL_REACH : 0.0f) + HeightDelta(gYouPersona) * REACH_PER_CM;
                     DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, rr, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.18f));
+                    // その外のごく薄い輪：足と腕を伸ばしきって、ぎりぎり届く限界（バウンドした球。当たりは悪くなる）
+                    float rs = rr + fmaxf(STRETCH_GROUND + HeightDelta(gYouPersona) * STRETCH_PER_CM, 0.10f);
+                    DrawCircle3D((Vector3){ P.pos.x, 0.01f, P.pos.z }, rs, (Vector3){ 1, 0, 0 }, 90.0f, Fade(RAYWHITE, 0.08f));
                 }
                 // 理想の打点（フォア・バック）。溜めている球種の理想の高さに出す。頭上で構えていれば頭上
                 ShotType t = (P.chargingShot >= 0) ? (ShotType)P.chargingShot : SHOT_TOP;

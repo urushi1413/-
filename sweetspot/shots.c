@@ -58,11 +58,12 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
         bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE + reachBonus && moveToward >= DIVE_MIN_SPEED;
-        // 踏み込み（ランジ）：走っていなくても、球の方へ体ごと倒れ込めばもう少し届く
-        float stretchMax = reach + (c.volley ? STRETCH_VOLLEY : STRETCH_GROUND);
+        // 伸びて取る（ランジ）：足を大きく踏み出して、腕とラケットを伸ばしきればもう少し届く。走っていなくても使える。
+        //   伸びきったときの限界は体の大きさで決まる（背が高いほど遠い）。伸びて届く球は、走っていても飛びつかずに伸びて取る
+        float stretchMax = reach + fmaxf((c.volley ? STRETCH_VOLLEY : STRETCH_GROUND) + gHeightDelta * STRETCH_PER_CM, 0.10f);
         bool canStretch = !c.overhead && bp.y > 0.15f && bp.y < 2.0f && r <= stretchMax;
-        if (canDive)         c.dive = true;
-        else if (canStretch) c.stretch = true;
+        if (canStretch)   { c.stretch = true; c.stretchK = Clamp01((r - reach) / (stretchMax - reach)); }
+        else if (canDive) c.dive = true;
         else { c.miss = (ang > 55.0f) ? MISS_EARLY : (ang < -20.0f ? MISS_LATE : MISS_FAR); return c; }
     }
 
@@ -89,7 +90,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     //   リターンは反応で打つので、緩めない
     c.quality = powf(c.qTiming * c.qDist * c.qHeight, c.isReturn ? 1.0f : QUALITY_EXP);
     if (c.dive) c.quality *= DIVE_QUALITY;
-    if (c.stretch) c.quality *= STRETCH_QUALITY;
+    if (c.stretch) c.quality *= Lerp(STRETCH_Q_NEAR, STRETCH_Q_FAR, c.stretchK);   // 伸びるほど、面を合わせるだけになる
     if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
     return c;
 }

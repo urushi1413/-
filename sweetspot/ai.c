@@ -576,7 +576,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (c.miss == MISS_NONE && c.volley && !c.overhead)   // ボレーのうまい選手は、当たりの悪さを取り戻す
         c.quality += (1.0f - c.quality) * 0.5f * pp->volleySkill;
     ai->anim.lastContact = c;
-    if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
+    if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeDur = c.stretch ? STRETCH_TIME : LUNGE_TIME; ai->anim.lungeT = ai->anim.lungeDur; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
