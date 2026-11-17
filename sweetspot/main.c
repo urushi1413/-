@@ -23,6 +23,14 @@ static const char *ModeName(int m)   // 表示用
 static int SummaryTop(void)    { return GetScreenHeight() / 2 - SUMMARY_H / 2; }
 static int SummaryBottom(void) { return SummaryTop() + SUMMARY_DRAWN; }
 // rightLimit：表の右端をこれより左に収める（右上のスコア表を出したまま表を出すとき。かからないなら真ん中のまま）
+// ボディショット：体に当たった球は手前に落ちる死んだ球にする（この後のバウンドの音・目印・判定は出さない）
+static void BodyDeflect(Ball *b, bool battle)
+{
+    b->vel = (Vector3){ -b->vel.x * 0.12f, battle ? 1.5f : 0.8f, -b->vel.z * 0.12f };
+    b->spin = Vector3Scale(b->spin, 0.2f);
+    b->bounces = 3;
+}
+
 static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp, int rightLimit)
 {
     int W = GetScreenWidth();
@@ -620,6 +628,9 @@ int main(void)
     // その間で一番いいタイミングの瞬間を採用する（入力の粗さで損をしないように）
     Ball history[64];
     int historyCount = 0;
+    // ボディショット：振ろうとしていた（押している・振る瞬間を待っている）自分の体に球が来たら、その場で振らせて 1 フレーム待つ
+    //   （自分の振りは前のフレームの球の動きから打点を選ぶ）。打てたら打った方、空振りなら体に当たった。待つ間、球は体に触れた所で止めておく
+    bool bodyPend = false; Ball bodyPendBall = { 0 };
 
     // バウンドの目印
     Vector3 bouncePos = { 0 };
@@ -2071,14 +2082,49 @@ int main(void)
         else if (mode == MODE_RALLY && !feedSwing && ball.active) AiUpdate(&ai, &ball, simDt);   // ラリー練習：相手も走って打ち返す
 
         // ---- 物理（固定ステップ）----
+        int bodyVictim = -1;   // このフレームで、打った球が体に当たった選手（0=自分 1=AI）。ボディショット
+        if (bodyPend) {        // 前のフレームで自分の体に当たりかけた：今のフレームの振りで打てていなければ、体に当たった
+            bodyPend = false;
+            bool live = (mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE);
+            if (live && ball.lastHitter == bodyPendBall.lastHitter && ball.age == bodyPendBall.age) { ball = bodyPendBall; bodyVictim = 0; }
+        }
         accumulator += simDt;
         historyCount = 0;
         history[historyCount++] = ball;
         while (accumulator >= PHYS_DT) {
-            StepBall(&ball, PHYS_DT);
+            Ball stepFrom = ball;
+            if (!bodyPend) StepBall(&ball, PHYS_DT);   // 自分の体に当たりかけた球は、そこで待つ
             if (historyCount < 64) history[historyCount++] = ball;
             accumulator -= PHYS_DT;
             if (!botControls) LogRecordBall(&plog, &ball);
+            // ボディショット：1 ステップごとに、球の動き（線分）が相手の体（円柱）に触れたか（AI のスイングより先に調べる）
+            //   打つ構えなら（AI：打つ計画がある、自分：押している・振る瞬間を待っている）、体の前で詰まって打つ。当たらなければ体に当たった
+            int bodyTry = -1;
+            if (((mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE)) && !bodyPend && bodyVictim < 0 && ball.lastHitter != HITTER_NONE) {   // リターン練習も試合と同じルール
+                int v = ball.lastHitter == HITTER_PLAYER ? 1 : 0;
+                bool human = v == 0 && !botControls;
+                Vector3 feet = v == 1 ? ai.pos : (botControls ? Rot180(bot.pos) : P.pos), at;
+                float top = battle ? 1.9f : BodyTop(v == 1 ? ai.persona : gYouPersona, human ? P.anim.crouch : 0.0f);
+                if (BodyShotHit(&stepFrom, &ball, feet, battle ? BATTLE_BODY_R : BODY_HIT_R, battle ? 0.3f : 0.0f, top, &at)) {   // バトルは今まで通り、腰から頭で広め
+                    ball.pos = at;
+                    if (battle) bodyVictim = v;   // バトル：今まで通り、体に来たら当たり（詰まって打つことはしない）
+                    else if (human) {
+                        if (P.chargingShot >= 0) {   // 押して溜めている：ここで離したことにする
+                            ShotType rt = (ShotType)P.chargingShot;
+                            P.swingQ.active = true; P.swingQ.type = rt; P.swingQ.charge = P.charge;
+                            P.swingQ.target = AimFromHold(rt, P.pos.z, P.aimX, P.hold, style);
+                            P.swingQ.releaseAge = ball.age; P.swingQ.penalty = 1.0f;
+                            P.chargingShot = -1; P.anim.windup = 0.0f;
+                        }
+                        if (P.swingQ.active) { P.swingQ.age = -1.0f; bodyPend = true; bodyPendBall = ball; }   // 次のフレームの頭で、体の前で振る
+                        else bodyVictim = 0;
+                    } else {
+                        Opponent *o = v == 1 ? &ai : &bot;
+                        if (o->planned) { o->swingAge = ball.age; bodyTry = v; }   // すぐ下の AI のスイングで、詰まって打つ
+                        else bodyVictim = v;
+                    }
+                }
+            }
 
             // AI のスイング（物理と同じ細かさで）
             // AI のフットワークの音：打つ 0.6 秒前に、まだ動いていたら
@@ -2132,6 +2178,11 @@ int main(void)
                     trailColor = SHOTS[bot.lastType].color;
                     trailCount = 0;
                 }
+            }
+
+            if (bodyTry >= 0 && ball.lastHitter == (bodyTry == 1 ? HITTER_PLAYER : HITTER_OPP)) {   // 詰まって振ったが打てなかった：体に当たった
+                bodyVictim = bodyTry;
+                if (bodyTry == 1) ai.planned = false; else bot.planned = false;
             }
 
             trailTimer += PHYS_DT;
@@ -2218,22 +2269,46 @@ int main(void)
             int hitter = (ball.lastHitter == HITTER_PLAYER) ? 0 : 1;
             int winner = -1;
             bool returnShot = retPending && !ball.isServe;   // 今飛んでいるのはリターン
-            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト 5=体に当てた（バトル）
-            if (battle && ball.active && ball.bounces <= 1 && !ball.hitNet && (ball.bounces == 0 || ball.result == RESULT_IN) && ball.pos.y > 0.3f && ball.pos.y < 1.9f) {
-                // バトル：打った球が、バウンドする前に相手の体（腰から頭）に当たったら、打った方のポイント。当たった方は倒れる
-                Vector3 vic = hitter == 0 ? ai.pos : (botControls ? Rot180(bot.pos) : P.pos);
-                float dx = ball.pos.x - vic.x, dz = ball.pos.z - vic.z;
-                if (dx * dx + dz * dz < BATTLE_BODY_R * BATTLE_BODY_R) {
+            int endKind = 0;                                 // 1=エース 2=ウィナー 3=ミス 4=ダブルフォールト 5=体に当てた（ボディショット）
+            bool bodyDone = false;                           // 体に当たった球：下のふつうの判定はしない
+            if (bodyVictim >= 0 && bodyVictim == 1 - hitter) {
+                // ボディショット（現実のルール）：生きている球が相手の体に当たったら、打った方のポイント。
+                //   ノーバウンドなら、アウトになる球でも（相手がコートの外に立っていても）。サーブも同じ（フォルトになる球でも）。
+                //   ただし、ネットに触れたサーブがバウンド前にレシーバーに当たったらレット
+                int v = bodyVictim;
+                bodyDone = true;
+                bool svPre = ball.isServe && !serveJudged;   // バウンド前のサーブ
+                Vector3 hitAt = ball.pos;
+                BodyDeflect(&ball, battle);   // 体に当たって手前に落ちる
+                trailCount = 0;
+                if (svPre && ball.netCord) {
+                    pointMsg = TL("Let", "レット");
+                    TraceLog(LOG_INFO, "LET (serve touched the net, then the receiver) by %s", hitter == 0 ? "YOU" : "AI");
+                    serveJudged = true;
+                    phase = PH_BETWEEN;
+                    phaseTimer = 1.5f;
+                } else {
                     winner = hitter; endKind = 5;
-                    pointMsg = hitter == 0 ? TL("Your BODY SHOT!", "自分のボディショット！") : TL("AI BODY SHOT!", "相手のボディショット！");
-                    ball.vel = (Vector3){ -ball.vel.x * 0.15f, 1.5f, -ball.vel.z * 0.15f };   // 当たって跳ね返る
-                    int v = 1 - hitter;
-                    if (v == 1) { ai.downTimer = DIVE_DOWN_TIME * 1.5f; ai.anim.downT = DIVE_DOWN_TIME * 1.5f; ai.vel = (Vector3){ 0 }; }
-                    else if (botControls) { bot.downTimer = DIVE_DOWN_TIME * 1.5f; bot.anim.downT = DIVE_DOWN_TIME * 1.5f; bot.vel = (Vector3){ 0 }; }
-                    else { P.downT = DIVE_DOWN_TIME * 1.5f; P.vel = (Vector3){ 0 }; }
-                    hitFlashT[v] = 0.5f;
-                    SfxHit(0.4f, 80.0f, false, false, false, 8.0f); SfxOoh(0.9f);
-                    SfxAngry(v == 0 ? (gYouPersona ? gYouPersona : -1) : ai.persona, 10.0f);
+                    if (ball.isServe) {   // サーブが体に当たった：返されなかったサーブ。バウンド前ならサーブは入った扱いで数える
+                        if (svPre) { mst[hitter][serveNo == 1 ? 0 : 2]++; mst[hitter][serveNo == 1 ? 1 : 3]++; serveJudged = true; }
+                        mst[hitter][4]++;
+                    }
+                    retPending = false;
+                    if (battle) pointMsg = hitter == 0 ? TL("Your BODY SHOT!", "自分のボディショット！") : TL("AI BODY SHOT!", "相手のボディショット！");
+                    else if (ball.isServe) pointMsg = hitter == 0 ? TL("Your serve hits the receiver", "自分のサーブがレシーバーに当たった") : TL("AI serve hits the receiver", "相手のサーブがレシーバーに当たった");
+                    else pointMsg = hitter == 0 ? TL("Your body shot", "自分のボディショット") : TL("AI body shot", "相手のボディショット");
+                    if (battle) {   // バトル：当たった方は倒れる
+                        if (v == 1) { ai.downTimer = DIVE_DOWN_TIME * 1.5f; ai.anim.downT = DIVE_DOWN_TIME * 1.5f; ai.vel = (Vector3){ 0 }; }
+                        else if (botControls) { bot.downTimer = DIVE_DOWN_TIME * 1.5f; bot.anim.downT = DIVE_DOWN_TIME * 1.5f; bot.vel = (Vector3){ 0 }; }
+                        else { P.downT = DIVE_DOWN_TIME * 1.5f; P.vel = (Vector3){ 0 }; }
+                        hitFlashT[v] = 0.5f;
+                        SfxHit(0.4f, 80.0f, false, false, false, 8.0f); SfxOoh(0.9f);
+                        SfxAngry(v == 0 ? (gYouPersona ? gYouPersona : -1) : ai.persona, 10.0f);
+                    } else {        // ふつうの試合：鈍い音、観客の「おお」、当てた方が手を上げて謝る（ネットインと同じ礼儀）
+                        SfxHit(0.15f, 50.0f, false, false, false, Vector3Distance(cam.position, hitAt));
+                        SfxOoh(0.6f);
+                        snprintf(toast, sizeof(toast), TL("Body shot - %s raises a hand: sorry!", "ボディショット：%s が手を上げて謝る"), hitter == 1 ? OPP_SHORT : YouName()); toastT = 2.2f;
+                    }
                 }
             }
             // ネットに出たか：サービスラインより前に入った
@@ -2244,7 +2319,9 @@ int main(void)
                 if (ball.result != RESULT_IN) mst[retServer][4]++;
                 retPending = false;
             }
-            if (ball.isServe && !serveJudged && ball.bounces >= 1 && ball.netCord && ball.result == RESULT_IN) {
+            if (bodyDone) {
+                // 体に当たった：上で決まった
+            } else if (ball.isServe && !serveJudged && ball.bounces >= 1 && ball.netCord && ball.result == RESULT_IN) {
                 // レット：サーブがネットに触れて入った。同じ番目のサーブ（1st なら 1st）を打ち直す
                 pointMsg = TL("Let", "レット");
                 TraceLog(LOG_INFO, "LET by %s", hitter == 0 ? "YOU" : "AI");
@@ -2275,8 +2352,6 @@ int main(void)
                     SfxCallFault();
                     endKind = 4;
                 }
-            } else if (endKind == 5) {
-                // 体に当てた：上で決まった
             } else if (!ball.isServe || serveJudged) {
                 if (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE) {
                     winner = 1 - hitter;
@@ -2327,7 +2402,7 @@ int main(void)
                     }
                     for (int k = 0; k < 2; k++) if (netFlag[k]) { ms[k].netPts++; if (winner == k) ms[k].netWon++; }
                     if (endKind == 1) { ms[hitter].aces++; ms[hitter].winners++; }
-                    if (endKind == 2) ms[hitter].winners++;
+                    if (endKind == 2 || endKind == 5) ms[hitter].winners++;   // ボディショットもウィナーに数える
                     if (endKind == 3 && !returnShot) {
                         // アンフォーストエラー：来た球が遅めで、飛びつきでも伸びきりでもなかったのにミス
                         const Contact *hc = (hitter == 1) ? &ai.anim.lastContact
@@ -2494,7 +2569,7 @@ int main(void)
                 }
                 // ---- 試合の記録 ----
                 {
-                    const char *ek = endKind == 1 ? "ace" : endKind == 2 ? "winner" : endKind == 4 ? "double_fault"
+                    const char *ek = endKind == 1 ? "ace" : endKind == 2 ? "winner" : endKind == 4 ? "double_fault" : endKind == 5 ? "body_shot"
                                    : (ball.result == RESULT_NET ? "error_net" : "error_out");
                     bool youEnd = hitter == 0;
                     ShotType et = youEnd ? (botControls ? bot.lastType : P.lastType) : ai.lastType;
@@ -2689,7 +2764,13 @@ int main(void)
             if (retPhase == RET_LIVE) {
                 bool srv = ball.lastHitter == HITTER_OPP;   // まだサーブのまま（自分が触っていない）
                 int res = 0;                                // 1 = フォルト、2 = レット、3 = サーバーのポイント、4 = 自分のポイント
-                if (srv) {
+                bool retBody = bodyVictim >= 0;             // ボディショット（試合と同じ）：サーブが自分に当たればサーバー、リターンが相手に当たれば自分のポイント
+                if (retBody) {
+                    bool letBody = srv && ball.bounces == 0 && ball.netCord;   // ネットに触れたサーブがバウンド前に当たった：レット
+                    BodyDeflect(&ball, false); trailCount = 0;
+                    res = letBody ? 2 : bodyVictim == 0 ? 3 : 4;
+                    if (!letBody) { SfxHit(0.15f, 50.0f, false, false, false, 4.0f); SfxOoh(0.4f); }
+                } else if (srv) {
                     if (ball.hitNet || (ball.bounces >= 1 && ball.result != RESULT_IN)) res = 1;
                     else if (ball.bounces >= 1 && ball.netCord) res = 2;
                     else if (ball.bounces >= 2 || !ball.active) res = 3;   // 返せなかった
@@ -2712,6 +2793,8 @@ int main(void)
                     static char retMsg[96];
                     int winner = (res == 4 || res == 1) ? 0 : 1;   // リターンが入った・ダブルフォールトは自分、入らない・返せないはサーバー
                     if (res == 1) { pointMsg = TL("Double fault", "ダブルフォールト"); SfxCallFault(); }
+                    else if (retBody && res == 4) { snprintf(retMsg, sizeof(retMsg), TL("%s body shot", "%s のボディショット"), YouName()); pointMsg = retMsg; }
+                    else if (retBody) { snprintf(retMsg, sizeof(retMsg), TL("%s serve hits the receiver", "%s のサーブがレシーバーに当たった"), gOppName); pointMsg = retMsg; }
                     else if (res == 4) { snprintf(retMsg, sizeof(retMsg), TL("%s return IN", "%s リターンが入った"), YouName()); pointMsg = retMsg; }
                     else if (srv) { snprintf(retMsg, sizeof(retMsg), TL("%s ace / unreturned serve", "%sのサービスエース"), gOppName); pointMsg = retMsg; }
                     else if (ball.result == RESULT_OUT && !ball.hitNet) {

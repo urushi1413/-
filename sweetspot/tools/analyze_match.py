@@ -54,7 +54,7 @@ def main():
     gained = [p for p in points if p["winner"] == "YOU"]
     def how(p):
         if p["ender"] == "AI":
-            return {"ace": "AI のエース・返せなかったサーブ", "winner": "AI のウィナー"}.get(p["end_kind"], p["end_kind"])
+            return {"ace": "AI のエース・返せなかったサーブ", "winner": "AI のウィナー", "body_shot": "AI のボディショット（体に当てられた）"}.get(p["end_kind"], p["end_kind"])
         return {"error_net": "自分のミス（ネット）", "error_out": "自分のミス（アウト）", "double_fault": "自分のダブルフォールト"}.get(p["end_kind"], p["end_kind"])
     print(f"\n== 失ったポイント {len(lost)} の内訳")
     c = Counter(how(p) for p in lost)
@@ -62,7 +62,7 @@ def main():
     print(f"\n== 取ったポイント {len(gained)} の内訳")
     def how2(p):
         if p["ender"] == "YOU":
-            return {"ace": "自分のエース・返されなかったサーブ", "winner": "自分のウィナー"}.get(p["end_kind"], p["end_kind"])
+            return {"ace": "自分のエース・返されなかったサーブ", "winner": "自分のウィナー", "body_shot": "自分のボディショット（相手の体に当てた）"}.get(p["end_kind"], p["end_kind"])
         return {"error_net": "AI のミス（ネット）", "error_out": "AI のミス（アウト）", "double_fault": "AI のダブルフォールト"}.get(p["end_kind"], p["end_kind"])
     c2 = Counter(how2(p) for p in gained)
     for k, v in c2.most_common(): print(f"  {k:28s} {v:4d}  {pct(v, len(gained))}")

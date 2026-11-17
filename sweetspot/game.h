@@ -276,6 +276,11 @@ extern bool gDecidingSet;   // 最終セット
 #define BATTLE_DMG_BODY    24.0f   // 体にボールを当てられた
 #define BATTLE_BODY_R      0.40f   // 体に当たったとみなす、体の中心からの距離（m）
 #define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合
+// ボディショット（ふつうの試合も。現実のルール：打った球が相手の体・服に当たったら、打った側のポイント）
+//   体は足元を中心にした円柱とみなす（腕とラケットは入れない：ラケットに当たったら打ち返したのと同じ）
+#define BODY_HIT_R         0.24f   // 円柱の半径（m）：肩幅の半分 ＋ 球の半径
+#define BODY_CROUCH_K      0.35f   // しゃがむ（Q）と、円柱の高さがこの割合だけ低くなる（ネット前で顔をよける）
+#define BODY_DODGE         0.75f   // AI が見送る球が体に向かってくるとき、横へよける距離（m）
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
 // 「お静かに」：サーブの前に観客がざわつく（QUIET_TIME 秒）→ 残り QUIET_SAY 秒で主審が注意 → 残り QUIET_THANKS 秒で「ありがとう」→ サーブ
@@ -854,6 +859,8 @@ Vector3 AirAccel(Vector3 vel, Vector3 spin);
 void Bounce(Ball *b);
 void StepBall(Ball *b, float dt);
 Ball MakeShot(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
+bool BodyShotHit(const Ball *a, const Ball *b, Vector3 feet, float r, float yLo, float yHi, Vector3 *at);   // 1 ステップ（a → b）の球が体に当たったか
+float BodyTop(int persona, float crouch);   // 体の円柱の上端（m）：身長。しゃがむと低い
 float PredictLandingDist(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm, bool high);

@@ -316,6 +316,19 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
             ai->leaving = true;
             ai->planned = false;
             ai->standPos = ai->netRush ? ai->pos : AiHomeFor(ai);   // ネットにいれば、そのまま見送る
+            {   // 見送る球でも、ノーバウンドで体に当たれば失点（ボディショット）。体に向かってくるなら横へよける
+                float r = gBattle ? BATTLE_BODY_R : BODY_HIT_R;
+                Ball w = *worldBall, w0;
+                for (int i = 0; i < 240 * 3 && w.active && w.bounces == 0; i++) {
+                    w0 = w; StepBall(&w, PHYS_DT);
+                    Vector3 at;
+                    if (BodyShotHit(&w0, &w, ai->standPos, r + 0.15f, 0.0f, BodyTop(ai->persona, 0.0f) + 0.15f, &at)) {   // 少し余裕をもって
+                        float sx = at.x >= ai->standPos.x ? -1.0f : 1.0f;   // 球と反対の側へ
+                        ai->standPos.x += sx * (BODY_DODGE + (gBattle ? BATTLE_BODY_R - BODY_HIT_R : 0.0f));
+                        break;
+                    }
+                }
+            }
             return;
         }
     }

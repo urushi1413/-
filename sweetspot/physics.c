@@ -157,6 +157,28 @@ void StepBall(Ball *b, float dt)
         b->peakAfterFirstBounce = b->pos.y;
 }
 
+// ボディショットの判定：1 ステップの球の動き（a → b）が、立っている選手の体に触れたか
+//   体は足元 feet を中心にした円柱（半径 r、高さ yLo〜yHi）。線分で調べるので、速い球でもすり抜けない
+//   当たるのは「生きている球」だけ：ノーバウンド（イン・アウトに関係なく）か、1 バウンド目がインの後。
+//   1 バウンド目がアウト・ネットなら、その時点でポイントは終わっている。触れた所を *at に
+bool BodyShotHit(const Ball *a, const Ball *b, Vector3 feet, float r, float yLo, float yHi, Vector3 *at)
+{
+    if (!a->active || !b->active || b->hitNet || a->lastHitter != b->lastHitter || b->age < a->age) return false;
+    if (b->bounces > 1 || (b->bounces == 1 && b->result != RESULT_IN)) return false;
+    float dx = b->pos.x - a->pos.x, dz = b->pos.z - a->pos.z, L2 = dx * dx + dz * dz;
+    float fx = feet.x - a->pos.x, fz = feet.z - a->pos.z;
+    float t = L2 > 1e-10f ? Clamp01((fx * dx + fz * dz) / L2) : 0.0f;   // 一番近づく所
+    float cx = a->pos.x + dx * t - feet.x, cz = a->pos.z + dz * t - feet.z;
+    float d2 = cx * cx + cz * cz;
+    if (d2 > r * r) return false;
+    if (L2 > 1e-10f) t = fmaxf(0.0f, t - sqrtf((r * r - d2) / L2));      // 円柱に入った所までもどす
+    Vector3 p = Vector3Lerp(a->pos, b->pos, t);
+    if (p.y < yLo || p.y > yHi) return false;
+    if (at) *at = p;
+    return true;
+}
+float BodyTop(int persona, float crouch) { return PersonaHeight(persona) * 0.01f * (1.0f - BODY_CROUCH_K * Clamp01(crouch)); }
+
 // 打ち出し方向と回転を決めてボールを作る
 //   rpm > 0 : トップスピン（ボールの上側が前に回る）
 //   rpm < 0 : バックスピン
