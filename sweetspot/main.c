@@ -1169,6 +1169,7 @@ int main(void)
                 PixelBegin(); DrawSky(rp.cam);
                 BeginMode3D(rp.cam);
                 DrawReplayFrame(f, rp.cam);
+                DrawReplayAfterimage(fr, rp.idx < n ? rp.idx : n - 1, rp.cam);   // ボールの残像
                 EndMode3D();
                 AtmosOverlay(rp.cam); PixelEnd();
                 int W = GetScreenWidth(), H = GetScreenHeight();
@@ -3034,8 +3035,17 @@ int main(void)
                 float nearG = Smooth01((ball.pos.y - BALL_R - 0.05f) / 0.6f);
                 vr = Lerp(BALL_R, vr, nearG);
                 Vector3 g = { ball.pos.x, 0.004f, ball.pos.z };
-                DrawCylinder(g, vr * 1.1f, vr * 1.1f, 0.002f, 14, (Color){ 0, 0, 0, 150 });   // 影
+                DrawBallShadow(ball.pos, vr);                                                  // 影（真下。柔らかく、高いほどぼける）
                 if (ball.pos.y > 0.15f) DrawLine3D(g, ball.pos, Fade(RAYWHITE, 0.45f));       // 高さの線
+                if (FX_BALL_TRAIL && ball.active && trailCount >= 2) {   // 残像：打ってからの軌跡（1/120 秒ごと）の最後の FX_TRAIL_TIME 秒ぶんを、細く消えていく帯に。速い球ほどはっきり
+                    Vector3 pts[FX_TRAIL_N + 1];
+                    int m = (int)(FX_TRAIL_TIME * 120.0f); if (m > FX_TRAIL_N) m = FX_TRAIL_N; if (m > trailCount) m = trailCount;
+                    for (int i = 0; i < m; i++) pts[i] = trail[trailCount - m + i];
+                    pts[m] = ball.pos;
+                    bool gold = trailColor.r == 255 && trailColor.g == 210 && trailColor.b == 60;   // いい当たりは金色
+                    DrawBallAfterimage(pts, m + 1, cam.position, vr, Smooth01((Vector3Length(ball.vel) - FX_TRAIL_V0) / (FX_TRAIL_V1 - FX_TRAIL_V0)),
+                                       gold ? (Color){ 255, 225, 110, 255 } : (Color){ 248, 255, 170, 255 });
+                }
                 DrawSphere(ball.pos, vr, (Color){ 235, 255, 40, 255 });
                 // 光のふち（ボールの後に描く。先に描くと、ふちの奥行きでボールが隠れる）
                 rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）

@@ -118,7 +118,23 @@ void DrawReplayFrame(const RFrame *f, Camera3D cam)
     if (f->ballOn) {
         float d = Vector3Distance(cam.position, f->ball);
         float vr = Lerp(BALL_R, fmaxf(BALL_R * 1.4f, d * 0.004f), Smooth01((f->ball.y - BALL_R - 0.05f) / 0.6f));
-        DrawCylinder((Vector3){ f->ball.x, 0.004f, f->ball.z }, vr * 1.1f, vr * 1.1f, 0.002f, 12, (Color){ 0, 0, 0, 150 });
+        DrawBallShadow(f->ball, vr);
         DrawSphere(f->ball, vr, (Color){ 235, 255, 40, 255 });
     }
+}
+// リプレイのボールの残像：記録したフレーム（1/60 秒ごと）の、今のフレームまでの FX_TRAIL_TIME 秒ぶん。DrawReplayFrame の後に呼ぶ
+void DrawReplayAfterimage(const RFrame *fr, int idx, Camera3D cam)
+{
+    if (!FX_BALL_TRAIL || idx < 1 || !fr[idx].ballOn) return;
+    Vector3 pts[FX_TRAIL_N + 1];
+    int m = 0, want = (int)(FX_TRAIL_TIME * 60.0f) + 1;
+    if (want > FX_TRAIL_N) want = FX_TRAIL_N;
+    int first = idx;
+    while (first > 0 && idx - first < want && fr[first - 1].ballOn && Vector3Distance(fr[first - 1].ball, fr[first].ball) < 2.5f) first--;   // 球が置き直された所（次のサーブなど）はつながない
+    for (int i = first; i <= idx; i++) pts[m++] = fr[i].ball;
+    if (m < 2) return;
+    float speed = Vector3Distance(fr[idx].ball, fr[idx - 1].ball) / fmaxf(fr[idx].dt, 1e-3f);
+    float d = Vector3Distance(cam.position, fr[idx].ball);
+    float vr = Lerp(BALL_R, fmaxf(BALL_R * 1.4f, d * 0.004f), Smooth01((fr[idx].ball.y - BALL_R - 0.05f) / 0.6f));
+    DrawBallAfterimage(pts, m, cam.position, vr, Smooth01((speed - FX_TRAIL_V0) / (FX_TRAIL_V1 - FX_TRAIL_V0)), (Color){ 248, 255, 170, 255 });
 }

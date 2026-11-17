@@ -18,7 +18,32 @@ enum { LANG_EN, LANG_JA };
 extern int gLang;
 extern int gLook;   // 見た目：0 = ふつう、1 = アニメ調、2 = ドット風（render.c）
 void PixelBegin(void);   // ドット風：DrawSky の前に
-void PixelEnd(void);     // ドット風：AtmosOverlay の後に
+void PixelEnd(void);     // ドット風：AtmosOverlay の後に（ふつうの見た目ならここでポスト処理をかける）
+// ---- 見た目の底上げ（「ふつう」の見た目のときだけ効く。アニメ調・ドット風は今までどおり） ----
+//   1 = 入れる、0 = 切る。作るときに make CFLAGS="... -DFX_POST=0" のようにも切れる
+#ifndef FX_SOFT_SHADOW
+#define FX_SOFT_SHADOW 1      // 選手とボールの下の柔らかい影
+#endif
+#ifndef FX_POST
+#define FX_POST        1      // ポスト処理のシェーダー：色調補正＋軽いビネット
+#endif
+#ifndef FX_BLOOM
+#define FX_BLOOM       1      // ポスト処理の中の軽いブルーム（FX_POST が 1 のときだけ。重ければこれだけ切れる）
+#endif
+#ifndef FX_BALL_TRAIL
+#define FX_BALL_TRAIL  1      // ボールの短い残像
+#endif
+#define FX_SATURATION   1.10f   // 色の濃さ（1 = そのまま）
+#define FX_CONTRAST     0.22f   // 明暗のめりはり（0 = そのまま。S 字のカーブをこの割合だけ混ぜる）
+#define FX_VIGNETTE     0.20f   // ビネット：画面の四隅をこの割合まで暗くする
+#define FX_BLOOM_K      0.32f   // ブルームの強さ
+#define FX_BLOOM_THRESH 0.80f   // この明るさより上だけがにじむ
+#define FX_TRAIL_TIME   0.12f   // 残像の長さ（秒）
+#define FX_TRAIL_V0     7.0f    // この速さ（m/s）から残像が出始め
+#define FX_TRAIL_V1     22.0f   //   この速さで最大
+#define FX_TRAIL_N      16      // 残像に使う点の数の上限
+void DrawBallShadow(Vector3 ball, float vr);   // ボールの影（真下。高いほど大きく薄くぼける）
+void DrawBallAfterimage(const Vector3 *pts, int n, Vector3 camPos, float vr, float strength, Color col);   // pts は古い順
 #define TR(en, ja) (gLang == LANG_JA ? (ja) : (en))
 #define TL(en, ja) (en)   // 試合中のテロップ（コール・判定・警告）は英語のまま（いずれ音声のコールにする）
 void UiFontInit(void);
@@ -718,6 +743,7 @@ const RFrame *Highlight(int k, int *n, const char **caption);
 #define REPLAY_VIEWS 4   // リプレイのカメラ：横（中継）、自分の後ろ、ボールを追う、相手の後ろ
 Camera3D ReplayCamera(int view, Vector3 ball, Camera3D prev, bool first);
 void DrawReplayFrame(const RFrame *f, Camera3D cam);
+void DrawReplayAfterimage(const RFrame *fr, int idx, Camera3D cam);
 void DrawCourt(void);
 void InitBoards(void);              // 奥の壁の看板とスピードメーターを作る（ウィンドウを開いた後に 1 回）
 void UpdateSpeedBoard(int kmh);     // スピードメーターの数字（最後のサーブの速さ）

@@ -140,6 +140,84 @@ void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
     }
     rlEnd();
 }
+// ---- 柔らかい影（FX_SOFT_SHADOW）：地面に、真ん中が濃く、ふちへ向けて消えるだ円を描く ----
+//   c：中心（地面のすぐ上）、ax：長い方の向き（x・z。長さ 1）、ra・rb：長い方・短い方の半径、alpha：真ん中の濃さ
+//   真ん中 → 中ほどの輪 → ふち の 3 段で濃さを落とす（まっすぐ落とすより、ふちがふんわり消える）。頂点の色だけで描くので軽い
+static void SoftShadow(Vector3 c, Vector2 ax, float ra, float rb, float alpha)
+{
+    const int seg = 20;
+    const float mid = 0.52f;
+    unsigned char a0 = (unsigned char)(Clamp01(alpha) * 255.0f), a1 = (unsigned char)(Clamp01(alpha) * 0.50f * 255.0f);
+    Vector2 px = { ax.y, -ax.x };   // 上から見て左回りに 90°
+    rlCheckRenderBatchLimit(seg * 9);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < seg; i++) {
+        float t0 = 2.0f * PI * i / seg, t1 = 2.0f * PI * (i + 1) / seg;
+        float c0 = cosf(t0) * ra, s0 = sinf(t0) * rb, c1 = cosf(t1) * ra, s1 = sinf(t1) * rb;
+        Vector3 o0 = { c.x + ax.x * c0 + px.x * s0, c.y, c.z + ax.y * c0 + px.y * s0 }, o1 = { c.x + ax.x * c1 + px.x * s1, c.y, c.z + ax.y * c1 + px.y * s1 };
+        Vector3 m0 = Vector3Lerp(c, o0, mid), m1 = Vector3Lerp(c, o1, mid);
+        rlColor4ub(0, 0, 0, a0); rlVertex3f(c.x, c.y, c.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z); rlVertex3f(m1.x, m1.y, m1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z);
+        rlColor4ub(0, 0, 0, 0);  rlVertex3f(o0.x, o0.y, o0.z); rlVertex3f(o1.x, o1.y, o1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z);
+        rlColor4ub(0, 0, 0, 0);  rlVertex3f(o1.x, o1.y, o1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m1.x, m1.y, m1.z);
+    }
+    rlEnd();
+}
+// 人の影：足元の濃い影（地面に立っている感じ）と、光と反対の向きへ伸びる体の影。影の長さと濃さは時間帯・天気の光で変わる
+//   （昼は約 1.1m、夕方は長く、ナイターは真上のライトで短い。くもりは体の影がほとんど出ない）
+static void FigureShadow(Vector3 pos, float sc)
+{
+    float hl = sqrtf(gLightL.x * gLightL.x + gLightL.z * gLightL.z);
+    Vector2 dir = hl > 1e-3f ? (Vector2){ -gLightL.x / hl, -gLightL.z / hl } : (Vector2){ 0.0f, -1.0f };
+    float len = Clamp(1.75f * sc * hl / fmaxf(gLightL.y, 0.2f), 0.0f, 2.4f);
+    float sun = Clamp01((gLightDiff - 0.15f) / 0.40f);
+    SoftShadow((Vector3){ pos.x + dir.x * 0.06f, 0.006f, pos.z + dir.y * 0.06f }, dir, 0.50f * sc, 0.40f * sc, 0.36f);
+    if (sun > 0.02f)
+        SoftShadow((Vector3){ pos.x + dir.x * len * 0.5f, 0.007f, pos.z + dir.y * len * 0.5f }, dir, 0.34f * sc + len * 0.5f, 0.36f * sc, 0.10f + 0.20f * sun);
+}
+// ボールの影：真下に落とす（どこに落ちるかを読む手がかりなので、光の向きへはずらさない）。高いほど大きく薄くぼける
+void DrawBallShadow(Vector3 ball, float vr)
+{
+    Vector3 g = { ball.x, 0.004f, ball.z };
+    if (!FX_SOFT_SHADOW || gLook != 0) { DrawCylinder(g, vr * 1.1f, vr * 1.1f, 0.002f, 14, (Color){ 0, 0, 0, 150 }); return; }   // 今までの影
+    float h = Clamp01((ball.y - BALL_R) / 3.0f);
+    float r = vr * (1.7f + 1.3f * h);
+    SoftShadow(g, (Vector2){ 1.0f, 0.0f }, r, r, 0.66f - 0.22f * h);
+}
+// ボールの残像（FX_BALL_TRAIL）：通った所に、ボールの太さから細く消えていく帯を描く。pts は古い順（最後がボールの今の位置）
+//   strength（0〜1）は球の速さで決める：遅い球（トス、ボールつき）には出さない
+void DrawBallAfterimage(const Vector3 *pts, int n, Vector3 camPos, float vr, float strength, Color col)
+{
+    if (!FX_BALL_TRAIL || gLook != 0 || n < 2 || strength <= 0.01f) return;
+    rlDrawRenderBatchActive(); rlDisableDepthMask(); rlDisableBackfaceCulling();   // 奥行きは書かない（ボールや人を隠さない）。帯は両面
+    rlCheckRenderBatchLimit((n - 1) * 6);
+    rlBegin(RL_TRIANGLES);
+    Vector3 pl = { 0 }, pr = { 0 }, side = { 0 };
+    unsigned char pa = 0;
+    for (int i = 0; i < n; i++) {
+        float k = (float)i / (float)(n - 1);   // 0 = いちばん古い、1 = ボール
+        Vector3 d = i + 1 < n ? Vector3Subtract(pts[i + 1], pts[i]) : Vector3Subtract(pts[i], pts[i - 1]);
+        Vector3 cr = Vector3CrossProduct(d, Vector3Subtract(camPos, pts[i]));   // 進む向きと、カメラへの向きの両方に直角（帯がいつもカメラを向く）
+        float cl = Vector3Length(cr);
+        if (cl > 1e-6f) side = Vector3Scale(cr, 1.0f / cl);
+        float w = vr * 0.92f * powf(k, 0.6f);
+        unsigned char al = (unsigned char)(255.0f * Clamp01(strength) * 0.60f * k * k);
+        Vector3 l = Vector3Subtract(pts[i], Vector3Scale(side, w)), r = Vector3Add(pts[i], Vector3Scale(side, w));
+        if (i > 0) {
+            rlColor4ub(col.r, col.g, col.b, pa); rlVertex3f(pl.x, pl.y, pl.z); rlVertex3f(pr.x, pr.y, pr.z);
+            rlColor4ub(col.r, col.g, col.b, al); rlVertex3f(r.x, r.y, r.z);
+            rlColor4ub(col.r, col.g, col.b, pa); rlVertex3f(pl.x, pl.y, pl.z);
+            rlColor4ub(col.r, col.g, col.b, al); rlVertex3f(r.x, r.y, r.z); rlVertex3f(l.x, l.y, l.z);
+        }
+        pl = l; pr = r; pa = al;
+    }
+    rlEnd();
+    rlDrawRenderBatchActive(); rlEnableDepthMask(); rlEnableBackfaceCulling();
+}
+
 // このファイルの中では、筒・球・箱をすべて陰影つきで描く
 static void LitSphere(Vector3 c, float r, Color col) { LitSphereEx(c, r, 8, 10, col); }
 // 楕円の断面の筒（胴体用）：横（sideA/B の向き）に広く、前後に薄い。下と上で向きを変えられる（腰と肩のひねり）
@@ -1337,6 +1415,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
     if (!gOutline) {
         rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
+        if (FX_SOFT_SHADOW && gLook == 0) FigureShadow(pos, sc);   // 柔らかい影（ふつうの見た目だけ。アニメ調・ドット風は下の今までの影）
+        else
         for (int k = 0; k < 3; k++)
             DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
         rlDrawRenderBatchActive(); rlEnableDepthMask();
@@ -2234,9 +2314,127 @@ void PixelBegin(void)
     if (!gPixShaderOk) { gPixShader = LoadShaderFromMemory(0, PIX_FS); gPixShaderOk = true; }
     BeginTextureMode(gPixFull);
 }
+// ---- ポスト処理（FX_POST）：描き終えた 3D の画面に、色調補正・軽いビネット・軽いブルームをかける。文字（HUD）より前 ----
+//   「ふつう」の見た目のときだけ（アニメ調・ドット風には掛けない）。PixelEnd から呼ぶ。
+//   3D はこれまでどおり画面にそのまま描く（画面のなめらかさ＝アンチエイリアスを保つため。別の絵に描くとギザギザになる）。
+//   描き終えた画面を 1 枚の絵に写し取り（glCopyTexSubImage2D）、シェーダーを通して画面全体に描き戻す。
+//   ブルームは 1/4 → 1/8 の小さな絵でぼかすので軽い（全画面で読む絵は 2 枚だけ）。
+//   シェーダーが作れない・画面と描く大きさが違うなどのときは、何もしない（今までどおりの絵になる）
+#if FX_POST
+#if defined(PLATFORM_WEB)
+#include <GLES2/gl2.h>
+// 画面と同じ大きさの絵を 1 ドットずつ読むので、使える機種では精度を上げる（mediump のままだと、スマホによっては絵がわずかにずれてぼける）
+#define FX_HEAD "#version 100\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\nvarying vec2 fragTexCoord;\nvarying vec4 fragColor;\nuniform sampler2D texture0;\n#define TEX texture2D\n#define OUT gl_FragColor\n"
+#else
+// raylib のヘッダーには OpenGL の関数が出ていないので、使う 1 つだけ自分で宣言する（OpenGL 1.1 からある関数。Makefile がつないでいる OpenGL のライブラリに入っている）
+#if defined(_WIN32)
+__declspec(dllimport) void __stdcall glCopyTexSubImage2D(unsigned int target, int level, int xoffset, int yoffset, int x, int y, int width, int height);
+#else
+void glCopyTexSubImage2D(unsigned int target, int level, int xoffset, int yoffset, int x, int y, int width, int height);
+#endif
+#define FX_HEAD "#version 330\nin vec2 fragTexCoord;\nin vec4 fragColor;\nuniform sampler2D texture0;\nout vec4 finalColor;\n#define TEX texture\n#define OUT finalColor\n"
+#endif
+#define FX_GL_TEXTURE_2D 0x0DE1
+// 明るい所だけを取り出して 1/4 に縮める（4 か所を混ぜて読む＝元の 4×4 ドットの平均）
+static const char *FX_BRIGHT_FS = FX_HEAD
+    "uniform vec4 fxp;\n"   // xy = 元の絵の 1 ドットの大きさ、z = しきい値
+    "void main(){ vec2 d = fxp.xy;\n"
+    "  vec3 c = 0.25 * (TEX(texture0, fragTexCoord + vec2(-d.x, -d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, -d.y)).rgb\n"
+    "                 + TEX(texture0, fragTexCoord + vec2(-d.x, d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, d.y)).rgb);\n"
+    "  float l = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "  OUT = vec4(c * smoothstep(fxp.z, 1.0, l), 1.0); }\n";
+// ぼかし（真ん中と斜め 4 か所）
+static const char *FX_BLUR_FS = FX_HEAD
+    "uniform vec4 fxp;\n"   // xy = ずらす量
+    "void main(){ vec2 d = fxp.xy;\n"
+    "  vec3 c = 0.28 * TEX(texture0, fragTexCoord).rgb + 0.18 * (TEX(texture0, fragTexCoord + vec2(-d.x, -d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, -d.y)).rgb\n"
+    "                 + TEX(texture0, fragTexCoord + vec2(-d.x, d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, d.y)).rgb);\n"
+    "  OUT = vec4(c, 1.0); }\n";
+// 仕上げ：ブルームを足す → 色の濃さ → 明暗のめりはり（S 字）→ ビネット
+static const char *FX_FINAL_FS = FX_HEAD
+    "uniform sampler2D fxBloom;\n"
+    "uniform vec4 fxp;\n"   // x = ブルームの強さ、y = 色の濃さ、z = めりはり、w = ビネット
+    "void main(){\n"
+    "  vec3 c = TEX(texture0, fragTexCoord).rgb;\n"
+    "  c = clamp(c + TEX(fxBloom, fragTexCoord).rgb * fxp.x, 0.0, 1.0);\n"
+    "  float l = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "  c = clamp(mix(vec3(l), c, fxp.y), 0.0, 1.0);\n"
+    "  c = mix(c, c * c * (3.0 - 2.0 * c), fxp.z);\n"
+    "  vec2 q = (fragTexCoord - 0.5) * vec2(1.0, 0.82);\n"
+    "  c *= 1.0 - fxp.w * smoothstep(0.30, 0.78, length(q));\n"
+    "  OUT = vec4(c, 1.0); }\n";
+static Texture2D gFxCopy; static RenderTexture2D gFxA, gFxB, gFxC;
+static int gFxW = 0, gFxH = 0;
+static Shader gFxBright, gFxBlur, gFxFinal;
+static int gFxBrightP, gFxBlurP, gFxFinalP, gFxFinalBloom;
+static int gFxState = 0;   // 0 = まだ、1 = 使える、-1 = 使えない（シェーダーが作れなかった）
+static void PostFxApply(void)
+{
+    if (gLook != 0 || gFxState < 0) return;
+    int W = GetRenderWidth(), H = GetRenderHeight();
+    if (W < 16 || H < 16 || W != GetScreenWidth() || H != GetScreenHeight()) return;   // 画面と描く大きさが違うとき（引きのばした全画面など）は掛けない
+    if (gFxState == 0) {
+        unsigned int def = rlGetShaderIdDefault();
+        gFxFinal = LoadShaderFromMemory(0, FX_FINAL_FS);
+        gFxBright = LoadShaderFromMemory(0, FX_BRIGHT_FS);
+        gFxBlur = LoadShaderFromMemory(0, FX_BLUR_FS);
+        if (!gFxFinal.id || gFxFinal.id == def || !gFxBright.id || gFxBright.id == def || !gFxBlur.id || gFxBlur.id == def) { gFxState = -1; return; }
+        gFxFinalP = GetShaderLocation(gFxFinal, "fxp"); gFxFinalBloom = GetShaderLocation(gFxFinal, "fxBloom");
+        gFxBrightP = GetShaderLocation(gFxBright, "fxp"); gFxBlurP = GetShaderLocation(gFxBlur, "fxp");
+        gFxState = 1;
+    }
+    if (W != gFxW || H != gFxH) {   // 画面の大きさが変わったら作り直す
+        if (gFxW) { UnloadTexture(gFxCopy); UnloadRenderTexture(gFxA); UnloadRenderTexture(gFxB); UnloadRenderTexture(gFxC); }
+        Image im = GenImageColor(W, H, BLACK);
+        gFxCopy = LoadTextureFromImage(im); UnloadImage(im);
+        gFxA = LoadRenderTexture(W / 4, H / 4); gFxB = LoadRenderTexture(W / 8, H / 8); gFxC = LoadRenderTexture(W / 8, H / 8);
+        Texture2D *t[4] = { &gFxCopy, &gFxA.texture, &gFxB.texture, &gFxC.texture };
+        for (int i = 0; i < 4; i++) { SetTextureFilter(*t[i], TEXTURE_FILTER_BILINEAR); SetTextureWrap(*t[i], TEXTURE_WRAP_CLAMP); }
+        gFxW = W; gFxH = H;
+    }
+    if (!gFxCopy.id || !gFxA.id || !gFxB.id || !gFxC.id) return;
+    // 描き終えた画面を写し取る
+    rlDrawRenderBatchActive();
+    rlActiveTextureSlot(0); rlEnableTexture(gFxCopy.id);
+    glCopyTexSubImage2D(FX_GL_TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+    rlDisableTexture();
+    Rectangle full = { 0, 0, (float)W, (float)-H };   // 写し取った絵は上下が逆なので、逆さに読む（描く先の絵も同じ）
+    if (FX_BLOOM) {
+        float p[4];
+        int aw = gFxA.texture.width, ah = gFxA.texture.height, bw = gFxB.texture.width, bh = gFxB.texture.height;
+        BeginTextureMode(gFxA);   // 明るい所だけを 1/4 に
+        BeginShaderMode(gFxBright);
+        p[0] = 1.0f / W; p[1] = 1.0f / H; p[2] = FX_BLOOM_THRESH; p[3] = 0.0f; SetShaderValue(gFxBright, gFxBrightP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxCopy, full, (Rectangle){ 0, 0, (float)aw, (float)ah }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+        BeginTextureMode(gFxB);   // 1/8 に縮めながらぼかす
+        BeginShaderMode(gFxBlur);
+        p[0] = 1.0f / aw; p[1] = 1.0f / ah; SetShaderValue(gFxBlur, gFxBlurP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxA.texture, (Rectangle){ 0, 0, (float)aw, (float)-ah }, (Rectangle){ 0, 0, (float)bw, (float)bh }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+        BeginTextureMode(gFxC);   // もう一度、広めにぼかす
+        BeginShaderMode(gFxBlur);
+        p[0] = 1.6f / bw; p[1] = 1.6f / bh; SetShaderValue(gFxBlur, gFxBlurP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxB.texture, (Rectangle){ 0, 0, (float)bw, (float)-bh }, (Rectangle){ 0, 0, (float)bw, (float)bh }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+    }
+    // 仕上げを画面全体に描き戻す
+    float fp[4] = { FX_BLOOM ? FX_BLOOM_K : 0.0f, FX_SATURATION, FX_CONTRAST, FX_VIGNETTE };
+    BeginShaderMode(gFxFinal);
+    SetShaderValue(gFxFinal, gFxFinalP, fp, SHADER_UNIFORM_VEC4);
+    SetShaderValueTexture(gFxFinal, gFxFinalBloom, gFxC.texture);
+    DrawTexturePro(gFxCopy, full, (Rectangle){ 0, 0, (float)W, (float)H }, (Vector2){ 0 }, 0.0f, WHITE);
+    EndShaderMode();
+}
+#else
+static void PostFxApply(void) { }
+#endif
 void PixelEnd(void)
 {
-    if (!gPixOn) return;
+    if (!gPixOn) { PostFxApply(); return; }
     gPixOn = false;
     EndTextureMode();
     int lw = gPixLow.texture.width, lh = gPixLow.texture.height;
