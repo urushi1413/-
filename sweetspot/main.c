@@ -14,14 +14,25 @@ static const char *ModeName(int m)   // 表示用
 }
 
 // 試合の統計（中継のマッチサマリーの形）。mst はサーブの入り [0=1st 打数 1=1st 入 2=2nd 打数 3=2nd 入 4=返されなかった 5=DF]
-static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp)
+// 試合の統計の表の大きさ（画面の真ん中に出す）
+#define SUMMARY_W     700
+#define SUMMARY_ROW_H 32
+#define SUMMARY_ROWS  13
+#define SUMMARY_H     (132 + SUMMARY_ROWS * SUMMARY_ROW_H + 44)   // 置く場所を決める高さ
+#define SUMMARY_DRAWN (118 + SUMMARY_ROWS * SUMMARY_ROW_H + 40)   // 実際に描く高さ（見出し 70 ＋ 名前 48 ＋ 行 ＋ 下の案内 40）
+static int SummaryTop(void)    { return GetScreenHeight() / 2 - SUMMARY_H / 2; }
+static int SummaryBottom(void) { return SummaryTop() + SUMMARY_DRAWN; }
+// rightLimit：表の右端をこれより左に収める（右上のスコア表を出したまま表を出すとき。かからないなら真ん中のまま）
+static void DrawMatchSummary(const char *title, const char *footer, const Score *sc, const MatchStats ms[2], const int mst[2][6], const char *opp, int rightLimit)
 {
-    int W = GetScreenWidth(), H = GetScreenHeight();
-    int pw = 700, rowH = 32, nRows = 13;
-    int ph = 132 + nRows * rowH + 44;
-    int px = W / 2 - pw / 2, py = H / 2 - ph / 2;
+    int W = GetScreenWidth();
+    int pw = SUMMARY_W, rowH = SUMMARY_ROW_H, nRows = SUMMARY_ROWS;
+    int px = W / 2 - pw / 2, py = SummaryTop();
+    if (px + pw > rightLimit - 10) px = rightLimit - 10 - pw;
+    if (px < 4) px = 4;
     Color head = { 70, 40, 110, 240 }, rowA = { 20, 80, 50, 235 }, rowB = { 25, 95, 60, 235 };
     Color you = RAYWHITE, aiC = (Color){ 255, 215, 90, 255 };
+    DrawRectangle(px, py, pw, SUMMARY_DRAWN, (Color){ 10, 26, 20, 255 });   // 下地：後ろの絵や文字が、行のすき間や半透明の行から透けて文字に重ならないように
     DrawRectangle(px, py, pw, 70, head);
     // セットのスコア（右）と見出し（左）：見出しはセットのスコアにかからない大きさに
     char sets[64] = { 0 };
@@ -33,8 +44,15 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
       DrawText(title, px + 24, py + 18 + (36 - tfs) / 2, tfs, RAYWHITE); }
     int y = py + 74;
     DrawRectangle(px, y, pw, 40, rowB);
-    DrawText(YouName(), px + 70 - MeasureText(YouName(), 24) / 2, y + 8, 24, you);
-    DrawText(opp, px + pw - 70 - MeasureText(opp, 24) / 2, y + 8, 24, aiC);
+    {   // 名前：長い名前でも表の外にはみ出さない・真ん中にかからない大きさに（左右それぞれ幅 240 まで）
+        const char *nm[2] = { YouName(), opp };
+        for (int k = 0; k < 2; k++) {
+            int nfs = 24; while (nfs > 14 && MeasureText(nm[k], nfs) > 240) nfs--;
+            int nw = MeasureText(nm[k], nfs), cx = k == 0 ? px + 70 : px + pw - 70;
+            int nx = Clamp(cx - nw / 2, px + 10, px + pw - 10 - nw);
+            DrawText(nm[k], nx, y + 8 + (24 - nfs) / 2, nfs, k == 0 ? you : aiC);
+        }
+    }
     y += 44;
     for (int r = 0; r < nRows; r++) {
         const char *label = "";
@@ -2336,6 +2354,7 @@ int main(void)
                 SfxScoreCall(&score, server, winner, score.nSetsDone != setsBefore ? 2 : (gamesAfter != gamesBefore ? 1 : 0), 1.1f);
                 phase = PH_POINT_OVER;
                 phaseTimer = 2.0f;
+                if (score.over && koT >= 0.0f) phaseTimer = 4.6f;   // K.O.：大きな文字が消えてから、試合の結果の表を出す（重ならないように）
                 // ---- 追い込まれた選手がラケットを叩きつける（ジョコビッチ）。叩きつけた後はしばらく強くなる ----
                 {
                     bool setEnded = score.nSetsDone != setsBefore;
@@ -3116,7 +3135,11 @@ int main(void)
         EndMode3D();
         AtmosOverlay(cam); PixelEnd();   // 時間帯と天気の色合い、ナイターのライト
         guideLevel = keepGuide; assistLevel = keepAssist;
-        if (MOBILE_ONLY && cineMode == 0) DrawTouchControls(playerServing);   // スマホ版：打つボタン・一時停止・スティック
+        // 試合の統計の表が出ている間は、表にかかるほかの文字（テロップ・左上の説明・下の成績と操作の行・右上のスコア表・際どい判定の図）を出さない。
+        //   resultUp：試合の結果・セット間の表（右上のスコア表も出さない。セットのスコアは表の見出しにある）。summaryUp：Tab で開いた表も含む
+        bool resultUp  = mode == MODE_MATCH && phaseTimer <= 0.0f && (score.over || setBreak);
+        bool summaryUp = resultUp || (mode == MODE_MATCH && showSummary);
+        if (MOBILE_ONLY && cineMode == 0) DrawTouchControls(playerServing, mode == MODE_MATCH && score.over && phaseTimer <= 0.0f);   // スマホ版：打つボタン・一時停止・スティック（試合の結果の間は一時停止だけ）
         if (cineMode > 0) {   // 撮影モード：文字は出さない（切り替えた直後だけ、カメラの名前を小さく）
             if (cineLabelT > 0.0f) {
                 cineLabelT -= frameDt;
@@ -3146,7 +3169,7 @@ int main(void)
                 if (hitFlashT[k] > 0.0f && k == 0) DrawRectangle(0, 0, W, H, Fade(RED, 0.35f * hitFlashT[k] / 0.5f));
             }
             DrawText("VS", cxm - MeasureText("VS", 22) / 2, y0, 22, YELLOW);
-            if (koT >= 0.0f) {
+            if (koT >= 0.0f && !resultUp) {
                 koT += frameDt;
                 float sc = koT < 0.25f ? 3.0f - 8.0f * koT : 1.0f, al = koT < 3.5f ? 1.0f : Clamp01(1.0f - (koT - 3.5f));
                 int fsz = (int)(140 * sc), tw = MeasureText("K.O.", fsz);
@@ -3176,14 +3199,14 @@ int main(void)
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)
             DrawText(TR("R: replay", "R：リプレイ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay", "R：リプレイ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
-        if (tour.active && mode == MODE_MATCH && hudLevel <= 2) {
+        if (tour.active && mode == MODE_MATCH && hudLevel <= 2 && !(DEMO_ONLY && resultUp)) {
             int lgk = gLang; gLang = LANG_EN;   // 試合中のテロップは英語
             const char *tl = TextFormat("%s  -  %s", TourName(tour.slam), TourRoundName(tour.round));
             gLang = lgk;
             DrawText(tl, (int)fmaxf(520.0f, GetScreenWidth() / 2 - MeasureText(tl, 18) / 2), 8, 18, Fade(YELLOW, 0.85f));
         }
         // ---- 際どい判定の拡大図（上から見たライン際。1cm = 6 ピクセル）----
-        if (hawkT < 3.0f && mode != MODE_SERVE) {
+        if (hawkT < 3.0f && mode != MODE_SERVE && !summaryUp) {
             const float S = 600.0f;            // 1m あたりのピクセル
             int pw = 380, ph = 230, px = GetScreenWidth() - pw - 20, py = 200;
             float al = Clamp01((3.0f - hawkT) / 0.4f);
@@ -3209,7 +3232,7 @@ int main(void)
         // ---- HUD ----
         // 左上のパネルは小さく薄く（相手コートの奥を隠さないように）
         int y = 20;
-        if (hudLevel <= 1) {   // 左上：当たりの分析（MINIMAL と OFF では出さない）
+        if (hudLevel <= 1 && !summaryUp) {   // 左上：当たりの分析（MINIMAL と OFF では出さない。統計の表の間も）
         DrawRectangle(10, 10, 500, 178, Fade(BLACK, 0.35f));
         bool showServeInfo = (mode == MODE_SERVE) || (playerServing && mode == MODE_MATCH);
         if (showServeInfo) {
@@ -3281,8 +3304,8 @@ int main(void)
             DrawText(TR("Move to the ball. Hold longer = deeper. Release to swing", "球の所へ動く。長く押すほど深い。離して振る"), 20, y, 18, RAYWHITE);
         }
         }   // 左上のパネル
-        // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ
-        if (hudLevel == 0) {
+        // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ（統計の表の間は出さない：表の下の案内にかかる）
+        if (hudLevel == 0 && !summaryUp) {
         y = GetScreenHeight() - 98;
         if (mode == MODE_SERVE)
             DrawText(TextFormat(TR("1st in %d/%d   2nd in %d/%d   Aces %d   Double faults %d", "ファースト %d/%d   セカンド %d/%d   エース %d   ダブルフォールト %d"),
@@ -3331,6 +3354,7 @@ int main(void)
             // スコア表（中継のような形）：サーブの印、名前、ゲーム、ポイント
             int so = 30 * score.nSetsDone;   // 終わったセットの列
             int sbw = 300 + so, sx = GetScreenWidth() - sbw - 10, sy = 10;
+            if (!resultUp) {   // 試合の結果・セット間の表の間は出さない（表の右端と重なる。セットのスコアは表の見出しにある）
             DrawRectangle(sx, sy, sbw, 96, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
             DrawText(TR("GAMES", "ゲーム"), sx + 166 + so, sy + 4, 12, LIGHTGRAY);
             DrawText(score.tiebreak ? TR("TIEBREAK", "タイブレーク") : TR("POINT", "ポイント"), sx + 222 + so, sy + 4, 12, LIGHTGRAY);
@@ -3364,18 +3388,19 @@ int main(void)
                 DrawRectangle(gx, gy, 18, 18, gc);
                 if (score.gameWinner[g] != score.gameServer[g]) DrawText("B", gx + 5, gy + 2, 14, RED);
             }
-            if (ai.lastKmh > 0.0f && hudLevel <= 1) {
+            if (ai.lastKmh > 0.0f && hudLevel <= 1 && !summaryUp) {
                 int ly = sy + (score.nGames ? 126 : 102);
                 DrawRectangle(sx, ly - 3, sbw, 22, Fade((Color){ 10, 20, 40, 255 }, 0.6f));
                 DrawText(TextFormat(TR("AI last: %s %.0f km/h", "相手の最後の球：%s %.0f km/h"), ai.lastServe ? TR("SERVE", "サーブ") : ShotNameUI(ai.lastType), ai.lastKmh),
                          sx + 8, ly, 16, LIGHTGRAY);
             }
-            if (pointMsg[0]) {
+            }   // スコア表
+            if (pointMsg[0] && !summaryUp) {   // 統計の表の間は出さない（表の下に残って、行のすき間から文字が透けていた）
                 int w = MeasureText(pointMsg, 34);
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));
                 DrawText(pointMsg, GetScreenWidth() / 2 - w / 2, 158, 34, YELLOW);
             }
-            if (scoreCall[0] && !score.over) {
+            if (scoreCall[0] && !score.over && !summaryUp) {
                 // スコアのコール（40-15、DEUCE、ADVANTAGE、GAME）を大きく
                 const char *call = TextToUpper(scoreCall);
                 int w = MeasureText(call, 48);
@@ -3383,8 +3408,8 @@ int main(void)
                 DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
             }
             // ラケットを叩きつけた：審判のコール
-            if (rageMsgT > 0.0f && rageMsg[0]) {
-                rageMsgT -= frameDt;
+            if (rageMsgT > 0.0f && rageMsg[0]) rageMsgT -= frameDt;
+            if (rageMsgT > 0.0f && rageMsg[0] && !summaryUp) {
                 // 行ごとに測って、いちばん長い行と行の数に合わせた箱にする（説明が長くてもはみ出さない）
                 int w = 0, nl = 0;
                 {
@@ -3395,10 +3420,26 @@ int main(void)
                 DrawRectangle(GetScreenWidth() / 2 - w / 2 - 18, 290, w + 36, 20 + nl * 30, Fade((Color){ 120, 20, 20, 255 }, 0.80f * al));
                 DrawText(rageMsg, GetScreenWidth() / 2 - w / 2, 300, 26, Fade(RAYWHITE, al));
             }
+            // ---- 試合に勝った：紙吹雪。統計の表より先に描く（表の文字の上に紙吹雪がかからないように、表の後ろを舞う） ----
+            if (winFx >= 0.0f && score.over) {
+                winFx += frameDt;
+                int W = GetScreenWidth(), H = GetScreenHeight();
+                static const Color CF[6] = { { 250, 70, 70, 255 }, { 255, 210, 60, 255 }, { 90, 200, 255, 255 }, { 120, 230, 120, 255 }, { 255, 140, 220, 255 }, { 255, 255, 255, 255 } };
+                float alC = phaseTimer > 0.0f ? 1.0f : 0.75f;
+                for (int i = 0; i < 140; i++) {
+                    float r1 = fmodf(sinf(i * 12.9898f) * 43758.5453f, 1.0f), r2 = fmodf(sinf(i * 78.233f) * 12345.678f, 1.0f);
+                    r1 = fabsf(r1); r2 = fabsf(r2);
+                    float sp = 70.0f + 110.0f * r2;
+                    float y = fmodf(r1 * (H + 60) + winFx * sp, (float)(H + 60)) - 30.0f;
+                    float x = r2 * W + 35.0f * sinf(winFx * (1.5f + r1 * 2.0f) + i);
+                    float rot = winFx * (90.0f + 200.0f * r1) + i * 37.0f;
+                    DrawRectanglePro((Rectangle){ x, y, 12.0f, 6.0f }, (Vector2){ 6.0f, 3.0f }, rot, Fade(CF[i % 6], alC));
+                }
+            }
             // 試合の統計：セット間と試合の後（Tab でもいつでも）
             if (score.over && phaseTimer <= 0.0f)
                 DrawMatchSummary(score.sets[0] > score.sets[1] ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT),
-                                 tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT);
+                                 tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト") : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト"), &score, ms, mst, OPP_SHORT, GetScreenWidth());
             if (DEMO_ONLY && score.over && phaseTimer <= 0.0f && (demoCode[0] || demoTried)) {   // 体験版：勝利の証明コード
                 // 結果の表の上の空き（表は画面の真ん中、上に約 60px 空く）に 2 行で
                 int W = GetScreenWidth(), bw = 660, bh = 54, bx = W / 2 - bw / 2, by = 4;   // 右上の点数の表示にかからない幅
@@ -3420,25 +3461,9 @@ int main(void)
             }
             if (score.over && phaseTimer <= 0.0f) { }   // 試合の結果は上で出した（下の 2 つは出さない）
             else if (setBreak && phaseTimer <= 0.0f)
-                DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT);
+                DrawMatchSummary(TextFormat(TR("AFTER SET %d", "第 %d セット終了"), score.nSetsDone), TR("Enter / click: next set", "Enter / クリック：次のセット"), &score, ms, mst, OPP_SHORT, GetScreenWidth());
             else if (showSummary)
-                DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT);
-            // ---- 試合に勝った：紙吹雪と勝利の文字 ----
-            if (winFx >= 0.0f && score.over) {
-                winFx += frameDt;
-                int W = GetScreenWidth(), H = GetScreenHeight();
-                static const Color CF[6] = { { 250, 70, 70, 255 }, { 255, 210, 60, 255 }, { 90, 200, 255, 255 }, { 120, 230, 120, 255 }, { 255, 140, 220, 255 }, { 255, 255, 255, 255 } };
-                float alC = phaseTimer > 0.0f ? 1.0f : 0.75f;
-                for (int i = 0; i < 140; i++) {
-                    float r1 = fmodf(sinf(i * 12.9898f) * 43758.5453f, 1.0f), r2 = fmodf(sinf(i * 78.233f) * 12345.678f, 1.0f);
-                    r1 = fabsf(r1); r2 = fabsf(r2);
-                    float sp = 70.0f + 110.0f * r2;
-                    float y = fmodf(r1 * (H + 60) + winFx * sp, (float)(H + 60)) - 30.0f;
-                    float x = r2 * W + 35.0f * sinf(winFx * (1.5f + r1 * 2.0f) + i);
-                    float rot = winFx * (90.0f + 200.0f * r1) + i * 37.0f;
-                    DrawRectanglePro((Rectangle){ x, y, 12.0f, 6.0f }, (Vector2){ 6.0f, 3.0f }, rot, Fade(CF[i % 6], alC));
-                }
-            }
+                DrawMatchSummary(TR("MATCH SUMMARY", "試合の統計"), TR("Tab: close", "Tab：閉じる"), &score, ms, mst, OPP_SHORT, sx);   // 試合中：右上のスコア表は出したまま、表をその左に収める
         }
 
         // 統計（Tab）
@@ -3510,8 +3535,10 @@ int main(void)
         if (toastT > 0.0f) {
             toastT -= frameDt;
             int tw = MeasureText(toast, 30);
-            DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, GetScreenHeight() - 210, tw + 32, 44, Fade(BLACK, 0.75f));
-            DrawText(toast, GetScreenWidth() / 2 - tw / 2, GetScreenHeight() - 202, 30, YELLOW);
+            int ty = GetScreenHeight() - 210;
+            if (summaryUp) ty = (int)fminf((float)(SummaryBottom() + 8), (float)(GetScreenHeight() - 48));   // 統計の表の間は表の下に（前は表の行の上に重なっていた）
+            DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, ty, tw + 32, 44, Fade(BLACK, 0.75f));
+            DrawText(toast, GetScreenWidth() / 2 - tw / 2, ty + 8, 30, YELLOW);
         }
         // ---- いい当たり：画面の縁が一瞬金色に光る ----
         if (sweetT < 0.25f) {
@@ -3523,9 +3550,9 @@ int main(void)
         }
         sweetT += frameDt;
         if (slowMo) DrawText(TR("SLOW x0.25", "スロー x0.25"), GetScreenWidth() - 140, GetScreenHeight() - 40, 20, RED);
-        if (botControls) DrawText(TR("AUTOPILOT (B)", "自動操作（B）"), GetScreenWidth() - 180, GetScreenHeight() - 70, 20, ORANGE);
+        if (botControls) DrawText(TR("AUTOPILOT (B)", "自動操作（B）"), GetScreenWidth() - 180, GetScreenHeight() - 128, 20, ORANGE);   // 下の操作説明の行にかからない高さ
         if (hudLevel == 0) DrawText(TR("Tab: stats", "Tab：成績"), GetScreenWidth() - 120, GetScreenHeight() - 30, 16, LIGHTGRAY);
-        if (hudLevel == 0) {
+        if (hudLevel == 0 && !summaryUp) {   // 統計の表の間は出さない（表の下に出す知らせと重なる）
             const char *an[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING+SPOT", "タイミング＋立つ場所") };
             DrawText(TextFormat(TR("H assist: %s", "H 手がかり：%s"), an[assistLevel]), 260, GetScreenHeight() - 30, 18, assistLevel ? GREEN : LIGHTGRAY);
             DrawText(TextFormat(TR("N style: %s", "N 難しさ：%s"), StyleNameUI(style)), 560, GetScreenHeight() - 30, 18, style == STYLE_CASUAL ? SKYBLUE : ORANGE);

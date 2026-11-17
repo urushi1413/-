@@ -101,14 +101,15 @@ void ReadTouch(PlayerInput *in, float aimSens)
 bool TouchStickActive(void) { return gStickOn; }
 bool TouchPauseTapped(void) { bool t = gPauseTap; gPauseTap = false; return t; }
 
-void DrawTouchControls(bool serving)
+// pauseOnly：一時停止のボタンだけ（試合の結果の表の間。打つボタンの文字が表にかからないように）
+void DrawTouchControls(bool serving, bool pauseOnly)
 {
     static const char *EN[TOUCH_BTN_COUNT] = { "TOP", "SLICE", "FLAT", "LOB", "DROP" };
     static const char *JA[TOUCH_BTN_COUNT] = { "トップ", "スライス", "フラット", "ロブ", "ドロップ" };
     static const char *SV_EN[3] = { "KICK", "SLICE", "FLAT" };
     static const char *SV_JA[3] = { "キック", "スライス", "フラット" };
     static const Color COL[TOUCH_BTN_COUNT] = { { 255, 200, 60, 255 }, { 120, 200, 255, 255 }, { 255, 110, 90, 255 }, { 190, 150, 255, 255 }, { 140, 230, 140, 255 } };
-    for (int b = 0; b < TOUCH_BTN_COUNT; b++) {
+    for (int b = 0; b < TOUCH_BTN_COUNT && !pauseOnly; b++) {
         if (serving && b >= TB_LOB) continue;   // サーブのときはロブ・ドロップは出さない
         Vector2 c; float r; TouchButtonRect(b, &c, &r);
         bool on = gPressed[b];
@@ -126,7 +127,7 @@ void DrawTouchControls(bool serving)
         DrawRectangle((int)c.x - 9, (int)c.y - 11, 6, 22, RAYWHITE);
         DrawRectangle((int)c.x + 3, (int)c.y - 11, 6, 22, RAYWHITE);
     }
-    if (gStickOn) {   // 左手のスティック
+    if (gStickOn && !pauseOnly) {   // 左手のスティック
         float R = GetScreenHeight() * 0.11f;
         DrawCircleV(gStickC, R, Fade(BLACK, 0.3f));
         DrawCircleLinesV(gStickC, R, Fade(RAYWHITE, 0.6f));
