@@ -140,12 +140,13 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
+    fprintf(f, "hint_real=%d\n", s->hintReal);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -185,6 +186,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "hint_real")) s->hintReal = iv;
         else if (!strcmp(key, "rule_net_touch")) s->ruleNet = iv;
         else if (!strcmp(key, "rule_body_shot")) s->ruleBody = iv;
     }
@@ -456,7 +458,11 @@ int main(void)
     float youMinDist = 99.0f;            // AI の球に一番近づいた距離（ウィナーを取られたとき、どれだけ遠かったか）
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
-    PlayStyle style = STYLE_REAL;  // N：難易度
+    PlayStyle style = STYLE_CASUAL;  // N：難易度。初めての人は補助あり（カジュアル）から（設定ファイルがあればそちら）
+    int  suggestKind = 0;          // 提案のページ（menuPage 6）の中身：1 = リアルに挑戦、2 = 補助ありにする、3 = 初めての試合へ
+    int  sugLosses = 0;            // 提案 2 の文に出す連敗の数
+    int  menuPageReq = -1;         // メニューを開くときに出すページ（提案のページを試合の側から開くため。-1 = ふつう）
+    bool hintRealDone = false;     // 「リアルに挑戦」の提案を出した（もう聞かない）
     AssistPlan aplan = { 0 };      // 今来ている球の予定（相手が打った瞬間に一度だけ作る）
     float aplanAge = 1e9f;         // 予定を作ったときの球の経過時間（減ったら新しい球）
     int   aplanType = -1;          // 予定を作ったときの球種
@@ -615,10 +621,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone };
         if (LoadSettingsFile(&s)) {
             setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
@@ -633,6 +639,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
+            hintRealDone = s.hintReal != 0;
         }
         AtmosNewMatch();
     }
@@ -736,7 +743,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -744,6 +751,7 @@ int main(void)
             // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定、7 = ルール（6 は改善レビューの「提案のページ」用に空けておく）
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
+            if (menuPageReq >= 0) { menuPage = menuPageReq; menuPageReq = -1; menuSel = 0; }
             int items[32], n = 0;
             if (menuPage == 0 && MOBILE_ONLY) {   // スマホ版：タイブレークの試合だけ。キーボードを使う項目はなし
                 items[n++] = MI_PLAY; if (app == APP_PAUSE) items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
@@ -754,6 +762,8 @@ int main(void)
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
                 items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+            } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
+                items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
             } else if (menuPage == 7) {   // ルール
                 items[n++] = MI_RULE_NET; items[n++] = MI_RULE_BODY; items[n++] = MI_BACK;
             } else if (menuPage == 0) {
@@ -794,6 +804,7 @@ int main(void)
             if (titleMain) { pw = 520; rowH = n >= 7 ? 46 : 54; fs = n >= 7 ? 28 : 30; px = 70; rowY0 = n >= 7 ? H / 2 - 50 : H / 2 - 30; py = rowY0 - 20; ph = n * rowH + 40; }   // 項目が多いときは詰める
             else if (menuPage == 4) { pw = Clamp(W - 120, 600, 1100); rowH = 40; fs = 22; px = W / 2 - pw / 2; py = 30; ph = H - 60; rowY0 = py + ph - 60; }
             else if (menuPage == 5) { pw = 760; rowH = Clamp((H - 190) / n, 24, 40); fs = rowH >= 32 ? 20 : 18; ph = 96 + n * rowH + 44; px = W / 2 - pw / 2; py = H / 2 - ph / 2; rowY0 = py + 90; }
+            else if (menuPage == 6) { pw = Clamp(W - 80, 600, 860); rowH = 48; fs = 24; ph = 200 + n * rowH + 30; px = W / 2 - pw / 2; py = H / 2 - ph / 2; rowY0 = py + 190; }   // 提案：見出しの下に 2 行の説明
             else if (menuPage == 1 || menuPage == 3) { pw = 600; rowH = Clamp((H - 260) / n, 28, 44); fs = rowH >= 36 ? 22 : 20; px = 40; py = 70; rowY0 = py + 90; ph = 90 + n * rowH + 30; }
             else { pw = 680; rowH = Clamp((H - 260) / n, 28, 46); fs = rowH >= 36 ? 24 : 20; px = W / 2 - pw / 2; ph = 110 + n * rowH + 60; py = H / 2 - ph / 2; rowY0 = py + 100; }
 
@@ -858,6 +869,9 @@ int main(void)
             }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
+            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 6) {   // 提案：Esc は「いいえ」と同じ
+                for (int q = 0; q < n; q++) if (items[q] == MI_SUG_NO) menuSel = q;
+                activate = true; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 7) {   // ルールから設定へ戻る
                 menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
@@ -869,7 +883,7 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it >= MI_KEY0;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -954,6 +968,20 @@ int main(void)
                 else if (it >= MI_KEY0) { keyCap = it - MI_KEY0; while (GetKeyPressed() > 0) { } }   // 次に押されたキーを割り当てる
                 else if (it == MI_BACK && menuPage == 5) { menuPage = 2; menuSel = 4; }
                 else if (it == MI_PG_RULES) { menuPage = 7; menuSel = 0; }
+                else if (it == MI_SUG_YES || it == MI_SUG_NO) {   // 提案のページ：はい／いいえ
+                    bool yes = it == MI_SUG_YES;
+                    if (suggestKind == 1 && yes) style = STYLE_REAL;
+                    if (suggestKind == 2 && yes) style = STYLE_CASUAL;
+                    menuPage = 0; menuSel = 0;
+                    if (suggestKind == 3 && !yes) { mode = MODE_MATCH; app = APP_TITLE; SaveSettings(); }   // 初めての試合はやめてタイトルへ
+                    else {
+                        if (suggestKind == 3) { ai.level = 0; style = STYLE_CASUAL; setsToWin = 0; battle = false; mode = MODE_MATCH; }
+                        SaveSettings();
+                        forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
+                        if (!MOBILE_ONLY) { mouseLocked = true; DisableCursor(); skipMouseDelta = true; }
+                    }
+                    suggestKind = 0;
+                }
                 else if (it == MI_BACK && menuPage == 7) { menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
@@ -1004,12 +1032,26 @@ int main(void)
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
                 else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
                 const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム")
-                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : menuPage == 7 ? TR("RULES", "ルール") : TR("PAUSED", "一時停止");
+                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : menuPage == 7 ? TR("RULES", "ルール") : menuPage == 6 ? TR("ONE SUGGESTION", "ひとつ提案") : TR("PAUSED", "一時停止");
                 int tx = leftPanel ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
                 DrawText(title, tx, py + 22, 46, YELLOW);
-                const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : TR("Esc: back", "Esc：戻る");
+                const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : menuPage == 6 ? TR("Esc: no", "Esc：いいえ") : TR("Esc: back", "Esc：戻る");
                 if (menuPage == 5) sub = keyCap >= 0 ? TR("Press a key  (Esc: cancel)", "割り当てるキーを押す（Esc：やめる）") : TR("Enter / click: change key   Esc: back", "Enter / クリック：キーを変える   Esc：戻る");
                 DrawText(sub, leftPanel ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
+                if (menuPage == 6) {   // 提案の説明（2 行）
+                    const char *l1 = "", *l2 = "";
+                    if (suggestKind == 1) { l1 = TR("You won with assist ON. Try REAL (no assist)?", "補助ありで勝ちました。補助なし（リアル）に挑戦しますか？");
+                                            l2 = DEMO_ONLY ? TR("Win on REAL vs NORMAL to get the full game free!", "リアルで「ふつう」に勝つと製品版が無料！")
+                                                           : TR("Same opponent and settings, only the style changes.", "相手と設定はそのまま、難しさだけ変わります"); }
+                    else if (suggestKind == 2) { l1 = TextFormat(TR("Tough run - %d losses in a row.", "%d 連敗中です"), sugLosses);
+                                                 l2 = TR("Assist ON: no side outs, +50cm reach, timing help. Switch?", "補助あり：横にアウトしない・届く範囲 +50cm・タイミングに余裕。切り替えますか？"); }
+                    else if (suggestKind == 3) { l1 = TR("Nice! Ready for your first match?", "おつかれさま！ 初めての試合をしてみましょう");
+                                                 l2 = TR("Opponent: EASY  -  Style: CASUAL  -  Tiebreak (first to 7)", "相手：やさしい ・ 難しさ：カジュアル ・ タイブレーク（7 点先取）"); }
+                    int f1 = 24; while (f1 > 14 && MeasureText(l1, f1) > pw - 40) f1--;
+                    int f2 = 20; while (f2 > 12 && MeasureText(l2, f2) > pw - 40) f2--;
+                    DrawText(l1, W / 2 - MeasureText(l1, f1) / 2, py + 110, f1, RAYWHITE);
+                    DrawText(l2, W / 2 - MeasureText(l2, f2) / 2, py + 146, f2, LIGHTGRAY);
+                }
             }
             // ---- クレジット ----
             if (menuPage == 4) {
@@ -1106,6 +1148,8 @@ int main(void)
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
+                    case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
+                    case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
                     case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
@@ -1321,7 +1365,16 @@ int main(void)
             if (matchLive) MATCH_LOCKED_TOAST();
             else { ai.level = k; restart = true; }
         }
-        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
+        bool suggested = false;   // 試合の後の提案のページを開いた（このフレームは次の試合にしない。continue は入力の更新を飛ばすので使わない）
+        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle) {
+            // 提案：補助ありで（補助を使わずに）勝ったら、リアルを 1 回だけ勧める
+            if (!hintRealDone && style == STYLE_CASUAL && score.sets[0] > score.sets[1] && !matchAssisted) {
+                hintRealDone = true; SaveSettings();
+                suggestKind = 1; suggested = true;
+            }
+            if (suggested) { app = APP_PAUSE; menuPageReq = 6; menuSel = 0; mouseLocked = false; EnableCursor(); }
+        }
+        if (!suggested && mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
                 { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }   // 結果を 1 試合ずつ見せる
                 app = APP_BRACKET; bracketWait = 0.4f; mouseLocked = false; EnableCursor();
