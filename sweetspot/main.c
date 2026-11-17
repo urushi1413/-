@@ -552,7 +552,8 @@ int main(void)
     Vector3 protestTo = { 0 };           // 抗議で歩いていく先（審判台の前）
 #define PROTEST_WALK 2.0f                // 審判の方へ歩く速さ（m/s）                // 自分がラケットを叩きつけた回数（2 回目からポイントペナルティ）
     float sweetT = 9.0f; Vector3 sweetPos = { 0 }; float sweetQ = 0.0f;   // いい当たりの演出（経過時間・位置・強さ）
-float hitStopT = 0.0f, shakeT = 0.0f;   // 芯の手応え：時間が止まる残り・画面の揺れの残り（秒）
+    float hitStopT = 0.0f, shakeT = 0.0f;
+    int bigKind = 0, bigFor = -1; float bigT = 9.0f;   // このポイントの大事さの見出し：1 ブレーク 2 セット 3 マッチポイント、誰の、出してからの時間   // 芯の手応え：時間が止まる残り・画面の揺れの残り（秒）
     #define SWEET_Q 0.80f   // これ以上の当たりで演出を出す             // 試合に勝った演出の経過時間（-1 = なし）
     Vector3 trail[TRAIL_N];
     int trailCount = 0;
@@ -1557,6 +1558,16 @@ float hitStopT = 0.0f, shakeT = 0.0f;   // 芯の手応え：時間が止まる�
             {
                 gPointImportance = PointImportance(&score);
                 gDecidingSet = score.setsToWin > 1 && score.sets[0] == score.setsToWin - 1 && score.sets[1] == score.setsToWin - 1;   // 最終セット
+            }
+            {   // 見出し（中継のように）：取ればそのゲーム（レシーバー）・セット・試合が決まるポイント。セカンドサーブでは出し直さない
+                int sv = CurrentServer(&score), rv = 1 - sv;
+                Score t1 = score, t2 = score; AwardPoint(&t1, rv); AwardPoint(&t2, sv);
+                bool rvGame = t1.games[rv] != score.games[rv] || t1.sets[rv] != score.sets[rv];
+                bigKind = 0; bigFor = -1;
+                if (t1.over) { bigKind = 3; bigFor = rv; } else if (t2.over) { bigKind = 3; bigFor = sv; }
+                else if (t1.sets[rv] != score.sets[rv]) { bigKind = 2; bigFor = rv; } else if (t2.sets[sv] != score.sets[sv]) { bigKind = 2; bigFor = sv; }
+                else if (rvGame && !score.tiebreak) { bigKind = 1; bigFor = rv; }
+                if (bigKind && serveNo == 1) { bigT = 0.0f; SfxOoh(0.30f); }
             }
             bool deuce = DeuceCourt(&score);
             deuceSide = deuce;
@@ -2597,6 +2608,10 @@ float hitStopT = 0.0f, shakeT = 0.0f;   // 芯の手応え：時間が止まる�
                 }
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
                 SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
+                if (bigKind && winner != bigFor && !score.over) {   // 大事なポイントをしのいだ
+                    snprintf(toast, sizeof(toast), "%s", bigKind == 3 ? TR("Match point saved!", "マッチポイントをしのいだ！") : bigKind == 2 ? TR("Set point saved!", "セットポイントをしのいだ！") : TR("Break point saved!", "ブレークポイントをしのいだ！"));
+                    toastT = 2.0f; crowdExcite = fmaxf(crowdExcite, 0.8f);
+                }
                 crowdExcite = Clamp01(0.25f + (rallyHits - 2) / 12.0f + ((endKind == 1 || endKind == 2) ? 0.35f : 0.0f) + 0.4f * gPointImportance);   // 観客が沸く
                 ms[0].rallyTotal += rallyHits; ms[0].rallyPoints++;   // 1 ポイントの打数（サーブも 1 打）
                 // ---- 試合の統計 ----
@@ -3872,6 +3887,17 @@ float hitStopT = 0.0f, shakeT = 0.0f;   // 芯の手応え：時間が止まる�
             float sd = -ServeDepthFromTime(P.serveT);
             DrawText(TextFormat(TR("%s  %.0f km/h  depth %.1f m%s", "%s  %.0f km/h  深さ %.1f m%s"), ServeNameUI(P.chargingServe), Lerp(sp->minKmh, sp->maxKmh, P.charge), sd,
                                 sd > SERVICE_Z ? TR("  LONG", "  長い") : ""), gx, gy - 24, 20, sd > SERVICE_Z ? RED : RAYWHITE);
+        }
+        bigT += frameDt;
+        if (mode == MODE_MATCH && bigKind && bigT < 2.4f && !score.over && !summaryUp) {   // MATCH POINT などの見出し（画面の表示が「なし」でも出す。中継でも出るものなので）
+            float al = bigT < 0.25f ? bigT / 0.25f : bigT > 2.0f ? 1.0f - (bigT - 2.0f) / 0.4f : 1.0f;
+            const char *bt = bigKind == 3 ? TL("MATCH POINT", "マッチポイント") : bigKind == 2 ? TL("SET POINT", "セットポイント") : TL("BREAK POINT", "ブレークポイント");
+            const char *bn = bigFor == 0 ? YouName() : OPP_SHORT;
+            Color bc = bigFor == 0 ? (Color){ 255, 215, 70, 255 } : (Color){ 255, 110, 90, 255 };
+            int W = GetScreenWidth(), bw = MeasureText(bt, 44), nw = MeasureText(bn, 26);
+            DrawRectangle(0, 112, W, 86, Fade(BLACK, 0.45f * al));
+            DrawText(bt, W / 2 - bw / 2, 118, 44, Fade(bc, al));
+            DrawText(bn, W / 2 - nw / 2, 166, 26, Fade(RAYWHITE, al));
         }
         if (toastT > 0.0f) {
             toastT -= frameDt;
