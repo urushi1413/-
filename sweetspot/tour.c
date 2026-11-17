@@ -149,7 +149,8 @@ static int SimMatch(const Tournament *t, int ea, int eb, char *score, int n)
     float sa = EntrantStr(t, ea) / 100.0f, sb = EntrantStr(t, eb) / 100.0f;
     float p = Clamp(0.5f + (sa - sb) * 0.40f, 0.30f, 0.70f);
     Score s = { 0 };
-    s.setsToWin = t->setsToWin;
+    s.setsToWin = LenSets(t->setsToWin); s.setGames = LenGames(t->setsToWin);
+    if (t->setsToWin == 0) { s.tbOnly = true; s.tiebreak = true; }   // タイブレークだけの大会：ほかの試合もタイブレーク
     for (int i = 0; i < 4000 && !s.over; i++) AwardPoint(&s, RandRange(0.0f, 1.0f) < p ? 0 : 1);
     int w = s.sets[0] > s.sets[1] ? 0 : 1;
     ScoreText2(&s, w, score, n);

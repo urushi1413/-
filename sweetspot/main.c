@@ -578,7 +578,7 @@ int main(void)
     int   retServer = 0;
     MatchStats ms[2] = { 0 };          // 試合の統計（マッチサマリー）
     bool  netFlag[2] = { false };      // このポイントでネットに出たか
-    int   setsToWin = 0;               // 試合の長さ：0=タイブレークだけ（7 点先取） 1=1 セット 2=3 セットマッチ 3=5 セットマッチ
+    int   setsToWin = 0;               // 試合の長さ：0=タイブレークだけ（7 点先取） 1=1 セット 2=3 セットマッチ 3=5 セットマッチ 4=ショートセット（4 ゲーム先取、4-4 でタイブレーク）
     bool  setBreak = false;
     float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
     float stagS = 0.0f;                  // 自分のよろめきの強さ（見た目）
@@ -687,7 +687,7 @@ int main(void)
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
         if (loaded) {
-            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
+            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 4); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
             ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
             ai.level = Clamp(s.level, 0, 2); style = (PlayStyle)Clamp(s.style, 0, STYLE_COUNT - 1); gSurface = (SurfaceType)Clamp(s.court, 0, SURF_COUNT - 1);
@@ -986,7 +986,11 @@ int main(void)
                         oppRandom = k == cnt; if (!oppRandom) ai.persona = TourPersonaAt(gWomen, k);
                         forceRestart = true;
                     } break;
-                    case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin + 4 + change) % 4; forceRestart = true; } break;   // タイブレーク → 1 セット → 3 → 5。体験版は 1 セットだけ
+                    case MI_SETS:   if (!DEMO_ONLY) {   // タイブレーク → ショートセット → 1 セット → 3 → 5
+                                        static const int ORDER[5] = { 0, 4, 1, 2, 3 };
+                                        int k = 0; for (int i = 0; i < 5; i++) if (ORDER[i] == setsToWin) k = i;
+                                        setsToWin = ORDER[(k + 5 + change) % 5]; forceRestart = true;
+                                    } break;   // タイブレーク → 1 セット → 3 → 5。体験版は 1 セットだけ
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT);
                                     if (app == APP_PAUSE && mode == MODE_MATCH && !score.over) matchAssisted = true;   // 試合の途中で難しさを変えた
                                     break;
@@ -1192,7 +1196,7 @@ int main(void)
                     case MI_NAME:    label = TR("Your name (Enter to edit)", "名前（Enter で入力）");
                                      value = nameEdit ? TextFormat("%s%s", gPlayerName, fmodf((float)GetTime(), 1.0f) < 0.5f ? "_" : " ") : gPlayerName; break;
                     case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode); break;
-                    case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
+                    case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 4 ? TR("SHORT SET (first to 4 games)", "ショートセット（4 ゲーム先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
                     case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
                     case MI_OPP:     label = TR("Opponent", "相手");        value = oppRandom ? TR("RANDOM", "ランダム") : PERSONAS[ai.persona].name; break;
@@ -1308,7 +1312,7 @@ int main(void)
                                                               TR("4 slams in a row: hard, clay, grass, hard", "4 大会を続けて：ハード・クレー・芝・ハード"))
                                                            : TextFormat(TR("%s  -  %s court  -  16 players, 4 rounds", "%s  -  %s コート  -  16 人、4 回勝てば優勝"), TourName(slamSel), SurfNameUI(TourSlamSurface(slamSel)));
                     { int ef = 18; while (ef > 12 && MeasureText(ev, ef) > bw0 - 28) ef--; DrawText(ev, bx0 + 14, by + 50, ef, RAYWHITE); }   // 長い大会名でも枠に収める
-                    DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 0 ? TR("tiebreak", "タイブレーク") : setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
+                    DrawText(TextFormat(TR("Opponents: %s  -  %s", "相手：%s  -  %s"), LevelNameUI(ai.level), setsToWin == 0 ? TR("tiebreak", "タイブレーク") : setsToWin == 4 ? TR("short set", "ショートセット") : setsToWin == 1 ? TR("1 set", "1 セット") : setsToWin == 2 ? TR("best of 3", "3 セットマッチ") : TR("best of 5", "5 セットマッチ")), bx0 + 14, by + 90, 18, LIGHTGRAY);
                 } else
                 DrawText(TextFormat(TR("%s  -  %s court  -  %s", "%s  -  %s コート  -  %s"), LevelNameUI(ai.level), SurfNameUI(gSurface), ModeName(mode)), bx0 + 14, by + 90, 18, LIGHTGRAY);
             }
@@ -1510,7 +1514,7 @@ int main(void)
             gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
             SfxSetLineJudges(false);   // アウトのコールはどのコートでも同じ声に（クレーだけ線審の叫び声だったのをそろえた）
             if (MOBILE_ONLY) setsToWin = 0;   // スマホ版はいつもタイブレーク
-            score.setsToWin = setsToWin > 0 ? setsToWin : 1;
+            score.setsToWin = LenSets(setsToWin); score.setGames = LenGames(setsToWin);
             if (setsToWin == 0) { score.tbOnly = true; score.tiebreak = true; }   // タイブレークだけの試合：最初からタイブレーク
             ai.tilt = 0.0f;
             winFx = -1.0f;
