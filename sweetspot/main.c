@@ -3050,8 +3050,8 @@ int main(void)
             } else if (tut == 3) {   // サーブ：2 本入れる
                 if (mode != MODE_SERVE) { mode = MODE_SERVE; forceRestart = true; }
                 if (svIn - tutBase >= 2) { tut = 4; tutT = 0.0f; }
-            } else if (tut == 4 && tutT > 4.0f) {   // 終わり：タイトルへ（次は試合）
-                tut = -1; mode = MODE_MATCH; app = APP_TITLE; menuSel = 0;
+            } else if (tut == 4 && tutT > 4.0f) {   // 終わり：そのまま初めての試合へ誘う（提案のページ。いいえならタイトルへ）
+                tut = -1; suggestKind = 3; app = APP_PAUSE; menuPageReq = 6; menuSel = 0;
                 mouseLocked = false; EnableCursor();
             }
         }
