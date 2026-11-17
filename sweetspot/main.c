@@ -181,7 +181,7 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
@@ -189,6 +189,7 @@ static void SaveSettingsFile(const Settings *s)
     if (!f) return;
     fprintf(f, "hint_real=%d\n", s->hintReal);
     fprintf(f, "feedback=%d\n", s->feedback);
+    fprintf(f, "tempo=%d\n", s->tempo);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -228,6 +229,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "tempo")) s->tempo = iv;
         else if (!strcmp(key, "feedback")) s->feedback = iv;
         else if (!strcmp(key, "hint_real")) s->hintReal = iv;
         else if (!strcmp(key, "rule_net_touch")) s->ruleNet = iv;
@@ -456,6 +458,10 @@ static float PointImportance(const Score *sc)
     if (sc->tiebreak || (sc->points[0] >= 2 && sc->points[1] >= 2)) return 0.5f;                   // 30-30、デュース、タイブレーク
     return 0.0f;
 }
+// ポイント間のテンポ（設定）：0 = 速い、1 = ふつう（初め）、2 = 中継（前と同じ長さ）。ポイントの後の間・コートチェンジ・AI のボールつき・「お静かに」に効く
+static int gTempo = 1;
+static float TempoK(void) { static const float K[3] = { 0.45f, 0.70f, 1.0f }; return K[gTempo % 3]; }
+
 // AI がサーブの構えに入る：サーブ前の儀式（選手ごと。大事なポイントほど長い）を始めて、構えてからトスまでの時間を返す。
 //   試合とリターン練習の両方がこれを使う（サーブまでの間が同じになるように）
 static float AiServePrep(Opponent *ai, int serveNo)
@@ -466,6 +472,12 @@ static float AiServePrep(Opponent *ai, int serveNo)
         int nb = GetRandomValue(mm->bMin, mm->bMax) + (gPointImportance >= 0.5f ? mm->bBig : 0);
         if (serveNo == 2 && mm->serveRit != RIT_BOUNCE) nb = GetRandomValue(1, 3);   // セカンドは短く
         int kind = serveNo == 2 && mm->serveRit == RIT_STRINGS ? RIT_BOUNCE : mm->serveRit;
+        {   // テンポ：速いはボールつき 2 回まで（儀式はなし）、ふつうは 6 回まで（ブレーク・セット・マッチポイントは今まで通り）
+            static const int MAXB[3] = { 2, 6, 99 };
+            bool bigPt = gPointImportance >= 1.0f;
+            if (gTempo == 0 || (gTempo == 1 && !bigPt)) nb = nb < MAXB[gTempo] ? nb : MAXB[gTempo];
+            if (gTempo == 0) kind = RIT_BOUNCE;
+        }
 #ifdef SALE_BUILD
         kind = RIT_BOUNCE;   // 売る版：決まったルーティン（儀式・髪・ガット）はなく、ボールをつくだけ
 #endif
@@ -667,10 +679,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
@@ -688,6 +700,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
+            gTempo = Clamp(s.tempo, 0, 2);
             feedbackLevel = Clamp(s.feedback, 0, 1);
             hintRealDone = s.hintReal != 0;
         }
@@ -794,7 +807,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -841,7 +854,7 @@ int main(void)
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_TEMPO; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (selWant >= 0) { for (int q = 0; q < n; q++) if (items[q] == selWant) menuSel = q; selWant = -1; }   // 前のページへ戻ったとき、開いた項目を選ぶ
@@ -962,6 +975,7 @@ int main(void)
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
                     case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
+                    case MI_TEMPO:     gTempo = (gTempo + 3 + change) % 3; break;
                     case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
                     case MI_RULE_BODY: gRuleBodyShot = !gRuleBodyShot; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
@@ -1205,6 +1219,7 @@ int main(void)
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
+                    case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
                     case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
@@ -1938,6 +1953,7 @@ int main(void)
             bool svDeuce = DeuceCourt(retServing ? &retScore : &score);
             // サーブのモーション：構え → トスを上げる（ラケットを担ぐ）→ 一番上を少し過ぎたところで打つ
             if (!aiTossing) {
+                if (IsKeyPressed(KEY_ENTER) && ai.anim.celebT > 0.3f) { ai.anim.celebT = 0.0f; phaseTimer = fminf(phaseTimer, 0.5f); quietT = 0.0f; }   // Enter：AI のボールつきを飛ばす（構えを見せる 0.5 秒は残す）
                 phaseTimer -= simDt;
                 aiUnderarm = false;
                 if (phaseTimer <= 0.0f && serveNo == 1 && P.pos.z > HALF_LEN + 1.2f &&
@@ -2226,7 +2242,7 @@ int main(void)
             snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&score));
             SfxScoreCall(&score, server, 1, 0, 1.4f);
             TraceLog(LOG_INFO, "POINT end: HINDRANCE -> AI");
-            phase = PH_POINT_OVER; phaseTimer = 2.8f;
+            phase = PH_POINT_OVER; phaseTimer = 2.8f * TempoK();
         }
         if (ActPressed(ACT_REPLAY) && mode != MODE_MATCH) {
             // ITF のバウンドテスト: 2.54m から落とす
@@ -2449,7 +2465,7 @@ int main(void)
                     TraceLog(LOG_INFO, "LET (serve touched the net, then the receiver) by %s", hitter == 0 ? "YOU" : "AI");
                     serveJudged = true;
                     phase = PH_BETWEEN;
-                    phaseTimer = 1.5f;
+                    phaseTimer = fmaxf(0.8f, 1.5f * TempoK());
                 } else {
                     winner = hitter; endKind = 5;
                     if (ball.isServe) {   // サーブが体に当たった：返されなかったサーブ。バウンド前ならサーブは入った扱いで数える
@@ -2490,7 +2506,7 @@ int main(void)
                 TraceLog(LOG_INFO, "LET by %s", hitter == 0 ? "YOU" : "AI");
                 serveJudged = true;   // この球はもう判定しない
                 phase = PH_BETWEEN;
-                phaseTimer = 1.5f;
+                phaseTimer = fmaxf(0.8f, 1.5f * TempoK());
             } else if (ball.isServe && !serveJudged && ball.bounces >= 1) {
                 mst[hitter][serveNo == 1 ? 0 : 2]++;
                 if (ball.result == RESULT_IN) mst[hitter][serveNo == 1 ? 1 : 3]++;
@@ -2506,7 +2522,7 @@ int main(void)
                     SfxCallFault();
                     TraceLog(LOG_INFO, "FAULT by %s", hitter == 0 ? "YOU" : "AI");
                     phase = PH_BETWEEN;
-                    phaseTimer = 1.5f;
+                    phaseTimer = fmaxf(0.8f, 1.5f * TempoK());
                 } else {
                     winner = 1 - hitter;
                     pointMsg = TL("Double fault", "ダブルフォールト");
@@ -2635,7 +2651,7 @@ int main(void)
                 // 主審のスコアコール（拍手が少し落ち着いてから）
                 SfxScoreCall(&score, server, winner, score.nSetsDone != setsBefore ? 2 : (gamesAfter != gamesBefore ? 1 : 0), 1.1f);
                 phase = PH_POINT_OVER;
-                phaseTimer = 2.0f;
+                phaseTimer = 2.0f * TempoK();   // ポイントの後の間（テンポの設定）
                 if (score.over && koT >= 0.0f) phaseTimer = 4.6f;   // K.O.：大きな文字が消えてから、試合の結果の表を出す（重ならないように）
                 // ---- 追い込まれた選手がラケットを叩きつける（ジョコビッチ）。叩きつけた後はしばらく強くなる ----
                 {
@@ -2729,7 +2745,7 @@ int main(void)
                 if (mode == MODE_MATCH && !score.over && !gPigeon.on && quietT <= 0.0f && !quietPending) {
                     float r = RandRange(0.0f, 1.0f);
                     if (r < 0.015f)     { PigeonStart(); phaseTimer = fmaxf(phaseTimer, 2.0f); }   // ハトはたまに（多いと言われた）
-                    else if (r < 0.045f) quietPending = true;   // 次のサーブに入るときに、観客が静まらない
+                    else if (r < 0.045f && (gTempo == 2 || (gTempo == 1 && gPointImportance >= 0.5f))) quietPending = true;   // テンポ：速いは起こさない、ふつうは大事なポイントだけ   // 次のサーブに入るときに、観客が静まらない
                 }
                 // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
                 if (score.over && winner == 0 && DEMO_ONLY && mode == MODE_MATCH) {   // 体験版のチャレンジ
@@ -2792,6 +2808,11 @@ int main(void)
                 } else if (RecPrepareLast(pointStart) > 20) {
                     rp.on = true; rp.mode = 0; rp.idx = 0; rp.t = rp.acc = 0.0f; rp.first = true;
                 }
+            }
+            if (IsKeyPressed(KEY_ENTER) && !score.over && !setBreak && !changeActive && !rp.on) {   // Enter：ポイントの間を飛ばす（試合の終わり・セットの間・コートチェンジは今まで通り）
+                phaseTimer = fminf(phaseTimer, 0.15f);
+                ai.anim.celebT = fminf(ai.anim.celebT, 0.15f); P.anim.celebT = fminf(P.anim.celebT, 0.15f);
+                quietT = 0.0f;
             }
             phaseTimer -= simDt;
             if (ai.anim.smashT > 0.0f) {
@@ -2926,7 +2947,7 @@ int main(void)
             }
             if (phaseTimer <= 0.0f && !setBreak && changePending && !changeActive) {   // コートチェンジを始める
                 changePending = false; changeActive = true; changeFlipped = false;
-                changeT = 0.0f; changeDur = changeSit ? 7.0f : 3.4f;
+                changeT = 0.0f; changeDur = fmaxf(2.0f, (changeSit ? 7.0f : 3.4f) * TempoK());
                 coFromP = P.pos; coFromA = ai.pos;
                 TraceLog(LOG_INFO, "CHANGEOVER start (sit=%d)", changeSit);
                 pointMsg = TL("Changeover", "チェンジコート"); scoreCall[0] = 0;
@@ -3494,7 +3515,9 @@ int main(void)
 
         // ポイントの後：リプレイの案内
         if (mode == MODE_MATCH && (phase == PH_POINT_OVER || phase == PH_BETWEEN) && !score.over && !botControls && hudLevel <= 2)
-            DrawText(TR("R: replay", "R：リプレイ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay", "R：リプレイ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
+            DrawText(TR("R: replay   Enter: next", "R：リプレイ　Enter：次へ"), GetScreenWidth() / 2 - MeasureText(TR("R: replay   Enter: next", "R：リプレイ　Enter：次へ"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
+        else if (mode == MODE_MATCH && phase == PH_SERVE && server == 1 && !score.over && !aiTossing && ai.anim.celebT > 0.3f && hudLevel <= 2)   // AI がボールをついている間
+            DrawText(TR("Enter: skip", "Enter：飛ばす"), GetScreenWidth() / 2 - MeasureText(TR("Enter: skip", "Enter：飛ばす"), 20) / 2, GetScreenHeight() - 170, 20, Fade(RAYWHITE, 0.8f));
         // 大会の名前とラウンド
         if (tour.active && mode == MODE_MATCH && hudLevel <= 2 && !(DEMO_ONLY && resultUp)) {
             int lgk = gLang; gLang = LANG_EN;   // 試合中のテロップは英語
