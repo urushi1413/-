@@ -1328,6 +1328,7 @@ int main(void)
             ai = (Opponent){ 0 };
             ai.level = lvl; ai.persona = per;
             ai.pos = AiHome();
+            if (mode == MODE_RETURN) P.pos = ReturnPosVs(true, false, -0.6f);   // リターン練習：始めからレシーブの位置に（最初はデュースサイド。真ん中に立たない）
             ai.anim.swingT = -1.0f;
             P.anim = (SwingAnim){ .swingT = -1.0f };
             P.downT = 0.0f; P.recoverT = 0.0f;
@@ -2821,7 +2822,7 @@ int main(void)
                     bool gameEnded = retScore.games[0] + retScore.games[1] != gamesBefore;
                     if (gameEnded) snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s", "ゲーム %s"), winner == 0 ? YouName() : OPP_SHORT);
                     else           snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&retScore));
-                    SfxScoreCall(&retScore, 1, winner, gameEnded ? 1 : 0, 1.1f);
+                    // スコアは出さない・コールしない（練習なので。点数はデュース／アドの左右とセカンドサーブを決めるためだけに中で数える）
                     if (gameEnded) retScore = (Score){ .server = 1 };   // 次のゲームも相手のサーブ（セットは数えない）
                     serveNo = 1;
                     retPhase = RET_WAIT; feedTimer = RETURN_POINT_GAP;
@@ -2839,7 +2840,7 @@ int main(void)
                     ai.anim = (SwingAnim){ .swingT = -1.0f };
                     ai.pos = Rot180((Vector3){ deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f });
                     ai.standPos = ai.pos;
-                    P.pos = HumanReturnPos(deuce, serveNo == 2); P.vel = (Vector3){ 0 };
+                    P.pos = ReturnPosVs(deuce, serveNo == 2, ai.pos.x); P.vel = (Vector3){ 0 };   // レシーブの本来の位置（AI と同じ。サーバーの立ち位置に合わせる）
                     P.anim = (SwingAnim){ .swingT = -1.0f };
                     P.downT = 0.0f; P.recoverT = 0.0f; P.sliding = false; P.chargingShot = -1;
                     phaseTimer = AiServePrep(&ai, serveNo);
@@ -3454,27 +3455,9 @@ int main(void)
                      20, y, 16, LIGHTGRAY);
         }
 
-        if (mode == MODE_RETURN && hudLevel <= 2) {   // リターン練習：ポイントの結果と、主審がコールするスコア（試合と同じ場所に）
-            if (pointMsg[0]) {
-                int w = MeasureText(pointMsg, 34);
-                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 16, 150, w + 32, 50, Fade(BLACK, 0.6f));
-                DrawText(pointMsg, GetScreenWidth() / 2 - w / 2, 158, 34, YELLOW);
-            }
-            if (scoreCall[0]) {
-                const char *call = TextToUpper(scoreCall);
-                int w = MeasureText(call, 48);
-                DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
-                DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
-            }
-            if (hudLevel <= 1) {   // 右上：サーバー・何本目か・ゲームの中のポイント・最後のサーブの速さ
-                int sbw = 300, sx = GetScreenWidth() - sbw - 10, sy = 10;
-                DrawRectangle(sx, sy, sbw, 58, Fade((Color){ 10, 20, 40, 255 }, 0.85f));
-                DrawCircle(sx + 16, sy + 19, 6, YELLOW);
-                DrawText(TextFormat("%s  %s", OPP_SHORT, serveNo == 2 ? "2nd" : "1st"), sx + 30, sy + 8, 20, (Color){ 140, 170, 255, 255 });
-                const char *pl = TextFormat("%s - %s", PointLabel(&retScore, 1), PointLabel(&retScore, 0));
-                DrawText(pl, sx + sbw - 12 - MeasureText(pl, 22), sy + 7, 22, YELLOW);
-                if (ai.lastKmh > 0.0f) DrawText(TextFormat(TR("AI last: %s %.0f km/h", "相手の最後の球：%s %.0f km/h"), TR("SERVE", "サーブ"), ai.lastKmh), sx + 8, sy + 36, 16, LIGHTGRAY);
-            }
+        if (mode == MODE_RETURN && hudLevel <= 1 && ai.lastKmh > 0.0f) {   // リターン練習：テロップとスコアは出さない（練習なので）。右上に相手のサーブの速さだけ
+            const char *sp = TextFormat(TR("AI last: %s %.0f km/h", "相手の最後の球：%s %.0f km/h"), TR("SERVE", "サーブ"), ai.lastKmh);
+            DrawText(sp, GetScreenWidth() - MeasureText(sp, 18) - 16, 14, 18, LIGHTGRAY);
         }
         // スコア（試合）
         if (mode == MODE_MATCH) {
