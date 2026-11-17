@@ -23,12 +23,14 @@ static void DrawMatchSummary(const char *title, const char *footer, const Score 
     Color head = { 70, 40, 110, 240 }, rowA = { 20, 80, 50, 235 }, rowB = { 25, 95, 60, 235 };
     Color you = RAYWHITE, aiC = (Color){ 255, 215, 90, 255 };
     DrawRectangle(px, py, pw, 70, head);
-    DrawText(title, px + 24, py + 18, 36, RAYWHITE);
-    // セットのスコア
+    // セットのスコア（右）と見出し（左）：見出しはセットのスコアにかからない大きさに
     char sets[64] = { 0 };
     for (int i = 0; i < sc->nSetsDone; i++)
         snprintf(sets + strlen(sets), sizeof(sets) - strlen(sets), "%s%d-%d", i ? "  " : "", sc->setScore[i][0], sc->setScore[i][1]);
-    DrawText(sets, px + pw - 24 - MeasureText(sets, 26), py + 24, 26, RAYWHITE);
+    int setsW = MeasureText(sets, 26);
+    DrawText(sets, px + pw - 24 - setsW, py + 24, 26, RAYWHITE);
+    { int tfs = 36; while (tfs > 18 && MeasureText(title, tfs) > pw - 48 - setsW - 24) tfs--;
+      DrawText(title, px + 24, py + 18 + (36 - tfs) / 2, tfs, RAYWHITE); }
     int y = py + 74;
     DrawRectangle(px, y, pw, 40, rowB);
     DrawText(YouName(), px + 70 - MeasureText(YouName(), 24) / 2, y + 8, 24, you);
@@ -227,6 +229,7 @@ static const char *PersonaBlurb(int p)
 
 // タイトル・選手選択の背景：コートの上に自分と相手が並んで立つ（ボールをつく）。カメラはゆっくり揺れる
 bool gSlideOn = false;
+static bool oppRandom = false, courtRandom = false;   // 選手と試合：相手・コートをランダムに（試合ごとに選び直す）
 bool gBounceRit = true;   // サーブ前のボールつき（設定）：自分も相手もつく。なしにすると、すぐサーブ   // 滑り込み（設定）：はじめは「なし」（走ると止まれないと不評だったため）
 
 // 能力のグラフ（六角形）：サーブ・強打・足と守備・安定・ネット・勝負強さ。全選手の中で比べて 3〜10 に
@@ -804,10 +807,19 @@ int main(void)
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
-                    case MI_OPP:    ai.persona = TourPersonaAt(gWomen, TourPersonaIndex(gWomen, ai.persona) + change); forceRestart = true; break;
+                    case MI_OPP: {   // 相手：ツアーの選手 →（最後の次）ランダム
+                        int cnt = TourPersonaCount(gWomen), k = oppRandom ? cnt : TourPersonaIndex(gWomen, ai.persona);
+                        k = (k + cnt + 1 + change) % (cnt + 1);
+                        oppRandom = k == cnt; if (!oppRandom) ai.persona = TourPersonaAt(gWomen, k);
+                        forceRestart = true;
+                    } break;
                     case MI_SETS:   if (!DEMO_ONLY) { setsToWin = (setsToWin + 4 + change) % 4; forceRestart = true; } break;   // タイブレーク → 1 セット → 3 → 5。体験版は 1 セットだけ
                     case MI_STYLE:  style = (PlayStyle)((style + STYLE_COUNT + change) % STYLE_COUNT); break;
-                    case MI_COURT:  gSurface = (SurfaceType)((gSurface + SURF_COUNT + change) % SURF_COUNT); break;
+                    case MI_COURT: {   // コート：ハード → クレー → 芝 → ランダム
+                        int k = courtRandom ? SURF_COUNT : (int)gSurface;
+                        k = (k + SURF_COUNT + 1 + change) % (SURF_COUNT + 1);
+                        courtRandom = k == SURF_COUNT; if (!courtRandom) gSurface = (SurfaceType)k;
+                    } break;
                     case MI_TIME:    gTimeSetting = (gTimeSetting + TOD_COUNT + 1 + change) % (TOD_COUNT + 1); AtmosNewMatch(); break;   // 後ろの画面にすぐ出る
                     case MI_WEATHER: gWeatherSetting = (gWeatherSetting + WX_COUNT + 1 + change) % (WX_COUNT + 1); AtmosNewMatch(); break;
                     case MI_ASSIST: assistLevel = (assistLevel + 3 + change) % 3; break;
@@ -890,7 +902,7 @@ int main(void)
                     DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
                                       : TR("DEMO  -  No matches left. Practice is unlimited. Get the full game for more!", "体験版  -  試合はここまで。練習は何度でも。続きは製品版で"),
                              px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
-                    DrawText(TR("CHALLENGE: beat AI NORMAL on REAL and get the full game free", "チャレンジ：AI「ふつう」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
+                    DrawText(TR("CHALLENGE: beat AI NORMAL or PRO on REAL and get the full game free", "チャレンジ：AI「ふつう」か「プロ」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
                 }
             } else {
                 bool leftPanel = menuPage == 1 || menuPage == 3;
@@ -977,13 +989,13 @@ int main(void)
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
                     case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
-                    case MI_OPP:     label = TR("Opponent", "相手");        value = PERSONAS[ai.persona].name; break;
+                    case MI_OPP:     label = TR("Opponent", "相手");        value = oppRandom ? TR("RANDOM", "ランダム") : PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
                     case MI_LANG:    label = gLang == LANG_JA ? "Language / 言語" : "Language";  value = gLang == LANG_JA ? (UiJapaneseOk() ? "日本語" : "JAPANESE (font not found)") : "ENGLISH"; break;   // 英語表示は日本語の字を持たないフォントなので「言語」は出さない
                     case MI_AI:      label = TR("AI level", "AI の強さ");        value = LevelNameUI(ai.level); break;
                     case MI_STYLE:   label = TR("Style", "難しさ");           value = style == STYLE_CASUAL ? TR("CASUAL (easy)", "カジュアル（かんたん）") : TR("REAL", "リアル"); break;
-                    case MI_COURT:   label = TR("Court", "コート");           value = gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
+                    case MI_COURT:   label = TR("Court", "コート");           value = courtRandom ? TR("RANDOM", "ランダム") : gSurface == SURF_CLAY ? TR("CLAY (slow, high)", "クレー（遅く、高く弾む）")
                                                                        : gSurface == SURF_GRASS ? TR("GRASS (fast, low)", "芝（速く、低く滑る）") : TR("HARD", "ハード"); break;
                     case MI_TIME:    { static const char *TN[2][TOD_COUNT + 1] = { { "AUTO", "DAY", "EVENING", "NIGHT" }, { "おまかせ", "昼", "夕方", "ナイター" } };
                                        label = TR("Time of day", "時間帯"); value = TN[gLang == LANG_JA][gTimeSetting]; } break;
@@ -1227,11 +1239,13 @@ int main(void)
             P.anim = (SwingAnim){ .swingT = -1.0f };
             P.downT = 0.0f; P.recoverT = 0.0f;
             P.sliding = false;
+            if (!tour.active && oppRandom) ai.persona = TourPersonaAt(gWomen, GetRandomValue(0, TourPersonaCount(gWomen) - 1));   // 相手：ランダム
+            if (!tour.active && courtRandom) gSurface = (SurfaceType)GetRandomValue(0, SURF_COUNT - 1);                          // コート：ランダム
             score = (Score){ 0 };
             score.server = rand() % 2;
             AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
             gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
-            SfxSetLineJudges(gSurface == SURF_CLAY);   // クレー（ローランドギャロスなど）は電子判定ではなく線審が声でコールする
+            SfxSetLineJudges(false);   // アウトのコールはどのコートでも同じ声に（クレーだけ線審の叫び声だったのをそろえた）
             if (MOBILE_ONLY) setsToWin = 0;   // スマホ版はいつもタイブレーク
             score.setsToWin = setsToWin > 0 ? setsToWin : 1;
             if (setsToWin == 0) { score.tbOnly = true; score.tiebreak = true; }   // タイブレークだけの試合：最初からタイブレーク
@@ -1957,7 +1971,7 @@ int main(void)
         // ---- ヒンドランス（妨害）：相手がサーブのトスを上げている間・相手の打った球が飛んでいる間に、カモン（Y）と叫ぶと相手のポイント ----
         //      あおる（E）は移動のキー（W・D）の隣で、うっかり押しやすいので対象にしない（相手のプレー中に押しても何も起きない）
         if (mode == MODE_MATCH && !score.over && !botControls && ActPressed(ACT_COMEON) &&
-            ((phase == PH_SERVE && server == 1 && aiTossing) || (phase == PH_PLAY && ball.active && ball.lastHitter == HITTER_OPP))) {
+            phase == PH_PLAY && ball.active && ball.lastHitter == HITTER_OPP && ball.bounces == 0 && rallyHits >= 2) {   // 相手の打った球（サーブ以外）が飛んでいる間だけ
             aiTossing = false; ai.anim.windup = 0.0f;
             ball = (Ball){ 0 }; trailCount = 0;
             P.anim.celebKind = CELEB_COMEON; P.anim.celebDur = CelebDuration(CELEB_COMEON); P.anim.celebT = P.anim.celebDur;
@@ -2378,11 +2392,19 @@ int main(void)
                         phaseTimer = fmaxf(phaseTimer, ai.anim.celebDur + 0.4f);
                     }
                 }
+                // ---- ネットイン（白帯をかすめて入った）で決まった：打った方が手を上げて謝る（喜ばない） ----
+                if (ball.netCord && !ball.isServe && endKind == 2 && !score.over) {
+                    SwingAnim *sa = hitter == 1 ? &ai.anim : (botControls ? &bot.anim : &P.anim);
+                    sa->celebKind = CELEB_RACKET_UP; sa->celebDur = 1.4f; sa->celebT = sa->celebDur;
+                    sa->swingT = -1.0f; sa->windup = 0.0f;
+                    phaseTimer = fmaxf(phaseTimer, 1.8f);
+                    snprintf(toast, sizeof(toast), TL("Net cord - %s raises a hand: sorry!", "ネットイン：%s が手を上げて謝る"), hitter == 1 ? OPP_SHORT : YouName()); toastT = 2.2f;
+                }
                 // ---- ハプニング：ときどきハトが降りてくる、観客が騒いで主審が「お静かに」 ----
                 if (mode == MODE_MATCH && !score.over && !gPigeon.on && quietT <= 0.0f && !quietPending) {
                     float r = RandRange(0.0f, 1.0f);
-                    if (r < 0.05f)      { PigeonStart(); phaseTimer = fmaxf(phaseTimer, 2.0f); }
-                    else if (r < 0.10f) quietPending = true;   // 次のサーブに入るときに、観客が静まらない
+                    if (r < 0.015f)     { PigeonStart(); phaseTimer = fmaxf(phaseTimer, 2.0f); }   // ハトはたまに（多いと言われた）
+                    else if (r < 0.045f) quietPending = true;   // 次のサーブに入るときに、観客が静まらない
                 }
                 // ---- 試合に勝った：自分が喜ぶ（膝をつく・両手を上げる・跳んで拳）、観客が沸く、勝利の演出 ----
                 if (score.over && winner == 0 && DEMO_ONLY && mode == MODE_MATCH) {   // 体験版のチャレンジ
