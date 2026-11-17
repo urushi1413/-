@@ -23,6 +23,16 @@ static const char *ModeName(int m)   // 表示用
 static int SummaryTop(void)    { return GetScreenHeight() / 2 - SUMMARY_H / 2; }
 static int SummaryBottom(void) { return SummaryTop() + SUMMARY_DRAWN; }
 // rightLimit：表の右端をこれより左に収める（右上のスコア表を出したまま表を出すとき。かからないなら真ん中のまま）
+// 打った瞬間のネットタッチ（ルール「ネットタッチ」）：1 = ラケットがネットを越える（球がネットから NET_RACKET_R より近い所で打った）、
+//   2 = 伸びて取った体がネットに触れる（伸びきった腰の位置がネットから NET_BODY_R より近い）、0 = なし。ネットの幅の所だけ
+static int NetTouchAtContact(Vector3 ballPos, Vector3 body, bool facingNegZ, const SwingAnim *a)
+{
+    if (fabsf(ballPos.z) < NET_RACKET_R && fabsf(ballPos.x) < NET_POST_X) return 1;
+    Vector3 root = LungeRootWorld(body, facingNegZ, a);
+    if (fabsf(root.z) < NET_BODY_R && fabsf(root.x) < NET_POST_X) return 2;
+    return 0;
+}
+
 // ボディショット：体に当たった球は手前に落ちる死んだ球にする（この後のバウンドの音・目印・判定は出さない）
 static void BodyDeflect(Ball *b, bool battle)
 {
@@ -130,13 +140,13 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
-    fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\n", s->look, s->slide, s->bounce);
+    fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, "key_%s=%d\n", ActionId(a), gKeys[a]);   // キーの割り当て（raylib のキーの番号）
@@ -173,6 +183,8 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "rule_net_touch")) s->ruleNet = iv;
+        else if (!strcmp(key, "rule_body_shot")) s->ruleBody = iv;
     }
     fclose(f);
     return true;
@@ -601,10 +613,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot };
         if (LoadSettingsFile(&s)) {
             setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
@@ -618,6 +630,7 @@ int main(void)
             gLook = Clamp(s.look, 0, 2);
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
+            gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
         }
         AtmosNewMatch();
     }
@@ -631,6 +644,7 @@ int main(void)
     // ボディショット：振ろうとしていた（押している・振る瞬間を待っている）自分の体に球が来たら、その場で振らせて 1 フレーム待つ
     //   （自分の振りは前のフレームの球の動きから打点を選ぶ）。打てたら打った方、空振りなら体に当たった。待つ間、球は体に触れた所で止めておく
     bool bodyPend = false; Ball bodyPendBall = { 0 };
+    int netTouchWho = -1, netTouchHow = 0;   // このポイントで、打った瞬間にネットに触れた選手（0=自分 1=AI）と、触れ方（1 ラケット 2 体）
 
     // バウンドの目印
     Vector3 bouncePos = { 0 };
@@ -720,12 +734,12 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
-            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定
+            // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定、7 = ルール（6 は改善レビューの「提案のページ」用に空けておく）
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
             int items[32], n = 0;
@@ -737,7 +751,9 @@ int main(void)
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
-                items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_BACK;
+                items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+            } else if (menuPage == 7) {   // ルール
+                items[n++] = MI_RULE_NET; items[n++] = MI_RULE_BODY; items[n++] = MI_BACK;
             } else if (menuPage == 0) {
                 items[n++] = MI_PLAY;
                 if (app == APP_TITLE) items[n++] = MI_TUTORIAL;
@@ -761,7 +777,7 @@ int main(void)
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (menuSel >= n) menuSel = 0;
@@ -840,6 +856,8 @@ int main(void)
             }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
+            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 7) {   // ルールから設定へ戻る
+                menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
                     int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
@@ -849,7 +867,7 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it >= MI_KEY0;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -874,6 +892,8 @@ int main(void)
                     case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
+                    case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
+                    case MI_RULE_BODY: gRuleBodyShot = !gRuleBodyShot; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
                     case MI_LANG:   gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; break;
                     case MI_OPP: {   // 相手：ツアーの選手 →（最後の次）ランダム
@@ -931,6 +951,8 @@ int main(void)
                 else if (it == MI_KEYRESET) { KeysReset(); SaveSettings(); snprintf(keyMsg, sizeof(keyMsg), "%s", TR("Keys reset to defaults", "はじめの割り当てに戻した")); keyMsgT = 2.5f; }
                 else if (it >= MI_KEY0) { keyCap = it - MI_KEY0; while (GetKeyPressed() > 0) { } }   // 次に押されたキーを割り当てる
                 else if (it == MI_BACK && menuPage == 5) { menuPage = 2; menuSel = 4; }
+                else if (it == MI_PG_RULES) { menuPage = 7; menuSel = 0; }
+                else if (it == MI_BACK && menuPage == 7) { menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
@@ -980,7 +1002,7 @@ int main(void)
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
                 else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
                 const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム")
-                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : TR("PAUSED", "一時停止");
+                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : menuPage == 7 ? TR("RULES", "ルール") : TR("PAUSED", "一時停止");
                 int tx = leftPanel ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
                 DrawText(title, tx, py + 22, 46, YELLOW);
                 const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : TR("Esc: back", "Esc：戻る");
@@ -1082,6 +1104,9 @@ int main(void)
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
+                    case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
+                    case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
+                    case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
                     case MI_BOUNCE:  label = TR("Bounce before serving", "サーブ前のボールつき"); value = gBounceRit ? TR("ON (press serve to skip)", "あり（サーブを押すと飛ばせる）") : TR("OFF", "なし"); break;
                     case MI_SLIDE:   label = TR("Slide into shots", "滑り込み"); value = gSlideOn ? TR("ON (slide when stopping while charging)", "あり（溜めながら止まると滑る）") : TR("OFF (always stop sharply)", "なし（いつもピタッと止まる）"); break;
                     case MI_TUTORIAL: label = TR("HOW TO PLAY", "はじめての人へ"); value = TR("4 short steps", "4 つの短い練習"); break;
@@ -1173,6 +1198,17 @@ int main(void)
             // ---- 下の案内 ----
             const char *hint = MOBILE_ONLY ? TR("Tap: choose / change", "タップ：選ぶ・変える") : TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
             DrawText(hint, titleMain ? px : ((menuPage == 1 || menuPage == 3) ? px + 20 : px + 30), H - 34, 16, LIGHTGRAY);
+            if (menuPage == 7 && n > 0) {   // ルール：選んでいる項目の説明（下の案内の上）
+                const char *rd = items[menuSel] == MI_RULE_NET
+                    ? TR("Net touch: during a point, if your body touches the net or your racket goes over it when you hit, you lose the point. OFF: you just stop at the net.",
+                         "ネットタッチ：ポイント中に体がネットに触れる、または打つときラケットがネットを越えると失点。なし：ネットで止まるだけ")
+                    : items[menuSel] == MI_RULE_BODY
+                    ? TR("Body shot: a live ball that hits a player's body is the hitter's point (even if it would be out). OFF: the ball passes. Battle mode always has body shots.",
+                         "ボディショット：生きている球が体に当たったら打った方のポイント（アウトの球でも）。なし：球は体を通り抜ける。バトルはいつもあり")
+                    : TR("Rules apply to matches (and return practice for body shots). Saved.", "試合（ボディショットはリターン練習も）に効く。設定は保存される");
+                int rf = 16; while (rf > 12 && MeasureText(rd, rf) > W - 40) rf--;
+                DrawText(rd, W / 2 - MeasureText(rd, rf) / 2, H - 60, rf, Fade(RAYWHITE, 0.9f));
+            }
             if (menuPage == 5 && keyMsgT > 0.0f && keyMsg[0]) {   // キー設定の知らせ（枠の下の方）
                 int mw = MeasureText(keyMsg, 20);
                 DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
@@ -1363,6 +1399,7 @@ int main(void)
             needSetup = false;
             if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }   // 前のポイント（喜ぶところまで）
             mlPoint++; mlShot = 0; mlBefore = score; youMinDist = 99.0f;
+            netTouchWho = -1; netTouchHow = 0;
             pointStart = RecTotal();
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             ai.anim.celebT = 0.0f;
@@ -1567,8 +1604,8 @@ int main(void)
             }
             P.pos = Vector3Add(P.pos, Vector3Scale(P.vel, simDt));
             P.pos.x = Clamp(P.pos.x, -DOUBLES_W * 0.5f - 3.0f, DOUBLES_W * 0.5f + 3.0f);
-            P.pos.z = Clamp(P.pos.z, NET_STOP_Z, HALF_LEN + 5.0f);   // ネットはすり抜けない（近づきすぎるとネットタッチ：試合なら失点）
-            if (P.pos.z <= NET_STOP_Z && P.vel.z < 0.0f) { P.vel.z = 0.0f; P.sliding = false; }
+            P.pos.z = Clamp(P.pos.z, NET_BODY_R, HALF_LEN + 5.0f);   // ネットはすり抜けない：体がネットに触れた所で止まる（ルール「ネットタッチ」ありなら、ポイント中は失点）
+            if (P.pos.z <= NET_BODY_R && P.vel.z < 0.0f) { P.vel.z = 0.0f; P.sliding = false; }
         }
 
         // 見た目のタイマー
@@ -1950,6 +1987,10 @@ int main(void)
                     if (c.miss == MISS_NONE && c.lunge && !c.dive) { P.anim.lungeDur = c.stretch ? STRETCH_TIME : LUNGE_TIME; P.anim.lungeT = P.anim.lungeDur; P.anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
                     P.anim.slice = IsSliceShot(type);
                     P.anim.contactLocal = (Vector3){ sb.x - P.pos.x, sb.y, P.pos.z - sb.z };
+                    if (mode == MODE_MATCH && phase == PH_PLAY && c.miss == MISS_NONE && netTouchWho < 0) {   // 打った瞬間のネットタッチ（ラケットが越える・伸びた体が触れる）
+                        int how = NetTouchAtContact(sb, P.pos, true, &P.anim);
+                        if (how) { netTouchWho = 0; netTouchHow = how; }
+                    }
                     P.anim.swingT = 0.0f;
                     P.anim.smash = c.overhead;
                     if (c.overhead) P.lastIdealPos = (Vector3){ P.pos.x + OVERHEAD_SIDE * handS, OVERHEAD_IDEAL_H, P.pos.z - OVERHEAD_FWD };
@@ -2102,7 +2143,7 @@ int main(void)
             // ボディショット：1 ステップごとに、球の動き（線分）が相手の体（円柱）に触れたか（AI のスイングより先に調べる）
             //   打つ構えなら（AI：打つ計画がある、自分：押している・振る瞬間を待っている）、体の前で詰まって打つ。当たらなければ体に当たった
             int bodyTry = -1;
-            if (((mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE)) && !bodyPend && bodyVictim < 0 && ball.lastHitter != HITTER_NONE) {   // リターン練習も試合と同じルール
+            if ((battle || gRuleBodyShot) && ((mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE)) && !bodyPend && bodyVictim < 0 && ball.lastHitter != HITTER_NONE) {   // リターン練習も試合と同じルール。ルールの設定で切れる（バトルはいつもあり）
                 int v = ball.lastHitter == HITTER_PLAYER ? 1 : 0;
                 bool human = v == 0 && !botControls;
                 Vector3 feet = v == 1 ? ai.pos : (botControls ? Rot180(bot.pos) : P.pos), at;
@@ -2150,6 +2191,7 @@ int main(void)
             if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
             if (((mode == MODE_MATCH && phase == PH_PLAY) || mode == MODE_RALLY) && ai.planned && ball.age >= ai.swingAge) {
                 if (AiSwing(&ai, &ball, P.pos)) {
+                    if (mode == MODE_MATCH && netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, ai.pos, false, &ai.anim); if (how) { netTouchWho = 1; netTouchHow = how; } }
                     if (mode == MODE_MATCH) ms[1].shots++, ms[1].speedSum += ai.lastKmh;
                     if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
                     youMinDist = 99.0f;
@@ -2170,6 +2212,7 @@ int main(void)
                 Ball fb = FlipSides(ball);
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
+                    if (netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, Rot180(bot.pos), true, &bot.anim); if (how) { netTouchWho = 0; netTouchHow = how; } }
                     ms[0].shots++; ms[0].speedSum += bot.lastKmh;
                     ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                     MLogShot(mlPoint, ++mlShot, false, SHOTS[bot.lastType].name, bot.lastKmh, bot.lastQ, bot.lastAttack, bot.lastLapse, bot.anim.lastContact.volley, bot.anim.lastContact.isReturn, P.pos, bot.anim.lastContact.height, ai.pos, Vector3Length(ai.vel));
@@ -2375,15 +2418,21 @@ int main(void)
                     else              pointMsg = (hitter == 0) ? TL("Your winner", "自分のウィナー") : TL("AI winner", "相手のウィナー");
                 }
             }
-            if (winner < 0 && !bodyDone && phase == PH_PLAY) {
-                // ネットタッチ（現実のルール）：球が生きている間に体がネットに触れたら、触れた方の失点（AI はネットに近づかないので、ほぼ自分）
+            if (winner < 0 && !bodyDone && phase == PH_PLAY && gRuleNetTouch) {
+                // ネットタッチ（ルールの設定で切れる）：球が生きている間に、体がネットに触れる（走ってネットまで来た・伸びて取った体が届いた）か、
+                //   打つときラケットがネットを越えたら、その選手の失点。AI は走ってネットに近づかないので、体で触れるのはほぼ自分
                 Vector3 youW = botControls ? Rot180(bot.pos) : P.pos;
-                int toucher = (fabsf(youW.x) < NET_POST_X && youW.z < NET_TOUCH_Z) ? 0 : (fabsf(ai.pos.x) < NET_POST_X && -ai.pos.z < NET_TOUCH_Z) ? 1 : -1;
+                int toucher = netTouchWho, how = netTouchHow;
+                if (toucher < 0) {
+                    if (fabsf(youW.x) < NET_POST_X && youW.z <= NET_BODY_R + 0.005f) { toucher = 0; how = 2; }
+                    else if (fabsf(ai.pos.x) < NET_POST_X && -ai.pos.z <= NET_BODY_R + 0.005f) { toucher = 1; how = 2; }
+                }
                 if (toucher >= 0) {
                     winner = 1 - toucher; endKind = 6;
                     hitter = toucher;   // 記録の「終わらせた方」は触れた方
                     retPending = false;
-                    pointMsg = toucher == 0 ? TL("Your net touch", "自分のネットタッチ") : TL("AI net touch", "相手のネットタッチ");
+                    pointMsg = how == 1 ? (toucher == 0 ? TL("Your racket over the net", "自分のラケットがネットを越えた") : TL("AI racket over the net", "相手のラケットがネットを越えた"))
+                                        : (toucher == 0 ? TL("Your net touch", "自分のネットタッチ") : TL("AI net touch", "相手のネットタッチ"));
                     SfxNet(3.0f, Vector3Distance(cam.position, (Vector3){ youW.x, 1.0f, 0.0f }));
                     SfxOoh(0.5f);
                     TraceLog(LOG_INFO, "NET TOUCH by %s", toucher == 0 ? "YOU" : "AI");
@@ -2582,6 +2631,10 @@ int main(void)
                     crowdExcite = 1.0f;
                     winFx = 0.0f;
                     phaseTimer = fmaxf(phaseTimer, 4.5f);   // 喜ぶ間は統計を出さない
+                } else if (score.over && winner == 1) {   // 相手の勝ち：観客は自分が勝ったときと同じように沸く（観客はどちらの味方でもない）。紙吹雪は自分が勝ったときだけ
+                    if (koT < 0.0f) SfxMatchWin();   // バトルの K.O. は上で鳴らした
+                    crowdExcite = 1.0f;
+                    phaseTimer = fmaxf(phaseTimer, 4.5f);   // 相手が喜ぶ間は統計を出さない（自分が勝ったときと同じ間）
                 }
                 // ---- 試合の記録 ----
                 {

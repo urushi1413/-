@@ -281,10 +281,13 @@ extern bool gDecidingSet;   // 最終セット
 #define BODY_HIT_R         0.24f   // 円柱の半径（m）：肩幅の半分 ＋ 球の半径
 #define BODY_CROUCH_K      0.35f   // しゃがむ（Q）と、円柱の高さがこの割合だけ低くなる（ネット前で顔をよける）
 #define BODY_DODGE         0.75f   // AI が見送る球が体に向かってくるとき、横へよける距離（m）
-// ネット：選手はネットをすり抜けない。ポイント中にネットに触れたら、触れた選手の失点（現実のルール）
-#define NET_STOP_Z         0.30f   // 体の中心は、ネットからこれより近づけない（m）。伸びて取る見た目も、ここで止める
-#define NET_TOUCH_Z        0.40f   // ポイント中に体の中心がネットからこれより近づいたら、ネットに触れた（体の厚み＋足・ラケット）
-#define NET_AI_KEEP        0.45f   // AI（自動操作も）はこれより前へ出ない（ネットに触れない）
+// ネット：選手はネットをすり抜けない。ルール「ネットタッチ」があれば、ポイント中に体が触れるかラケットがネットを越えたら失点
+#define NET_BODY_R         0.20f   // 体の前後の厚みの半分（つま先まで、m）。体の中心がネットからこれだけの所で、体がネットに触れる。ここより先へは進めない
+#define NET_RACKET_R       0.13f   // ラケットの面の半分の幅。打った瞬間、球がネットからこれより近いと、ラケットがネットを越える（触れる）
+#define NET_AI_KEEP        0.45f   // AI（自動操作も）は、体の中心がこれより前へ出ない（走ってネットに触れない）
+// ルールの設定（設定 → ルール。保存される）。バトルのボディショットは設定に関係なくいつもあり
+extern bool gRuleNetTouch;   // ネットタッチ：体がネットに触れる・ラケットがネットを越えたら失点
+extern bool gRuleBodyShot;   // ボディショット：生きている球が体に当たったら、打った方のポイント
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
 // 「お静かに」：サーブの前に観客がざわつく（QUIET_TIME 秒）→ 残り QUIET_SAY 秒で主審が注意 → 残り QUIET_THANKS 秒で「ありがとう」→ サーブ
@@ -865,6 +868,7 @@ void StepBall(Ball *b, float dt);
 Ball MakeShot(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 bool BodyShotHit(const Ball *a, const Ball *b, Vector3 feet, float r, float yLo, float yHi, Vector3 *at);   // 1 ステップ（a → b）の球が体に当たったか
 float BodyTop(int persona, float crouch);   // 体の円柱の上端（m）：身長。しゃがむと低い
+Vector3 LungeRootWorld(Vector3 pos, bool facingNegZ, const SwingAnim *a);   // 伸びきったときの腰の位置（ネットタッチの判定）
 float PredictLandingDist(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm, bool high);

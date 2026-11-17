@@ -68,6 +68,8 @@ float PersonaHeight(int persona)
     if (persona <= 0) return gWomen ? 175.0f : 185.0f;
     return PERSONA_HEIGHT[persona % PERSONA_COUNT];
 }   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
+bool  gRuleNetTouch = true;   // ルール（設定 → ルール）
+bool  gRuleBodyShot = true;
 bool  gHumanShot = false;
 float gPointImportance = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
 bool gCasual = false;     // 自分の打球を評価している間だけ、簡単モードなら true

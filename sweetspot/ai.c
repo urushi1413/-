@@ -316,7 +316,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
             ai->leaving = true;
             ai->planned = false;
             ai->standPos = ai->netRush ? ai->pos : AiHomeFor(ai);   // ネットにいれば、そのまま見送る
-            {   // 見送る球でも、ノーバウンドで体に当たれば失点（ボディショット）。体に向かってくるなら横へよける
+            if (gBattle || gRuleBodyShot) {   // 見送る球でも、ノーバウンドで体に当たれば失点（ボディショット）。体に向かってくるなら横へよける
                 float r = gBattle ? BATTLE_BODY_R : BODY_HIT_R;
                 Ball w = *worldBall, w0;
                 for (int i = 0; i < 240 * 3 && w.active && w.bounces == 0; i++) {

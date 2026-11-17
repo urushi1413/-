@@ -1402,6 +1402,38 @@ void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, f
     }
     DrawFigureBody(pos, facingNegZ, shirt, a, speed);
 }
+// 伸びて取る姿勢：取った球の位置（contactLocal。左利きは x を反転済み）から、腰を球の方へ出す量など（体の単位）。
+//   描く（DrawFigureBody）とネットタッチの判定（LungeRootWorld）で同じ式を使う
+typedef struct { float s, deep, lean, hipY, yaw; Vector2 dir; Vector3 ball; } LungePose;
+static LungePose LungePoseOf(const SwingAnim *a, float sc)
+{
+    LungePose p = { .lean = 0.28f, .hipY = 0.76f, .dir = { a->lungeSide >= 0.0f ? 1.0f : -1.0f, 0.0f } };
+    p.ball = (Vector3){ a->contactLocal.x / sc, Clamp(a->contactLocal.y / sc, 0.15f, 2.0f), a->contactLocal.z / sc };
+    float rc = sqrtf(p.ball.x * p.ball.x + p.ball.z * p.ball.z);
+    if (rc > 0.3f) p.dir = (Vector2){ p.ball.x / rc, p.ball.z / rc };
+    p.deep = Clamp01((rc - LUNGE_R) / (REACH_SIDE + STRETCH_GROUND - LUNGE_R));   // 0 = 少し遠い、1 = 伸びきる（2.6m）
+    p.lean = 0.28f + 0.14f * p.deep;          // 上体を球の方へ倒す
+    p.hipY = 0.76f - 0.20f * p.deep;          // 深く踏み込むほど腰が落ちる
+    // 打つ方の肩を球へ向ける（バックは背中を半分ネットに向けて、片手を伸ばす）
+    p.yaw = Clamp(atan2f(-p.dir.y, p.dir.x), -115.0f * DEG2RAD, 60.0f * DEG2RAD);
+    float shw0 = 0.20f, shY = p.hipY + 0.55f;
+    float shAlong = p.lean + shw0 * (cosf(p.yaw) * p.dir.x - sinf(p.yaw) * p.dir.y);   // 肩が球の方へどれだけ出ているか
+    float dy = shY - p.ball.y, armR = 1.06f;                                             // 腕 0.60 ＋ ラケットの面の中心まで 0.50（少し曲げた分を引く）
+    float hr = sqrtf(fmaxf(armR * armR - dy * dy, 0.09f));
+    p.s = Clamp(rc - (shAlong + hr), 0.0f, 1.20f);
+    return p;
+}
+// 伸びきったときの腰（体の中心）の位置（世界）。伸びて取っていなければ pos のまま
+Vector3 LungeRootWorld(Vector3 pos, bool facingNegZ, const SwingAnim *a)
+{
+    if (!(a->lungeT > 0.0f && a->downT <= 0.0f && !a->lastContact.overhead)) return pos;
+    SwingAnim m = *a;
+    if (a->lefty) { m.contactLocal.x = -a->contactLocal.x; m.lungeSide = -a->lungeSide; }
+    float sc = a->scale > 0.0f ? a->scale : 1.0f, MX = a->lefty ? -1.0f : 1.0f;
+    LungePose p = LungePoseOf(&m, sc);
+    return LocalToWorld(pos, facingNegZ, (Vector3){ MX * p.dir.x * p.s * sc, 0.0f, p.dir.y * p.s * sc });
+}
+
 static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
     Color skin = a->skin.a ? a->skin : (Color){ 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
@@ -1435,25 +1467,14 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     if (stOn) {
         float dur = a->lungeDur > 0.0f ? a->lungeDur : LUNGE_TIME, el = dur - a->lungeT;
         stE = el < 0.07f ? Smooth01(el / 0.07f) : 1.0f - Smooth01((el - 0.24f) / fmaxf(dur - 0.24f, 0.05f));
-        stBall = (Vector3){ a->contactLocal.x / sc, Clamp(a->contactLocal.y / sc, 0.15f, 2.0f), a->contactLocal.z / sc };
-        float rc = sqrtf(stBall.x * stBall.x + stBall.z * stBall.z);
-        if (rc > 0.3f) stDir = (Vector2){ stBall.x / rc, stBall.z / rc };
-        stDeep = Clamp01((rc - LUNGE_R) / (REACH_SIDE + STRETCH_GROUND - LUNGE_R));   // 0 = 少し遠い、1 = 伸びきる（2.6m）
-        stLean = 0.28f + 0.14f * stDeep;          // 上体を球の方へ倒す
-        stHipY = 0.76f - 0.20f * stDeep;          // 深く踏み込むほど腰が落ちる
-        // 打つ方の肩を球へ向ける（バックは背中を半分ネットに向けて、片手を伸ばす）
-        stYaw = Clamp(atan2f(-stDir.y, stDir.x), -115.0f * DEG2RAD, 60.0f * DEG2RAD);
-        float shw0 = 0.20f, shY = stHipY + 0.55f;
-        float shAlong = stLean + shw0 * (cosf(stYaw) * stDir.x - sinf(stYaw) * stDir.y);   // 肩が球の方へどれだけ出ているか
-        float dy = shY - stBall.y, armR = 1.06f;                                            // 腕 0.60 ＋ ラケットの面の中心まで 0.50（少し曲げた分を引く）
-        float hr = sqrtf(fmaxf(armR * armR - dy * dy, 0.09f));
-        stS = Clamp(rc - (shAlong + hr), 0.0f, 1.20f);
+        LungePose lp = LungePoseOf(a, sc);
+        stBall = lp.ball; stDir = lp.dir; stDeep = lp.deep; stLean = lp.lean; stHipY = lp.hipY; stYaw = lp.yaw; stS = lp.s;
     }
     Vector3 stRoot = { stDir.x * stS * stE, 0.0f, stDir.y * stS * stE };   // 腰を出す量（体の単位）
     Vector3 pos0 = pos;                                                    // 腰を出す前の位置（後ろ足が残る所）
     pos = LocalToWorld(pos, facingNegZ, (Vector3){ MX * stRoot.x * sc, 0.0f, stRoot.z * sc });
-    if (stOn && fabsf(pos.x) < NET_POST_X + 0.5f) {   // 伸びても、体はネットを越えない（ネットの手前で止める。めり込んで見えないように）
-        float sd = pos0.z >= 0.0f ? 1.0f : -1.0f, lim = fminf(sd * pos0.z, NET_STOP_Z);
+    if (stOn && fabsf(pos.x) < NET_POST_X + 0.5f) {   // 伸びても、体はネットを越えない（ネットに触れた所で止める。めり込んで見えないように。触れたら失点かはルールの設定）
+        float sd = pos0.z >= 0.0f ? 1.0f : -1.0f, lim = fminf(sd * pos0.z, NET_BODY_R);
         if (sd * pos.z < lim) pos.z = sd * lim;
     }
     // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す。伸びて取るときは体について動く

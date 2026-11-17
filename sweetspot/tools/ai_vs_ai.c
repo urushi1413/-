@@ -24,7 +24,7 @@ again:
       // ボディショット（ゲームと同じ判定）：生きている球が相手の体に当たったら、打った方のポイント。ネットに触れたサーブならレット。
       //   打つ計画があれば、体の前で詰まって打つ（すぐ下のスイング）。打てなければ体に当たった
       int bodyTry=-1; Hitter bodyBy=ball.lastHitter;
-      if(ball.lastHitter!=HITTER_NONE){
+      if(gRuleBodyShot && ball.lastHitter!=HITTER_NONE){
         int h = ball.lastHitter==HITTER_OPP ? 1 : 0; Vector3 at;
         Opponent *V = h==1 ? P : O;
         Vector3 feet = h==1 ? Rot180(P->pos) : O->pos;
