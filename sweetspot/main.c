@@ -41,6 +41,39 @@ static void BodyDeflect(Ball *b, bool battle)
     b->bounces = 3;
 }
 
+// 当たりの説明（かんたん）：直すことを 1 つ、言葉で。当たった球は、タイミング・距離・高さの一番悪いもの（0.75 未満なら）
+static const char *ShotFixText(const Contact *c, ShotType type)
+{
+    float idealAng = c->volley ? VOLLEY_ANGLE : IDEAL_ANGLE, d = c->angleDeg - idealAng;
+    bool low = c->height < SHOTS[type].idealHeight - 0.2f;
+    const char *WAY_EARLY = TR("Way too early - wait until it reaches your side", "早すぎ：球が体の横に来るまで押したまま待つ");
+    const char *EARLY = TR("A bit early - wait a moment longer", "少し早い：もうひと呼吸待って離す");
+    const char *LATE = TR("Late - start holding as soon as they hit, release earlier", "振り遅れ：相手が打ったらすぐ押し始め、早めに離す");
+    const char *BIT_LATE = TR("A bit late - release a little earlier", "少し遅い：ほんの少し早く離す");
+    const char *FAR = TR("Too far - take one more step toward the ball", "遠い：あと一歩、球に寄る");
+    const char *CLOSE = TR("Too close - step away half a step", "近すぎ：半歩はなれる");
+    const char *LOW = TR("Too low - hit nearer the top of the bounce (Q to crouch)", "低い：弾んだ後の高い所で（Q でかがめる）");
+    const char *HIGH = TR("Too high - back up and let it drop", "高い：下がって落ちてくるのを待つ");
+    switch (c->miss) {
+        case MISS_EARLY: return WAY_EARLY;
+        case MISS_LATE:  return LATE;
+        case MISS_FAR:   return FAR;
+        case MISS_LOW:   return LOW;
+        case MISS_HIGH:  return HIGH;
+        case MISS_NO_BALL: return NULL;
+        default: break;
+    }
+    float m = fminf(c->qTiming, fminf(c->qDist, c->qHeight));
+    if (m >= 0.75f) return TR("Keep it up!", "その調子！");
+    if (c->overhead) {   // 頭上：タイミングは高さ（落ちてくる球をどこで叩くか）、位置は球の下
+        if (m == c->qTiming) return c->height > OVERHEAD_IDEAL_H ? EARLY : BIT_LATE;
+        return TR("Get right under the ball", "球の真下に入る");
+    }
+    if (m == c->qTiming) return d > 25.0f ? WAY_EARLY : d > 0.0f ? EARLY : d < -25.0f ? LATE : BIT_LATE;
+    if (m == c->qDist)   return c->side > IDEAL_R ? FAR : CLOSE;
+    return low ? LOW : HIGH;
+}
+
 // 左上の当たりの分析の文字：「すっきり」では箱を描かないので、黒い影を付けてコートの上でも読めるように
 static bool sHudShadow = false;
 static void HudText(const char *t, int x, int y, int fs, Color c)
@@ -148,13 +181,14 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
     fprintf(f, "hint_real=%d\n", s->hintReal);
+    fprintf(f, "feedback=%d\n", s->feedback);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -194,6 +228,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "feedback")) s->feedback = iv;
         else if (!strcmp(key, "hint_real")) s->hintReal = iv;
         else if (!strcmp(key, "rule_net_touch")) s->ruleNet = iv;
         else if (!strcmp(key, "rule_body_shot")) s->ruleBody = iv;
@@ -606,6 +641,7 @@ int main(void)
     int slamSel = 0;                     // メニューで選んだグランドスラム（4 = シーズン）
     // 画面の表示：0 FULL（全部）1 CLEAN（操作説明と状態の行を消す）2 MINIMAL（スコアと溜めのゲージだけ）3 OFF（中継のようにスコアだけ）
     int hudLevel = 1;   // 画面の表示：初めての人は「すっきり」から（全部は F1）
+    int   feedbackLevel = 0;   // 当たりの説明：0 = かんたん（直すことを 1 つ、言葉で）、1 = 詳しく（数字）
     float lastShotT = 99.0f;   // 最後に自分が打ってからの時間（すっきりでは、打ってから 3 秒だけ当たりの分析を出す）
     // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
     int guideLevel = 0;
@@ -631,10 +667,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
@@ -652,6 +688,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
+            feedbackLevel = Clamp(s.feedback, 0, 1);
             hintRealDone = s.hintReal != 0;
         }
         AtmosNewMatch();
@@ -757,13 +794,14 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
             static bool nameEdit = false;   // 名前を入力している
             // ページ：0 = タイトル / 一時停止、1 = 選手と試合、2 = 設定、3 = グランドスラムの準備（大会・選手・強さ・試合の長さを決めて始める）、4 = クレジット、5 = キー設定、7 = ルール（6 は改善レビューの「提案のページ」用に空けておく）
             static int menuPage = 0; static AppState lastMenuApp = APP_PLAY;
+            static int selWant = -1;   // 次に項目を並べたとき、この項目を選ぶ（-1 = そのまま）
             if (app != lastMenuApp) { menuPage = 0; lastMenuApp = app; keyCap = -1; }
             if (menuPageReq >= 0) { menuPage = menuPageReq; menuPageReq = -1; menuSel = 0; }
             int items[32], n = 0;
@@ -775,7 +813,7 @@ int main(void)
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
-                items[n++] = MI_ASSIST; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
             } else if (menuPage == 7) {   // ルール
@@ -803,9 +841,10 @@ int main(void)
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_LOOK; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
+            if (selWant >= 0) { for (int q = 0; q < n; q++) if (items[q] == selWant) menuSel = q; selWant = -1; }   // 前のページへ戻ったとき、開いた項目を選ぶ
             if (menuSel >= n) menuSel = 0;
             const char *assistNames[3] = { TR("OFF", "なし"), TR("TIMING", "タイミング"), TR("TIMING + SPOT", "タイミング＋立つ場所") };
             const char *camNames[3] = { TR("BEHIND", "後ろから"), TR("SIDE VIEW", "横から"), TR("FOLLOW BALL", "ボールを追う") };
@@ -882,12 +921,12 @@ int main(void)
                 }
             }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
-                menuPage = 2; menuSel = 4; n = 0; activate = false; change = 0;
+                menuPage = 2; selWant = MI_KEYS; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 6) {   // 提案：Esc は「いいえ」と同じ
                 for (int q = 0; q < n; q++) if (items[q] == MI_SUG_NO) menuSel = q;
                 activate = true; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 7) {   // ルールから設定へ戻る
-                menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; n = 0; activate = false; change = 0;
+                menuPage = 2; selWant = MI_PG_RULES; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
                     int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
@@ -922,6 +961,7 @@ int main(void)
                     case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
+                    case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
                     case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
                     case MI_RULE_BODY: gRuleBodyShot = !gRuleBodyShot; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
@@ -980,7 +1020,7 @@ int main(void)
                 else if (it == MI_KEYS) { menuPage = 5; menuSel = 0; keyCap = -1; }
                 else if (it == MI_KEYRESET) { KeysReset(); SaveSettings(); snprintf(keyMsg, sizeof(keyMsg), "%s", TR("Keys reset to defaults", "はじめの割り当てに戻した")); keyMsgT = 2.5f; }
                 else if (it >= MI_KEY0) { keyCap = it - MI_KEY0; while (GetKeyPressed() > 0) { } }   // 次に押されたキーを割り当てる
-                else if (it == MI_BACK && menuPage == 5) { menuPage = 2; menuSel = 4; }
+                else if (it == MI_BACK && menuPage == 5) { menuPage = 2; selWant = MI_KEYS; }
                 else if (it == MI_PG_RULES) { menuPage = 7; menuSel = 0; }
                 else if (it == MI_SUG_YES || it == MI_SUG_NO) {   // 提案のページ：はい／いいえ
                     bool yes = it == MI_SUG_YES;
@@ -996,7 +1036,7 @@ int main(void)
                     }
                     suggestKind = 0;
                 }
-                else if (it == MI_BACK && menuPage == 7) { menuPage = 2; menuSel = MOBILE_ONLY ? 6 : 5; }
+                else if (it == MI_BACK && menuPage == 7) { menuPage = 2; selWant = MI_PG_RULES; }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
@@ -1165,6 +1205,7 @@ int main(void)
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
+                    case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
                     case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
@@ -3500,12 +3541,12 @@ int main(void)
             if (P.lastServeKmh > 0.0f || serveMsg[0]) {
                 if (P.lastServeKmh > 0.0f) {
                     HudText(TextFormat("%s  %.0f km/h", ServeNameUI(P.lastServeType), P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
-                    HudText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
-                             20, y, 18, QualityColor(P.lastServeQ)); y += 22;
+                    if (feedbackLevel == 1) { HudText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
+                             20, y, 18, QualityColor(P.lastServeQ)); y += 22; }
                 } else {
                     HudText(ServeNameUI(P.lastServeType), 20, y, 18, SERVES[P.lastServeType].color); y += 44;
                 }
-                if (ball.netClearance > -50.0f)
+                if (ball.netClearance > -50.0f && feedbackLevel == 1)
                     HudText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
                 y += 22;
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
@@ -3518,6 +3559,16 @@ int main(void)
                 HudText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
                 HudText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
             }
+        } else if (P.hasLast && feedbackLevel == 0) {   // 当たりの説明（かんたん）：見出し・直すこと 1 つ・結果（数字は「詳しく」だけ）
+            const Contact *c = &P.lastContact;
+            if (c->miss != MISS_NONE) { HudText(MissText(c->miss), 20, y, 22, RED); y += 30; }
+            else {
+                const char *hd = c->quality >= 0.80f ? TR("SWEET SPOT!", "芯！") : c->quality >= 0.55f ? TR("Decent", "まずまず") : TR("Off-center", "芯を外した");
+                HudText(TextFormat("%s  %.0f%%", hd, c->quality * 100.0f), 20, y, 22, QualityColor(c->quality)); y += 30;
+            }
+            const char *fix = ShotFixText(c, P.lastType);
+            if (fix) { HudText(fix, 20, y, 20, RAYWHITE); y += 26; }
+            if (c->miss == MISS_NONE && ball.lastHitter == HITTER_PLAYER && ball.result != RESULT_NONE) { HudText(ResultTextUI(ball.result), 20, y, 22, ball.result == RESULT_IN ? GREEN : RED); y += 26; }
         } else if (P.hasLast) {
             const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
