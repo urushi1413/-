@@ -282,7 +282,9 @@ extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつ
 #define QUIET_TIME   4.2f
 #define QUIET_SAY    3.0f
 #define QUIET_THANKS 1.0f
-#define RETURN_WAIT 2.2f   // リターン練習：返球が終わってから、相手がボールをつき始めるまで（秒）
+#define RETURN_WAIT 2.2f   // リターン練習：ポイントが終わってから次のサーブまでの、いちばん短い間（秒）
+#define RETURN_PREP 0.5f   // リターン練習：次のサーブの準備（ボールつき）を始めるときの、球出しのタイマーの残り
+#define RETURN_POINT_GAP 2.0f   // リターン練習：ポイントが終わってから、相手が次のサーブの準備（ボールつき）を始めるまで。試合と同じ（その間に主審のスコアコール）
 #define INPUT_LOCK 0.6f   // 試合・練習に入った直後、打つ・サーブの入力を受けない時間（秒）
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）

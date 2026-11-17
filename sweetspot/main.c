@@ -401,6 +401,10 @@ int main(void)
     float feedTimer = 1.0f;          // 0 になったら次の球を出す
     Vector3 feederPos = { 0.0f, 0.0f, -HALF_LEN - 0.6f };   // 練習で球を出す相手の立ち位置
     bool  feedSwing = false; Ball feedNext = { 0 };          // 球出しの振り：振り始めたら、当たる瞬間に球を出す
+    // リターン練習の中のスコア（相手がずっとサーブするゲーム）。試合と同じように、ポイントのあとに主審がスコアをコールする
+    Score retScore = { .server = 1 };
+    bool  retLive = false;           // サーブが出て、まだ結果を決めていない
+    bool  retGrunt = false;          // サーブの前の声を出した（当たる音に声を重ねる）
     float winFx = -1.0f;
     int   youSmashes = 0; float youSmashPrevE = 0.0f;
     int   speedBoardKmh = 0;             // 奥の壁のスピードメーター（最後のサーブ）
@@ -1224,6 +1228,7 @@ int main(void)
         if (restart) {
             pointMsg = ""; scoreCall[0] = 0; serveMsg = ""; rageMsgT = 0.0f; toastT = 0.0f; hawkT = 10.0f; hawkPending = false;   // 前の試合のテロップを消す
             feedTimer = 0.5f;
+            retScore = (Score){ .server = 1 }; retLive = false; retGrunt = false;
             ball = (Ball){ 0 };
             P.chargingShot = -1; P.chargingServe = -1;
             P.sv = SV_READY; serveNo = 1; svTimer = 0.0f; serveMsg = "";
@@ -2623,9 +2628,31 @@ int main(void)
                 ? (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE))   // 相手も打ち返すので、決まるかミスするまで続く
                 : (!ball.active || ball.hitNet || (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1) || (ball.lastHitter == HITTER_OPP && ball.bounces >= 2));
             static bool retRit = false;   // リターン練習：次のサーブの前のボールつきを始めた
+            if (rallyOver && mode == MODE_RETURN && retLive) {
+                // リターン練習：ポイントが決まった。試合と同じ声を同じ間で（アウトのコールはすぐ、主審のスコアコールは 1.1 秒後）
+                retLive = false;
+                bool retIn = ball.lastHitter == HITTER_PLAYER && !ball.hitNet && ball.bounces >= 1 && ball.result == RESULT_IN;
+                int winner = retIn ? 0 : 1;   // リターンが入れば自分のポイント、入らない・返せないならサーバーのポイント
+                if (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1 && ball.result == RESULT_OUT) SfxCallOut();
+                int gamesBefore = retScore.games[0] + retScore.games[1];
+                AwardPoint(&retScore, winner);
+                bool gameEnded = retScore.games[0] + retScore.games[1] != gamesBefore;
+                if (gameEnded) snprintf(scoreCall, sizeof(scoreCall), TL("GAME %s", "ゲーム %s"), winner == 0 ? YouName() : OPP_SHORT);
+                else           snprintf(scoreCall, sizeof(scoreCall), "%s", ScoreText(&retScore));
+                SfxScoreCall(&retScore, 1, winner, gameEnded ? 1 : 0, 1.1f);
+                if (gameEnded) retScore = (Score){ .server = 1 };   // 次のゲームも相手のサーブ（セットは数えない）
+                feedTimer = RETURN_POINT_GAP + RETURN_PREP;
+            }
             if (rallyOver) {
+                float feedPrev = feedTimer;
                 feedTimer -= frameDt;
-                if (mode == MODE_RETURN && !feedSwing && !retRit && feedTimer < RETURN_WAIT - 0.8f) {
+                if (mode == MODE_RETURN && retRit && !retGrunt) {   // サーブの前の声：試合と同じく、打つ少し前（選手ごとの長さ）に、選手ごとの割合で
+                    float gl = SfxServeLead(ai.persona);
+                    if (feedPrev > gl && feedTimer <= gl && RandRange(0.0f, 1.0f) < SfxServeChance(ai.persona))
+                        retGrunt = SfxServePreBy(ai.persona, Vector3Distance(cam.position, feederPos));
+                }
+                if (mode == MODE_RETURN && !feedSwing && !retRit && feedTimer < RETURN_PREP) {
+                    scoreCall[0] = 0;
                     // サーブの前：相手がボールをつく（実際の試合と同じく、間を取ってから打つ）。自分はリターンの位置へ
                     retRit = true;
                     float d = RitualDuration(RIT_BOUNCE, 3);
@@ -2659,6 +2686,11 @@ int main(void)
                     if (mode == MODE_RETURN) {
                         ball = feedSwing ? feedNext : MachineServe();
                         retRit = false;
+                        retLive = true;
+                        // 当たる音（声を出していれば声も）。試合の AI のサーブと同じ
+                        ai.lastKmh = Vector3Length(ball.vel) * 3.6f; ai.lastServe = true;
+                        SfxServe(0.9f, ai.lastKmh, retGrunt, Vector3Distance(cam.position, ball.pos));
+                        retGrunt = false;
                     } else {
                         ball = feedSwing ? feedNext : MachineFeed(proFeed);
                         ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;   // 相手：次の球に備える
@@ -3241,6 +3273,12 @@ int main(void)
                      20, y, 16, LIGHTGRAY);
         }
 
+        if (mode == MODE_RETURN && scoreCall[0] && hudLevel <= 2) {   // リターン練習：主審がコールするスコア（試合と同じ場所に）
+            const char *call = TextToUpper(scoreCall);
+            int w = MeasureText(call, 48);
+            DrawRectangle(GetScreenWidth() / 2 - w / 2 - 20, 210, w + 40, 64, Fade(BLACK, 0.7f));
+            DrawText(call, GetScreenWidth() / 2 - w / 2, 218, 48, RAYWHITE);
+        }
         // スコア（試合）
         if (mode == MODE_MATCH) {
             // スコア表（中継のような形）：サーブの印、名前、ゲーム、ポイント
