@@ -1198,6 +1198,12 @@ int main(void)
             // ---- 下の案内 ----
             const char *hint = MOBILE_ONLY ? TR("Tap: choose / change", "タップ：選ぶ・変える") : TR("W/S select   A/D change   Enter OK   Esc back   (mouse: L-click next, R-click back)", "W/S：選ぶ   A/D：変える   Enter：決定   Esc：戻る（マウス：左クリックで次、右クリックで前）");
             DrawText(hint, titleMain ? px : ((menuPage == 1 || menuPage == 3) ? px + 20 : px + 30), H - 34, 16, LIGHTGRAY);
+            if (SHOW_VERSION && titleMain) {   // 表紙の右上に版（リリースまで）
+                const char *ver = TextFormat(TR("v%s dev  %s", "v%s 開発版  %s"), GAME_VERSION, BUILD_ID);
+                int vf = 18; while (vf > 12 && MeasureText(ver, vf) > W - 40) vf--;
+                DrawRectangle(W - MeasureText(ver, vf) - 24, 8, MeasureText(ver, vf) + 16, vf + 10, Fade(BLACK, 0.45f));
+                DrawText(ver, W - MeasureText(ver, vf) - 16, 13, vf, RAYWHITE);
+            }
             if (menuPage == 7 && n > 0) {   // ルール：選んでいる項目の説明（下の案内の上）
                 const char *rd = items[menuSel] == MI_RULE_NET
                     ? TR("Net touch: during a point, if your body touches the net or your racket goes over it when you hit, you lose the point. OFF: you just stop at the net.",

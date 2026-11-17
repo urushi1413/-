@@ -157,6 +157,14 @@ typedef struct {
 #define KNEE_LOAD        0.07f   // ストロークで引いたときにさらに沈む量（打つときに脚で押し上げる）
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
+// 版：リリースまでは表紙（タイトル画面の右上）に出す。どの版で遊んでいるかがすぐわかるように
+//   GAME_VERSION は手で上げる。BUILD_ID はビルドのときに Makefile が git から入れる（コミット・その日時・ブランチ。手元の変更があれば +）
+//   リリースのときは SHOW_VERSION を 0 にする
+#define GAME_VERSION "0.9.0"
+#define SHOW_VERSION 1
+#ifndef BUILD_ID
+#define BUILD_ID "unknown"
+#endif
 // 売る版（make SALE=1）：実在の選手・大会に似せたものを架空のものにする。PN(自分用, 売る版)
 #ifdef SALE_BUILD
 #define PN(real, sale) sale
