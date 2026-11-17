@@ -643,7 +643,10 @@ typedef struct {
     float   planH;         // 打つ予定の打点の高さ（スマッシュの構えを見せるため）
     float   tilt;          // 気持ちが崩れている量（0〜1）。ポイントごとに弱まる
     float retFromX;          // サーブが打たれたときの横の位置（AI の座標）。リターンでどれだけ横へ動かされたかに使う
+    float boost;             // 強さの上乗せ（-1〜+1）。隣の強さとの間を補間する（大会のラウンドで使う。ふつうの試合は 0）
 } Opponent;
+float LevelTableLerp(const float tbl[3], int level, float boost);   // 強さの表（3 つ）を、隣の強さとの間で補間
+float TourBoost(int round);   // 大会のラウンドごとの相手の強さの上乗せ
 
 typedef struct {
     int points[2];   // 0=自分, 1=AI

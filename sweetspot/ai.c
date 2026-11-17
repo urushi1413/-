@@ -140,9 +140,29 @@ const Persona PERSONAS[PERSONA_COUNT] = {
 };
 
 // 強さに選手の癖を足した、実際の能力
+// 強さ level と、隣の強さの間を boost（-1〜+1）で補間した能力。PRO より上・EASY より下には伸ばさない
+static AiLevel LevelLerp(int level, float boost)
+{
+    AiLevel a = AI_LEVELS[level % 3];
+    int nb = boost > 0.0f ? level + 1 : level - 1;
+    if (nb < 0 || nb > 2 || boost == 0.0f) return a;
+    AiLevel b = AI_LEVELS[nb]; float t = fabsf(boost);
+    #define LF(f) a.f = a.f + (b.f - a.f) * t
+    LF(speed); LF(reaction); LF(timingSigmaMs); LF(posErr); LF(aggression); LF(lineJudge);
+    LF(serve1Kmh); LF(serve2Kmh); LF(serveSkill); LF(serveMargin); LF(serveDepth);
+    #undef LF
+    return a;
+}
+float LevelTableLerp(const float tbl[3], int level, float boost)   // LEVEL_LAPSE などの表にも同じ補間
+{
+    int nb = boost > 0.0f ? level + 1 : level - 1;
+    if (nb < 0 || nb > 2 || boost == 0.0f) return tbl[level % 3];
+    return tbl[level % 3] + (tbl[nb] - tbl[level % 3]) * fabsf(boost);
+}
+
 AiLevel EffLevel(const Opponent *ai)
 {
-    AiLevel L = AI_LEVELS[ai->level];
+    AiLevel L = LevelLerp(ai->level, ai->boost);   // 大会のラウンドで、隣の強さとの間へ寄せる
     const Persona *p = &PERSONAS[ai->persona % PERSONA_COUNT];
     // 選手の上乗せは難易度で変える（EASY は 4 割、NORMAL と PRO は全部）
     static const float LEVEL_BOOST[3] = { 0.25f, 1.0f, 1.0f };
@@ -540,7 +560,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     static const float LEVEL_ERR[3] = { 2.4f, 1.25f, 0.72f };   // NORMAL を少しぶれやすく   // 難易度でミスの量が変わる（EASY はかなりぶれる）
     gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
-    gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
+    gErrMul = LevelTableLerp(LEVEL_ERR, ai->level, ai->boost) * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
             * (1.0f - RAGE_ERR * Clamp01(ai->rage));                            // ラケットを叩きつけた後はミスが減る
     gTimingTolMul = 1.0f;   // AI のタイミングの許容幅はそのまま（人間だけ広い）
@@ -558,7 +578,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     //   これがないと AI はハイライトのようなプレーしかしない。現実のプロでも 100 ポイントに 10〜15 本は凡ミスする
     if (!c.isReturn && !c.volley && !c.dive && !c.stretch) {
         static const float LEVEL_LAPSE[3] = { AI_LAPSE_EASY, AI_LAPSE_NORMAL, AI_LAPSE_PRO };
-        float lapse = LEVEL_LAPSE[ai->level % 3] * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
+        float lapse = LevelTableLerp(LEVEL_LAPSE, ai->level, ai->boost) * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
                     * (1.0f - RAGE_LAPSE * Clamp01(ai->rage))

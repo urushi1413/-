@@ -53,6 +53,9 @@ static float EntrantStr(const Tournament *t, int e)
 // ランキング（シード順）：3 つのコートの強さの平均
 static float RankStr(int p) { return (TOUR_STR[p][0] + TOUR_STR[p][1] + TOUR_STR[p][2]) / 3.0f; }
 
+// 大会のラウンドごとの相手の強さの上乗せ（4 回戦・準々決勝・準決勝・決勝）。1 回戦はやさしめ、決勝は一段上へ
+float TourBoost(int round) { static const float B[TOUR_ROUNDS] = { -0.5f, -0.2f, 0.15f, 0.35f }; return B[round < 0 ? 0 : round >= TOUR_ROUNDS ? TOUR_ROUNDS - 1 : round]; }
+
 void TourStart(Tournament *t, bool women, int slam, int setsToWin)
 {
     // シーズンの記録は残す
@@ -276,7 +279,9 @@ const char *TourEndMessage(const Tournament *t)
         else
             msg = TextFormat(TR("You lost in the %s.   Enter: back to title", "%sで負けた   Enter：タイトルに戻る"), TourRoundName(t->outRound));
     } else {
-        msg = TextFormat(TR("Next: %s vs %s   -   Enter: play", "次：%s  対 %s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t));
+        float tb = TourBoost(t->round);
+        const char *hard = tb < -0.3f ? TR("  (easier)", "（やさしめ）") : tb > 0.25f ? TR("  (tougher)", "（手ごわい）") : "";
+        msg = TextFormat(TR("Next: %s vs %s%s   -   Enter: play", "次：%s  対 %s%s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t), hard);
     }
     return msg;
 }

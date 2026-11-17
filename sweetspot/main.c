@@ -1500,6 +1500,7 @@ int main(void)
             int lvl = ai.level, per = ai.persona;
             ai = (Opponent){ 0 };
             ai.level = lvl; ai.persona = per;
+            ai.boost = (tour.active && mode == MODE_MATCH) ? TourBoost(tour.round) : 0.0f;   // 大会：ラウンドごとに相手を強く
             ai.pos = AiHome();
             if (mode == MODE_RETURN) P.pos = ReturnPosVs(true, false, -0.6f);   // リターン練習：始めからレシーブの位置に（最初はデュースサイド。真ん中に立たない）
             ai.anim.swingT = -1.0f;
