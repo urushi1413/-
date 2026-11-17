@@ -123,6 +123,19 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
                  * (1.0f - STEP_STABILITY * step)
                  * (gCasual ? CASUAL_ERR : 1.0f) * gErrMul;
+    if (type <= SHOT_SLICE && !c->volley && !c->overhead) {
+        // フォアとバックの違い（ツアーの数字から：バックはフォアより約 7% 遅く、ウィナーはほとんどフォア。
+        //   ラリーの両手バックは堅いが、走らされた・高い打点ではバックから崩れる。フォアで攻めるとミスが増える）
+        bool stretched = c->stretch || c->dive || c->side > IDEAL_R + 0.40f;
+        if (c->forehand) {
+            kmh *= FH_SPEED_K;
+            bool risky = charge > 0.75f || fabsf(target.x) > 3.3f || fabsf(c->timeErrMs) > TIMING_PULL_DEAD_MS;   // 強打・ライン際・タイミングが合っていない
+            if (risky) errMul *= FH_RISK_ERR;
+        } else {
+            kmh *= BH_SPEED_K;
+            errMul *= (stretched || c->height > BH_HIGH_H) ? BH_STRETCH_ERR : BH_RALLY_ERR;
+        }
+    }
     float rpm = Lerp(sp->minRpm, sp->maxRpm, charge) * (0.60f + 0.40f * q);
     if (rpm > 0.0f) rpm *= gSpinMul;   // 選手ごとのトップスピンの強さ
     if (gWomen) { kmh *= WOMEN_SHOT_K; rpm *= WOMEN_SPIN_K; }   // 女子は少し遅く、回転も少ない

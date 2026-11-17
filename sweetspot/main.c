@@ -2587,8 +2587,20 @@ int main(void)
             bool rallyOver = mode == MODE_RALLY
                 ? (!ball.active || ball.hitNet || ball.bounces >= 2 || (ball.bounces >= 1 && ball.result != RESULT_IN && ball.result != RESULT_NONE))   // 相手も打ち返すので、決まるかミスするまで続く
                 : (!ball.active || ball.hitNet || (ball.lastHitter == HITTER_PLAYER && ball.bounces >= 1) || (ball.lastHitter == HITTER_OPP && ball.bounces >= 2));
+            static bool retRit = false;   // リターン練習：次のサーブの前のボールつきを始めた
             if (rallyOver) {
                 feedTimer -= frameDt;
+                if (mode == MODE_RETURN && !feedSwing && !retRit && feedTimer < RETURN_WAIT - 0.8f) {
+                    // サーブの前：相手がボールをつく（実際の試合と同じく、間を取ってから打つ）。自分はリターンの位置へ
+                    retRit = true;
+                    float d = RitualDuration(RIT_BOUNCE, 3);
+                    ai.anim = (SwingAnim){ .swingT = -1.0f };
+                    ai.anim.celebKind = RIT_BOUNCE; ai.anim.ritBounces = 3; ai.anim.celebDur = d; ai.anim.celebT = d;
+                    feederPos = (Vector3){ -0.6f + 0.25f, 0.0f, -HALF_LEN - 0.05f };
+                    feedTimer = fmaxf(feedTimer, d + AI_TOSS_HIT_T * 0.5f + 0.2f);
+                    P.pos = HumanReturnPos(true, false); P.vel = (Vector3){ 0 };
+                }
+                if (mode == MODE_RETURN && ai.anim.celebT > 0.0f) ai.anim.celebT = fmaxf(ai.anim.celebT - simDt, 0.0f);
                 // 相手（球出し）：先に次の球を決めて、その球を打つ位置へ動き、振り始める。当たる瞬間に球を出す
                 float lead = mode == MODE_RETURN ? AI_TOSS_HIT_T * 0.5f : SWING_LEAD;
                 if (!feedSwing && feedTimer <= lead) {
@@ -2611,8 +2623,7 @@ int main(void)
                 if (feedTimer <= 0.0f) {
                     if (mode == MODE_RETURN) {
                         ball = feedSwing ? feedNext : MachineServe();
-                        P.pos = HumanReturnPos(true, false);   // リターンの構え位置へ
-                        P.vel = (Vector3){ 0 };
+                        retRit = false;
                     } else {
                         ball = feedSwing ? feedNext : MachineFeed(proFeed);
                         ai.planned = false; ai.leaving = false; ai.swung = false; ai.watching = HITTER_NONE; ai.netRush = false;   // 相手：次の球に備える
@@ -2621,7 +2632,7 @@ int main(void)
                     feedSwing = false;
                     trailColor = Fade(LIGHTGRAY, 0.6f);
                     trailCount = 0;
-                    feedTimer = 1.2f;
+                    feedTimer = mode == MODE_RETURN ? RETURN_WAIT : 1.2f;   // リターン練習は、返した後に間を取る
                     P.anim.splitT = SPLIT_TIME;
                 }
             }

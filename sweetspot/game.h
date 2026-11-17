@@ -115,6 +115,13 @@ typedef struct {
 #define BACKPEDAL_SLOW   0.32f  // AI が後ろ（ネットと反対）へ走るときに遅くなる割合（向きを変えて走るので）
 #define AI_LAPSE_EASY    0.220f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
 #define AI_LAPSE_NORMAL  0.120f
+// フォアとバックの違い：フォアは速く、攻めるとぶれる。バックは遅めで、ラリーでは堅いが、走らされた・高い打点では崩れる
+#define FH_SPEED_K      1.04f
+#define BH_SPEED_K      0.97f    // フォアとの差は約 7%
+#define FH_RISK_ERR     1.18f    // フォアで攻めた（強打・ライン際・タイミングのずれ）ときのぶれ
+#define BH_RALLY_ERR    0.88f    // 普通のラリーのバックのぶれ（堅い）
+#define BH_STRETCH_ERR  1.35f    // 走らされた・高い打点（BH_HIGH_H より上）のバックのぶれ
+#define BH_HIGH_H       1.30f
 #define AI_LAPSE_PRO     0.060f
 #define AI_LAPSE_ATTACK  3.0f    //   決めにいく球はこの倍
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
@@ -250,6 +257,7 @@ extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつ
 #define QUIET_TIME   4.2f
 #define QUIET_SAY    3.0f
 #define QUIET_THANKS 1.0f
+#define RETURN_WAIT 2.2f   // リターン練習：返球が終わってから、相手がボールをつき始めるまで（秒）
 #define INPUT_LOCK 0.6f   // 試合・練習に入った直後、打つ・サーブの入力を受けない時間（秒）
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）
