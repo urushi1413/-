@@ -778,6 +778,8 @@ void InitBoards(void);              // 奥の壁の看板とスピードメー�
 void UpdateSpeedBoard(int kmh);     // スピードメーターの数字（最後のサーブの速さ）
 
 // 試合の記録（matchlog.csv）
+void StoreRestore(const char *file);   // 読む前：ブラウザ版なら localStorage からファイルへ戻す（storage.c）
+void StorePersist(const char *file);   // 書いた後：ブラウザ版ならファイルを localStorage へ写す
 void MLogOpen(void);
 void MLogNewMatch(void);
 void MLogShot(int point, int shotNo, bool ai, const char *type, float kmh, float q, bool attack, bool lapse, bool volley, bool ret,

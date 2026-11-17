@@ -151,9 +151,11 @@ static void SaveSettingsFile(const Settings *s)
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
     for (int a = 0; a < ACT_COUNT; a++) fprintf(f, "key_%s=%d\n", ActionId(a), gKeys[a]);   // キーの割り当て（raylib のキーの番号）
     fclose(f);
+    StorePersist(SETTINGS_FILE);   // ブラウザ版：ページを閉じても残るように
 }
 static bool LoadSettingsFile(Settings *s)
 {
+    StoreRestore(SETTINGS_FILE);   // ブラウザ版：前に保存した設定を戻す
     FILE *f = fopen(SETTINGS_FILE, "r");
     if (!f) return false;
     char line[128];
