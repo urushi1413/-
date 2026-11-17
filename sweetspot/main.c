@@ -613,6 +613,7 @@ int main(void)
     float hlScore = 0.0f;
     struct { bool on; int mode, clip, idx; float t, acc; Camera3D cam; bool first; int view; } rp = { 0 };   // mode 0 = 今のポイント、1 = ハイライト
     int   menuSel = 0;
+    bool  firstRun = false;        // 初めての起動（設定ファイルがなかった）。何かを始めたら false にして設定を保存する
     float aimSens = 1.0f;          // マウス感度（倍率）
     bool  forceRestart = false;    // メニューでモードや AI を変えたら、戻ったときにやり直す
     bool  quitGame = false;
@@ -625,7 +626,10 @@ int main(void)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
                        camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone };
-        if (LoadSettingsFile(&s)) {
+        bool loaded = LoadSettingsFile(&s);
+        firstRun = !loaded;   // 設定ファイルがない＝初めての起動
+        if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
+        if (loaded) {
             setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 3); gWomen = s.women != 0;   // 体験版は 1 セットだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
             ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
@@ -738,6 +742,7 @@ int main(void)
             continue;
         }
 
+        if (firstRun && app == APP_PLAY) { firstRun = false; SaveSettings(); }   // 初めての起動：何かを始めたら、次からはふつうのタイトル
         // ================= メニュー（タイトル / 一時停止） =================
         if (app != APP_PLAY) menuFrames++; else menuFrames = 0;
         if (app != APP_PLAY) {
@@ -1020,6 +1025,7 @@ int main(void)
                 DrawText("SWEET SPOT", px + 4, 90 + 4, 96, Fade(BLACK, 0.5f));
                 DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
                 DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
+                if (firstRun && !MOBILE_ONLY) DrawText(TR("New here? Start with the 1-minute lesson (Enter)", "はじめての方は、まず 1 分の練習から（Enter）"), px + 4, 232, 20, YELLOW);
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
                     DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
