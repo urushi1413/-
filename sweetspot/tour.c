@@ -66,19 +66,19 @@ void TourStart(Tournament *t, bool women, int slam, int setsToWin)
     for (int i = 0; i < TourPersonaCount(women) && np < TOUR_SIZE - 1; i++)
         if (TourPersonaAt(women, i) != gYouPersona) pool[np++] = TourPersonaAt(women, i);   // 自分が使う選手は出ない
     for (int i = 0; i < np; i++) for (int j = i + 1; j < np; j++) if (RankStr(pool[j]) > RankStr(pool[i])) { int x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
-    // シードの位置：1 は一番上、2 は一番下、3・4 は 5 番目と 12 番目（くじ）、5〜8 は 4・8・9・13 番目（くじ）
+    // シードは 4 人：1 は一番上、2 は一番下、3・4 は 5 番目と 12 番目（くじ）。前は 8 人で、1 回戦の 8 試合すべてにシードがいた（自分の初戦は必ずシード）
     for (int i = 0; i < TOUR_SIZE; i++) t->slot[i] = -2;   // まだ空き
-    int nSeed = np < 8 ? np : 8;
-    int pos34[2] = { 4, 11 }, pos58[4] = { 3, 7, 8, 12 };
+    int nSeed = np < 4 ? np : 4;
+    int pos34[2] = { 4, 11 };
     if (GetRandomValue(0, 1)) { pos34[0] = 11; pos34[1] = 4; }
-    for (int i = 3; i > 0; i--) { int j = GetRandomValue(0, i); int x = pos58[i]; pos58[i] = pos58[j]; pos58[j] = x; }
     for (int s = 0; s < nSeed; s++) {
-        int pos = s == 0 ? 0 : s == 1 ? TOUR_SIZE - 1 : s < 4 ? pos34[s - 2] : pos58[s - 4];
+        int pos = s == 0 ? 0 : s == 1 ? TOUR_SIZE - 1 : pos34[s - 2];
         t->slot[pos] = pool[s]; t->seed[pos] = s + 1;
     }
-    // 残り：シードのない選手と自分と予選上がりを、空いた枠にくじで
+    // 自分は 7〜10 番目のどれか（くじ）：1 回戦はシードなし、準々決勝で第 3 か第 4 シード、準決勝で第 1 か第 2 シード
+    { static const int MINE[4] = { 6, 7, 8, 9 }; t->slot[MINE[GetRandomValue(0, 3)]] = -1; }
+    // 残り：シードのない選手と予選上がりを、空いた枠にくじで
     int rest[TOUR_SIZE], nr = 0;
-    rest[nr++] = -1;
     for (int s = nSeed; s < np; s++) rest[nr++] = pool[s];
     int free[TOUR_SIZE], nf = 0;
     for (int i = 0; i < TOUR_SIZE; i++) if (t->slot[i] == -2) free[nf++] = i;
