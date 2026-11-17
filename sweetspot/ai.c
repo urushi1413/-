@@ -22,9 +22,10 @@ const AiLevel AI_LEVELS[3] = {
     //          走る  反応   タイミング 位置   強気   見極め  1st     2nd     サーブの安定感
     //                                                                                コースの厳しさ 深さ
     // EASY は初心者の友達くらい：足が遅く、反応が遅れ、当たりがぶれ、サーブは遅くて真ん中へ
-    { "EASY",   4.3f, 0.45f, 34.0f, 0.55f, 0.12f, 0.60f, 130.0f,  95.0f, 0.45f, 0.95f, 5.2f },
-    { "NORMAL", 5.6f, 0.28f, 12.0f, 0.20f, 0.50f, 0.20f, 175.0f, 120.0f, 0.70f, 0.42f, 5.8f },
-    { "PRO",    6.4f, 0.20f,  6.0f, 0.08f, 0.80f, 0.06f, 205.0f, 135.0f, 0.86f, 0.28f, 6.0f },
+    // NORMAL は「強すぎて勝てない」と言われたので弱めた（足・反応・タイミング・位置・強気）。セカンドサーブは全体に速め
+    { "EASY",   4.3f, 0.45f, 34.0f, 0.55f, 0.12f, 0.60f, 130.0f, 105.0f, 0.45f, 0.95f, 5.2f },
+    { "NORMAL", 5.3f, 0.33f, 16.0f, 0.27f, 0.42f, 0.20f, 170.0f, 130.0f, 0.70f, 0.42f, 5.8f },
+    { "PRO",    6.4f, 0.20f,  6.0f, 0.08f, 0.80f, 0.06f, 205.0f, 145.0f, 0.86f, 0.28f, 6.0f },
 };
 
 // 追い込まれたとき（ブレークされて 2 ゲーム差・セットを落とした）にラケットを叩きつける確率。叩きつけると、しばらく強くなる
@@ -524,7 +525,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     float moveToward = (Vector3Length(toBall) > 0.01f) ? Vector3DotProduct(meVel, Vector3Normalize(toBall)) : 0.0f;
     float bonus = ai->sliding ? SLIDE_REACH : 0.0f;
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
-    static const float LEVEL_ERR[3] = { 2.4f, 1.0f, 0.72f };   // 難易度でミスの量が変わる（EASY はかなりぶれる）
+    static const float LEVEL_ERR[3] = { 2.4f, 1.25f, 0.72f };   // NORMAL を少しぶれやすく   // 難易度でミスの量が変わる（EASY はかなりぶれる）
     gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
     gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
@@ -536,6 +537,10 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     sAttack = false;
     bool sLapse = false;
     ShotType t = AiChooseShot(ai, &c, Rot180(player), me, &charge, &target);
+    if (c.isReturn && ai->level < 2) {   // リターンは、EASY・NORMAL ではつなぐ（入ったリターンが厳しすぎると言われたので）：遅めで、真ん中寄り
+        charge *= ai->level == 0 ? 0.70f : 0.82f;
+        target.x *= ai->level == 0 ? 0.45f : 0.60f;
+    }
     // 凡ミス：楽な体勢でも、たまに打ち損じる（力み・集中切れ）。決めにいく球ほど起きやすい。
     //   これがないと AI はハイライトのようなプレーしかしない。現実のプロでも 100 ポイントに 10〜15 本は凡ミスする
     if (!c.isReturn && !c.volley && !c.dive && !c.stretch) {

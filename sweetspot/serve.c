@@ -10,7 +10,7 @@
 const ServeSpec SERVES[SERVE_COUNT] = {
     [SERVE_FLAT]  = { "FLAT SERVE",  150.0f, 215.0f,  600.0f, 1200.0f,     0.0f,     0.0f,    0.0f,    0.0f, RAYWHITE },
     [SERVE_SLICE] = { "SLICE SERVE", 140.0f, 190.0f,  300.0f,  600.0f,  1800.0f,  3000.0f,    0.0f,    0.0f, (Color){ 80, 220, 255, 255 } },
-    [SERVE_KICK]  = { "KICK SERVE",   95.0f, 145.0f, 2800.0f, 4300.0f,  -400.0f,  -800.0f, 1200.0f, 2200.0f, (Color){ 255, 160, 40, 255 } },   // 遅いが高く弾む（安全なセカンド）
+    [SERVE_KICK]  = { "KICK SERVE",  110.0f, 160.0f, 2800.0f, 4300.0f,  -400.0f,  -800.0f, 1200.0f, 2200.0f, (Color){ 255, 160, 40, 255 } },   // 遅いが高く弾む（安全なセカンド）
 };
 
 Vector3 SpinVector(Vector3 dirFlat, float top, float side, float gyro)

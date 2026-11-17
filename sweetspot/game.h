@@ -114,7 +114,7 @@ typedef struct {
 #define TOUCH_READ_DELAY 0.20f  // ロブ・ドロップに AI が反応するまでの遅れ（打つ形が普通のストロークと同じで読めない）。強い AI ほど短い
 #define BACKPEDAL_SLOW   0.32f  // AI が後ろ（ネットと反対）へ走るときに遅くなる割合（向きを変えて走るので）
 #define AI_LAPSE_EASY    0.220f  // AI の打ち損じの起きやすさ（1 球あたり。楽な体勢のラリーの球だけ）
-#define AI_LAPSE_NORMAL  0.090f
+#define AI_LAPSE_NORMAL  0.120f
 #define AI_LAPSE_PRO     0.060f
 #define AI_LAPSE_ATTACK  3.0f    //   決めにいく球はこの倍
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
