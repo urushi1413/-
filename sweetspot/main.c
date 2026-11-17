@@ -224,12 +224,61 @@ static const char *PersonaBlurb(int p)
 }
 
 // タイトル・選手選択の背景：コートの上に自分と相手が並んで立つ（ボールをつく）。カメラはゆっくり揺れる
-static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float lookX, Vector2 *youScr, Vector2 *oppScr)
+// 能力のグラフ（六角形）：サーブ・強打・足と守備・安定・ネット・勝負強さ。全選手の中で比べて 3〜10 に
+#define RADAR_N 6
+static void PersonaRadar(int p, float out[RADAR_N])
+{
+    static float lo[RADAR_N], hi[RADAR_N]; static bool ready = false;
+    #define RAW(q, v) do { const Persona *e = &PERSONAS[q]; \
+        v[0] = e->serveAdd / 18.0f + 3.0f * e->serveSkillAdd - 2.0f * e->serveMarginAdd; \
+        v[1] = 2.0f * e->aggrAdd + 1.5f * (e->spinMul - 1.0f); \
+        v[2] = e->speedAdd - 5.0f * e->reactionAdd; \
+        v[3] = -2.0f * (e->errMul - 1.0f) - (e->timingMul - 1.0f); \
+        v[4] = e->volleySkill + 0.5f * (e->netRushMul - 1.0f) + e->serveVolley; \
+        v[5] = e->clutch; } while (0)
+    if (!ready) {
+        for (int a = 0; a < RADAR_N; a++) { lo[a] = 1e9f; hi[a] = -1e9f; }
+        for (int q = 1; q < PERSONA_COUNT; q++) { float v[RADAR_N]; RAW(q, v); for (int a = 0; a < RADAR_N; a++) { lo[a] = fminf(lo[a], v[a]); hi[a] = fmaxf(hi[a], v[a]); } }
+        ready = true;
+    }
+    float v[RADAR_N]; RAW(p, v);
+    for (int a = 0; a < RADAR_N; a++) out[a] = p == 0 ? 6.0f : 3.0f + 7.0f * (hi[a] > lo[a] ? (v[a] - lo[a]) / (hi[a] - lo[a]) : 0.5f);   // 癖なしは真ん中
+    #undef RAW
+}
+static void DrawRadar(float cx, float cy, float r, const float val[RADAR_N], Color col)
+{
+    static const char *EN[RADAR_N] = { "SERVE", "POWER", "SPEED", "CONSISTENCY", "NET", "CLUTCH" };
+    static const char *JA[RADAR_N] = { "サーブ", "強打", "足と守備", "安定", "ネット", "勝負強さ" };
+    Vector2 ax[RADAR_N];
+    for (int a = 0; a < RADAR_N; a++) { float an = -PI / 2 + a * 2 * PI / RADAR_N; ax[a] = (Vector2){ cosf(an), sinf(an) }; }
+    for (int ring = 1; ring <= 5; ring++) {   // 目盛り（2 ずつ）
+        float rr = r * ring / 5.0f;
+        for (int a = 0; a < RADAR_N; a++) DrawLineV((Vector2){ cx + ax[a].x * rr, cy + ax[a].y * rr }, (Vector2){ cx + ax[(a + 1) % RADAR_N].x * rr, cy + ax[(a + 1) % RADAR_N].y * rr }, Fade(RAYWHITE, ring == 5 ? 0.45f : 0.15f));
+    }
+    for (int a = 0; a < RADAR_N; a++) DrawLineV((Vector2){ cx, cy }, (Vector2){ cx + ax[a].x * r, cy + ax[a].y * r }, Fade(RAYWHITE, 0.15f));
+    Vector2 pt[RADAR_N];
+    for (int a = 0; a < RADAR_N; a++) { float k = val[a] / 10.0f; pt[a] = (Vector2){ cx + ax[a].x * r * k, cy + ax[a].y * r * k }; }
+    for (int a = 0; a < RADAR_N; a++) {   // 中を塗る（真ん中から三角を並べる。どちら回りでも見えるように両方の向きで）
+        Vector2 c0 = { cx, cy }, p1 = pt[a], p2 = pt[(a + 1) % RADAR_N];
+        DrawTriangle(c0, p1, p2, Fade(col, 0.35f)); DrawTriangle(c0, p2, p1, Fade(col, 0.35f));
+    }
+    for (int a = 0; a < RADAR_N; a++) { DrawLineEx(pt[a], pt[(a + 1) % RADAR_N], 2.0f, col); DrawCircleV(pt[a], 3.0f, col); }
+    for (int a = 0; a < RADAR_N; a++) {   // 名前と数
+        const char *l = TextFormat("%s %d", gLang == LANG_JA ? JA[a] : EN[a], (int)roundf(val[a]));
+        int fs = 14, w = MeasureText(l, fs);
+        float lx = cx + ax[a].x * (r + 12), ly = cy + ax[a].y * (r + 12);
+        int x = (int)(ax[a].x > 0.3f ? lx : ax[a].x < -0.3f ? lx - w : lx - w / 2), y = (int)(ax[a].y > 0.3f ? ly : ax[a].y < -0.3f ? ly - fs : ly - fs / 2);
+        DrawText(l, x, y, fs, RAYWHITE);
+    }
+}
+
+// lift：選手と試合の画面では、2 人を少し小さく上に（下に能力のグラフを出すため）
+static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float lookX, Vector2 *youScr, Vector2 *oppScr, float lift)
 {
     Camera3D cam = { 0 };
     cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 38.0f; cam.projection = CAMERA_PERSPECTIVE;
-    cam.position = (Vector3){ lookX + 0.5f * sinf(t * 0.25f), 1.75f, -HALF_LEN + 3.4f };
-    cam.target   = (Vector3){ lookX, 1.05f, -HALF_LEN + 9.0f };
+    cam.position = (Vector3){ lookX + 0.5f * sinf(t * 0.25f), 1.75f + 0.20f * lift, -HALF_LEN + 3.4f - 1.4f * lift };
+    cam.target   = (Vector3){ lookX, 1.05f - 0.75f * lift, -HALF_LEN + 9.0f };
     PixelBegin(); DrawSky(cam);   // 空（時間帯と天気）。奥行きの情報も消す（消さないと前のフレームと重なって乱れる）
     BeginMode3D(cam);
     DrawCourt();
@@ -807,7 +856,7 @@ int main(void)
             if (titleMain || menuPage == 1 || menuPage == 3) {
                 SurfaceType keepSurf = gSurface;
                 if (menuPage == 3) gSurface = (SurfaceType)TourSlamSurface(slamSel == SLAM_COUNT ? 0 : slamSel);   // その大会のコートを見せる
-                DrawShowcase(gYouPersona, menuPage == 3 ? -1 : ai.persona, youShirtM, (float)GetTime(), titleMain ? 1.55f : 1.35f, &youScr, &oppScr);   // カメラを左へずらして、2 人を画面の右に
+                DrawShowcase(gYouPersona, menuPage == 3 ? -1 : ai.persona, youShirtM, (float)GetTime(), titleMain ? 1.55f : 1.35f, &youScr, &oppScr, titleMain ? 0.0f : 1.0f);   // カメラを左へずらして、2 人を画面の右に
                 gSurface = keepSurf;
                 // 左側を暗くして文字を読みやすく
                 DrawRectangleGradientH(0, 0, W * 6 / 10, H, Fade(BLACK, 0.80f), Fade(BLACK, 0.0f));
@@ -979,13 +1028,35 @@ int main(void)
                 }
                 // 紹介文（下に 2 人分）
                 int by = H - 150, bx0 = pw + 60, bw0 = W - bx0 - 20;
+                {   // 能力のグラフ（六角形）：紹介文の枠の上に、2 人分（大会の準備では自分だけ）
+                    int gy = by - 196, gh = 188, nk = menuPage == 3 ? 1 : 2;
+                    DrawRectangle(bx0, gy, bw0, gh, Fade(BLACK, 0.55f));
+                    for (int k = 0; k < nk; k++) {
+                        float v[RADAR_N]; PersonaRadar(k == 0 ? gYouPersona : ai.persona, v);
+                        float cx = bx0 + bw0 * (nk == 1 ? 0.5f : (k == 0 ? 0.25f : 0.75f));
+                        DrawRadar(cx, gy + gh * 0.5f + 4, 60.0f, v, k == 0 ? SKYBLUE : ORANGE);
+                    }
+                }
                 DrawRectangle(bx0, by, bw0, 130, Fade(BLACK, 0.60f));
                 for (int k = 0; k < (menuPage == 3 ? 1 : 2); k++) {   // 枠に収まるように字を小さくする
                     const char *bl = k == 0 ? TextFormat(TR("%s: %s", "%s：%s"), gYouPersona ? PERSONAS[gYouPersona].shortName : YouName(), PersonaBlurb(gYouPersona))
                                             : TextFormat(TR("%s: %s", "%s：%s"), PERSONAS[ai.persona].shortName, PersonaBlurb(ai.persona));
                     char buf[256]; snprintf(buf, sizeof(buf), "%s", bl);
-                    int bfs = 18; while (bfs > 11 && MeasureText(buf, bfs) > bw0 - 28) bfs--;
-                    DrawText(buf, bx0 + 14, by + 14 + k * 36, bfs, k == 0 ? SKYBLUE : ORANGE);
+                    int bfs = 18; while (bfs > 14 && MeasureText(buf, bfs) > bw0 - 28) bfs--;
+                    Color bc = k == 0 ? SKYBLUE : ORANGE;
+                    if (MeasureText(buf, bfs) <= bw0 - 28) DrawText(buf, bx0 + 14, by + 14 + k * 36, bfs, bc);
+                    else {   // 長い紹介文は 2 行に（字の切れ目で、枠に収まるところまで 1 行目に）
+                        int cut = 0, len = (int)strlen(buf);
+                        for (int i = 1; i <= len; i++) {
+                            if (i < len && (buf[i] & 0xC0) == 0x80) continue;   // UTF-8 の字の途中では切らない
+                            char t = buf[i]; buf[i] = 0; int w = MeasureText(buf, 14); buf[i] = t;
+                            if (w > bw0 - 28) break;
+                            cut = i;
+                        }
+                        char l1[256]; snprintf(l1, sizeof(l1), "%.*s", cut, buf);
+                        DrawText(l1, bx0 + 14, by + 8 + k * 38, 14, bc);
+                        DrawText(buf + cut, bx0 + 14, by + 25 + k * 38, 14, bc);
+                    }
                 }
                 if (menuPage == 3) {
                     const char *ev = slamSel == SLAM_COUNT ? PN(TR("4 slams in a row: Australian (hard), French (clay), Wimbledon (grass), US (hard)", "4 大会を続けて：全豪（ハード）・全仏（クレー）・ウィンブルドン（芝）・全米（ハード）"),
