@@ -433,7 +433,7 @@ int main(void)
     int   retServer = 0;
     MatchStats ms[2] = { 0 };          // 試合の統計（マッチサマリー）
     bool  netFlag[2] = { false };      // このポイントでネットに出たか
-    int   setsToWin = 2;               // 試合の長さ：0=タイブレークだけ（7 点先取） 1=1 セット 2=3 セットマッチ 3=5 セットマッチ
+    int   setsToWin = 0;               // 試合の長さ：0=タイブレークだけ（7 点先取） 1=1 セット 2=3 セットマッチ 3=5 セットマッチ
     bool  setBreak = false;
     float crowdExcite = 0.0f;            // 観客の盛り上がり（0〜1）
     float stagS = 0.0f;                  // 自分のよろめきの強さ（見た目）
@@ -481,7 +481,7 @@ int main(void)
 
     // 試合
     Opponent ai = { 0 };
-    ai.level = 1;
+    ai.level = 0;   // はじめは AI の強さ「やさしい」、試合の長さ「タイブレーク」（設定ファイルがあればそちら）
     ai.persona = 1;   // 相手の選手（1〜4）
     Score score = { 0 };
     MatchPhase phase = PH_SERVE;
