@@ -428,6 +428,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     ai->leaving = false;
 }
 
+int gRallyHits = 0;   // 今のラリーの打数（サーブも 1）。長いラリーほど AI の集中が切れる
 static bool sAttack;   // 直前に選んだショットが「決めにいく」球か
 
 // AI のショット選び（AI 座標）
@@ -578,7 +579,9 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     //   これがないと AI はハイライトのようなプレーしかしない。現実のプロでも 100 ポイントに 10〜15 本は凡ミスする
     if (!c.isReturn && !c.volley && !c.dive && !c.stretch) {
         static const float LEVEL_LAPSE[3] = { AI_LAPSE_EASY, AI_LAPSE_NORMAL, AI_LAPSE_PRO };
-        float lapse = LevelTableLerp(LEVEL_LAPSE, ai->level, ai->boost) * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
+        float pressure = gRallyPartner ? 1.0f   // 長いラリーほど集中が切れる（ラリー練習の相手には効かせない：続けたい練習なので）
+                       : fminf(RALLY_PRESSURE_MAX, 1.0f + RALLY_PRESSURE_K * fmaxf(0.0f, (float)(gRallyHits - RALLY_PRESSURE_START)));
+        float lapse = LevelTableLerp(LEVEL_LAPSE, ai->level, ai->boost) * (sAttack ? AI_LAPSE_ATTACK : 1.0f) * pressure
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
                     * (1.0f - RAGE_LAPSE * Clamp01(ai->rage))

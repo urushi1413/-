@@ -2405,6 +2405,7 @@ int main(void)
             }
             if (ball.lastHitter != HITTER_OPP) { botGrunt = false; botGruntTried = false; }
             if (((mode == MODE_MATCH && phase == PH_PLAY) || mode == MODE_RALLY) && ai.planned && ball.age >= ai.swingAge) {
+                gRallyHits = rallyHits;   // 長いラリーほど AI の集中が切れる
                 if (AiSwing(&ai, &ball, P.pos)) {
                     if (mode == MODE_MATCH && netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, ai.pos, false, &ai.anim); if (how) { netTouchWho = 1; netTouchHow = how; } }
                     if (mode == MODE_MATCH) ms[1].shots++, ms[1].speedSum += ai.lastKmh;
@@ -2425,6 +2426,7 @@ int main(void)
             }
             if (botControls && phase == PH_PLAY && bot.planned && ball.age >= bot.swingAge) {
                 Ball fb = FlipSides(ball);
+                gRallyHits = rallyHits;
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
                     if (netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, Rot180(bot.pos), true, &bot.anim); if (how) { netTouchWho = 0; netTouchHow = how; } }

@@ -148,6 +148,17 @@ typedef struct {
 #define BH_STRETCH_ERR  1.35f    // 走らされた・高い打点（BH_HIGH_H より上）のバックのぶれ
 #define BH_HIGH_H       1.30f
 #define AI_LAPSE_PRO     0.060f
+// 長いラリーほど AI の集中が切れる：この打数（サーブも 1）を超えたら、凡ミスの起きやすさが 1 打ごとに K ずつ増える（上限 MAX 倍）
+#ifndef RALLY_PRESSURE_START
+#define RALLY_PRESSURE_START 6
+#endif
+#ifndef RALLY_PRESSURE_K
+#define RALLY_PRESSURE_K     0.12f
+#endif
+#ifndef RALLY_PRESSURE_MAX
+#define RALLY_PRESSURE_MAX   3.0f
+#endif
+extern int gRallyHits;   // 今のラリーの打数（サーブも 1）。AI が打つ直前に入れる
 #define AI_LAPSE_ATTACK  3.0f    //   決めにいく球はこの倍
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
