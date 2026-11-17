@@ -778,7 +778,7 @@ int main(void)
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
-                    case MI_PLAY:   break;   // モードは「プレイ」の先の選手と試合で選ぶ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
+                    case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。Enter で選手と試合へ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
                     /* fall through */
                     case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
                         int idx = battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);
@@ -958,6 +958,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
+                                     if (app == APP_TITLE && !MOBILE_ONLY) value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : ModeName(mode);
 
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
