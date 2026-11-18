@@ -1132,10 +1132,11 @@ int main(void)
                 DrawText("SWEET SPOT", px + 4, 90 + 4, 96, Fade(BLACK, 0.5f));
                 DrawText("SWEET SPOT", px, 90, 96, (Color){ 255, 215, 70, 255 });
                 DrawText(TR("real tennis where contact point and spin matter", "打点と回転がものをいう本物のテニス"), px + 4, 196, 22, RAYWHITE);
-                if (firstRun && !MOBILE_ONLY) DrawText(TR("New here? Start with the 1-minute lesson (Enter)", "はじめての方は、まず 1 分の練習から（Enter）"), px + 4, 232, 20, YELLOW);
+                int ty0 = DEMO_ONLY ? 286 : 232;   // 体験版は 232・258 に体験版の案内があるので、その下に
+                if (firstRun && !MOBILE_ONLY) DrawText(TR("New here? Start with the 1-minute lesson (Enter)", "はじめての方は、まず 1 分の練習から（Enter）"), px + 4, ty0, 20, YELLOW);
                 if (CareerPlayed() > 0)   // 記録：通算成績・最速サーブ・優勝
                     DrawText(TextFormat(TR("Record %d-%d   Fastest serve %.0f km/h   Titles %d", "通算 %d 勝 %d 敗   最速サーブ %.0f km/h   優勝 %d"),
-                                        CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, firstRun ? 258 : 232, 18, (Color){ 200, 220, 255, 255 });
+                                        CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, ty0 + (firstRun ? 26 : 0), 18, (Color){ 200, 220, 255, 255 });
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
                     DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
