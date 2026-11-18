@@ -480,8 +480,8 @@ static float PointImportance(const Score *sc)
     if (sc->tiebreak || (sc->points[0] >= 2 && sc->points[1] >= 2)) return 0.5f;                   // 30-30、デュース、タイブレーク
     return 0.0f;
 }
-// 芯の手応え（設定）：芯で捉えたら、ほんの一瞬時間が止まって画面が小さく揺れる（揺れが苦手な人は切れる）
-static bool gShakeOn = true;
+// 芯の手応え（設定）：芯で捉えたら、ほんの一瞬時間が止まる。画面の揺れは「止まる＋揺れ」を選んだときだけ
+static int gImpact = 1;   // 0 = なし、1 = 止まるだけ（初め。画面は揺らさない：揺れは酔いそうと言われた）、2 = 止まる＋揺れ
 
 // ポイント間のテンポ（設定）：0 = 速い、1 = ふつう（初め）、2 = 中継（前と同じ長さ）。ポイントの後の間・コートチェンジ・AI のボールつき・「お静かに」に効く
 static int gTempo = 1;
@@ -717,10 +717,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gShakeOn }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gShakeOn };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
@@ -738,7 +738,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
-            gShakeOn = s.shake != 0;
+            gImpact = Clamp(s.shake, 0, 2);   // 前に保存した 1（あり）は「止まるだけ」として読む
             gTempo = Clamp(s.tempo, 0, 2);
             feedbackLevel = Clamp(s.feedback, 0, 1);
             hintRealDone = s.hintReal != 0;
@@ -1018,7 +1018,7 @@ int main(void)
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
                     case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
                     case MI_TEMPO:     gTempo = (gTempo + 3 + change) % 3; break;
-                    case MI_SHAKE:     gShakeOn = !gShakeOn; break;
+                    case MI_SHAKE:     gImpact = (gImpact + 3 + change) % 3; break;
                     case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
                     case MI_RULE_BODY: gRuleBodyShot = !gRuleBodyShot; break;
                     case MI_GUIDES: guideLevel = (guideLevel + 3 + change) % 3; break;
@@ -1270,7 +1270,7 @@ int main(void)
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
-                    case MI_SHAKE:     label = TR("Hit impact (pause + shake)", "芯の手応え（一瞬止まる＋揺れ）"); value = gShakeOn ? TR("ON", "あり") : TR("OFF", "なし"); break;
+                    case MI_SHAKE:     label = TR("Hit impact", "芯の手応え"); value = gImpact == 0 ? TR("OFF", "なし") : gImpact == 1 ? TR("PAUSE ONLY", "一瞬止まるだけ") : TR("PAUSE + SHAKE", "止まる＋画面が揺れる"); break;
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
                     case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
@@ -1988,7 +1988,7 @@ int main(void)
                         plog.pendingApex = ball.pos.y;
                         trailColor = SERVES[type].color;
                         if (q >= SWEET_Q + 0.08f) { sweetT = 0.0f; sweetPos = hb.pos; sweetQ = q; trailColor = (Color){ 255, 210, 60, 255 };
-                                                    if (gShakeOn && !botControls) { float k = Clamp01((q - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; shakeT = 0.16f; } }   // いい当たりのサーブ
+                                                    if (gImpact > 0 && !botControls) { float k = Clamp01((q - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; if (gImpact == 2) shakeT = 0.16f; } }   // いい当たりのサーブ
                         trailCount = 0;
                         serveAce = false;
                         P.sv = SV_FLIGHT;
@@ -2302,7 +2302,7 @@ int main(void)
                         }
                         trailColor = SHOTS[type].color;
                         if (c.quality >= SWEET_Q) { sweetT = 0.0f; sweetPos = ball.pos; sweetQ = c.quality; trailColor = (Color){ 255, 210, 60, 255 };
-                                                    if (gShakeOn && !botControls) { float k = Clamp01((c.quality - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; shakeT = 0.16f; } }   // いい当たり：金色の軌跡と光
+                                                    if (gImpact > 0 && !botControls) { float k = Clamp01((c.quality - SWEET_Q) / (1.0f - SWEET_Q)); hitStopT = 0.045f + 0.035f * k; if (gImpact == 2) shakeT = 0.16f; } }   // いい当たり：金色の軌跡と光
                         trailCount = 0;
                         stats[type][0]++;
                         scoredLast = false;
