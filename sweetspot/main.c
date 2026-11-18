@@ -688,6 +688,9 @@ int main(void)
     int slamSel = 0;                     // メニューで選んだグランドスラム（4 = シーズン）
     // 画面の表示：0 FULL（全部）1 CLEAN（操作説明と状態の行を消す）2 MINIMAL（スコアと溜めのゲージだけ）3 OFF（中継のようにスコアだけ）
     int hudLevel = 1;   // 画面の表示：初めての人は「すっきり」から（全部は F1）
+    // 当たりの説明（かんたん）の目盛りに使う、直近 5 回の振り：タイミングのずれ（ms、プラス＝遅い）、体からの距離、質、その位置での最高の質、空振りの理由
+    typedef struct { float off, side, q, bestQ; int miss; bool timed; } ShotNote;
+    ShotNote notes[5] = { 0 }; int nNotes = 0, noteHead = 0;
     int   feedbackLevel = 0;   // 当たりの説明：0 = かんたん（直すことを 1 つ、言葉で）、1 = 詳しく（数字）
     float lastShotT = 99.0f;   // 最後に自分が打ってからの時間（すっきりでは、打ってから 3 秒だけ当たりの分析を出す）
     // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
@@ -2230,6 +2233,8 @@ int main(void)
                         float bestQ, offMs;
                         LogTimingAnalysis(&plog, P.pos, &pre, type, swingCharge, &bestQ, &offMs);
                         if (P.swingQ.age >= 0.0f) offMs += (P.swingQ.releaseAge - pre.age) * 1000.0f;   // 実際に離した瞬間で記録
+                        notes[noteHead] = (ShotNote){ offMs, c.side, c.miss == MISS_NONE ? c.quality : 0.0f, bestQ, (int)c.miss, bestQ > 0.0f };   // 当たりの説明の目盛り
+                        noteHead = (noteHead + 1) % 5; if (nNotes < 5) nNotes++;
                         plog.swung = true;
                         plog.swings++;
                         if (c.miss != MISS_NONE) { plog.whiffs++; plog.miss[c.miss]++; }
@@ -3749,16 +3754,7 @@ int main(void)
                 HudText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
                 HudText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
             }
-        } else if (P.hasLast && feedbackLevel == 0) {   // 当たりの説明（かんたん）：見出し・直すこと 1 つ・結果（数字は「詳しく」だけ）
-            const Contact *c = &P.lastContact;
-            if (c->miss != MISS_NONE) { HudText(MissText(c->miss), 20, y, 22, RED); y += 30; }
-            else {
-                const char *hd = c->quality >= 0.80f ? TR("SWEET SPOT!", "芯！") : c->quality >= 0.55f ? TR("Decent", "まずまず") : TR("Off-center", "芯を外した");
-                HudText(TextFormat("%s  %.0f%%", hd, c->quality * 100.0f), 20, y, 22, QualityColor(c->quality)); y += 30;
-            }
-            const char *fix = ShotFixText(c, P.lastType);
-            if (fix) { HudText(fix, 20, y, 20, RAYWHITE); y += 26; }
-            if (c->miss == MISS_NONE && ball.lastHitter == HITTER_PLAYER && ball.result != RESULT_NONE) { HudText(ResultTextUI(ball.result), 20, y, 22, ball.result == RESULT_IN ? GREEN : RED); y += 26; }
+        } else if (P.hasLast && feedbackLevel == 0) {   // 当たりの説明（かんたん）は、左下の目盛り（下）で出す
         } else if (P.hasLast) {
             const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
@@ -3804,6 +3800,63 @@ int main(void)
             HudText(TR("Move to the ball. Hold longer = deeper. Release to swing", "球の所へ動く。長く押すほど深い。離して振る"), 20, y, 18, RAYWHITE);
         }
         }   // 左上のパネル
+        // 当たりの説明（かんたん）：左下に、文字を読まなくてもわかる目盛り。タイミング（早い⇔遅い）と距離（近い⇔遠い）に、
+        //   今の 1 球を大きな印、その前の 4 球を小さな点で。言葉は直近 5 球の傾向から 1 つ（傾向がなければ今の 1 球）。次に振るまで出しておく（3 秒で少し薄く）
+        bool gaugeOn = feedbackLevel == 0 && P.hasLast && nNotes > 0 && !showServeInfo && mode != MODE_SERVE && !botControls && hudLevel <= 1 && !summaryUp && tut < 0;
+        if (gaugeOn) {
+            const Contact *c = &P.lastContact;
+            int H = GetScreenHeight(), bw = 520, bh = 132, bx = 16, by = H - (hudLevel == 0 ? 110 : 56) - bh;
+            float al = lastShotT < 3.0f ? 1.0f : 0.6f;
+            DrawRectangle(bx, by, bw, bh, Fade(BLACK, 0.45f * al));
+            // 1 行目：見出し（空振りなら理由）と結果
+            const char *hd = c->miss != MISS_NONE ? MissText(c->miss) : c->quality >= 0.80f ? TR("SWEET SPOT!", "芯！") : c->quality >= 0.55f ? TR("Decent", "まずまず") : TR("Off-center", "芯を外した");
+            Color hc = c->miss != MISS_NONE ? RED : QualityColor(c->quality);
+            DrawText(c->miss != MISS_NONE ? hd : TextFormat("%s  %.0f%%", hd, c->quality * 100.0f), bx + 12, by + 8, 22, Fade(hc, al));
+            if (c->miss == MISS_NONE && ball.lastHitter == HITTER_PLAYER && ball.result != RESULT_NONE) {
+                const char *rt = ResultTextUI(ball.result);
+                DrawText(rt, bx + bw - 12 - MeasureText(rt, 20), by + 10, 20, Fade(ball.result == RESULT_IN ? GREEN : RED, al));
+            }
+            // 目盛り：真ん中の緑が「ちょうど」。今の球は大きな印（緑＝ちょうど、橙＝ずれ）、前の 4 球は小さな白い点
+            #define GAUGE(row, lbl, lo, hi, OKR, RANGE, FIELD, VALID) do { \
+                int gx = bx + 150, gw = bw - 270, gy = by + (row); \
+                DrawText(lbl, bx + 12, gy - 6, 16, Fade(LIGHTGRAY, al)); \
+                DrawText(lo, gx - 8 - MeasureText(lo, 16) + 0, gy - 6, 16, Fade(LIGHTGRAY, al)); \
+                DrawText(hi, gx + gw + 8, gy - 6, 16, Fade(LIGHTGRAY, al)); \
+                DrawRectangle(gx, gy - 3, gw, 6, Fade(GRAY, 0.8f * al)); \
+                int okw = (int)(gw * (OKR) / (2.0f * (RANGE))); DrawRectangle(gx + gw / 2 - okw, gy - 4, okw * 2, 8, Fade(GREEN, 0.7f * al)); \
+                for (int k = nNotes - 1; k >= 0; k--) { \
+                    const ShotNote *sn = &notes[(noteHead - 1 - k + 10) % 5]; if (!(VALID)) continue; \
+                    float v = Clamp((sn->FIELD) / (RANGE), -1.0f, 1.0f); int mx = gx + gw / 2 + (int)(v * gw / 2); \
+                    if (k == 0) { bool ok = fabsf(sn->FIELD) <= (OKR); DrawCircle(mx, gy, 8, Fade(ok ? GREEN : ORANGE, al)); DrawCircleLines(mx, gy, 8, Fade(BLACK, al)); } \
+                    else DrawCircle(mx, gy, 4, Fade(RAYWHITE, (0.35f + 0.1f * (4 - k)) * al)); \
+                } } while (0)
+            GAUGE(50, TR("Timing", "タイミング"), TR("early", "早い"), TR("late", "遅い"), 25.0f, 150.0f, off, sn->timed);
+            GAUGE(78, TR("Distance", "距離"), TR("close", "近い"), TR("far", "遠い"), 0.15f, 0.9f, side - IDEAL_R, sn->miss == MISS_NONE || sn->miss == MISS_FAR);
+            #undef GAUGE
+            // 言葉：直近 5 球の傾向（3 回以上同じずれ）を先に。なければ今の 1 球
+            int late = 0, early = 0, far = 0, close = 0;
+            for (int k = 0; k < nNotes; k++) {
+                const ShotNote *sn = &notes[k];
+                if (sn->timed) { if (sn->off > 25.0f) late++; else if (sn->off < -25.0f) early++; }
+                if (sn->miss == MISS_FAR || (sn->miss == MISS_NONE && sn->side > IDEAL_R + 0.15f)) far++;
+                else if (sn->miss == MISS_NONE && sn->side < IDEAL_R - 0.15f) close++;
+            }
+            const char *adv = NULL;
+            if (nNotes >= 3) {
+                if (late >= 3)       adv = TextFormat(TR("Late on %d of the last %d: start holding as soon as they hit, release earlier", "直近 %d 球で %d 回 振り遅れ：相手が打ったらすぐ押し始め、早めに離す"), late, nNotes);
+                else if (early >= 3) adv = TextFormat(TR("Early on %d of the last %d: keep holding until the ball reaches your side", "直近 %d 球で %d 回 早すぎ：球が体の横に来るまで押したまま待つ"), early, nNotes);
+                else if (far >= 3)   adv = TextFormat(TR("Too far on %d of the last %d: take one more step toward the ball", "直近 %d 球で %d 回 遠い：あと一歩、球に寄る"), far, nNotes);
+                else if (close >= 3) adv = TextFormat(TR("Too close on %d of the last %d: stand half a step away", "直近 %d 球で %d 回 近すぎ：半歩はなれて構える"), close, nNotes);
+                if (adv && gLang == LANG_JA) {   // 日本語は「直近 5 球で 4 回」の順に（数の順が英語と逆）
+                    int a = late >= 3 ? late : early >= 3 ? early : far >= 3 ? far : close;
+                    const char *what = late >= 3 ? "振り遅れ：相手が打ったらすぐ押し始め、早めに離す" : early >= 3 ? "早すぎ：球が体の横に来るまで押したまま待つ"
+                                     : far >= 3 ? "遠い：あと一歩、球に寄る" : "近すぎ：半歩はなれて構える";
+                    adv = TextFormat("直近 %d 球で %d 回 %s", nNotes, a, what);
+                }
+            }
+            if (!adv) adv = ShotFixText(c, P.lastType);
+            if (adv) { int af = 18; while (af > 12 && MeasureText(adv, af) > bw - 24) af--; DrawText(adv, bx + 12, by + 100 + (18 - af) / 2, af, Fade(RAYWHITE, al)); }
+        }
         // 下：成績と操作説明（コートの奥を隠さない場所）。FULL のときだけ（統計の表の間は出さない：表の下の案内にかかる）
         if (hudLevel == 0 && !summaryUp && tut < 0) {   // はじめての人への練習の間は出さない（右上の課題の箱で足りる）
         y = GetScreenHeight() - 98;
@@ -4086,7 +4139,7 @@ int main(void)
         if (toastT > 0.0f) {
             toastT -= frameDt;
             int tw = MeasureText(toast, 30);
-            int ty = GetScreenHeight() - 210;
+            int ty = GetScreenHeight() - (gaugeOn ? 250 : 210);   // 左下の当たりの目盛りが出ている間は、その上に
             if (summaryUp) ty = (int)fminf((float)(SummaryBottom() + 8), (float)(GetScreenHeight() - 48));   // 統計の表の間は表の下に（前は表の行の上に重なっていた）
             DrawRectangle(GetScreenWidth() / 2 - tw / 2 - 16, ty, tw + 32, 44, Fade(BLACK, 0.75f));
             DrawText(toast, GetScreenWidth() / 2 - tw / 2, ty + 8, 30, YELLOW);
