@@ -1434,14 +1434,15 @@ int main(void)
         }
         // 試合の途中は、1 キーでモード・強さ・難しさを変えない（G で試合が消える事故があった）。変えるのは Esc のメニューから
         bool matchLive = mode == MODE_MATCH && !score.over && tut < 0;
-        #define MATCH_LOCKED_TOAST() do { snprintf(toast, sizeof(toast), "%s", TR("Can't change during a match (Esc > Players & match)", "試合中は変えられません（Esc → 選手と試合）")); toastT = 2.0f; } while (0)
+        bool matchLock = mode == MODE_MATCH && tut < 0;   // 試合のモードでは、途中も終わった後（結果の表の間）も 1 キーでモード・強さ・難しさを変えない（結果が消える事故）
+        #define MATCH_LOCKED_TOAST() do { snprintf(toast, sizeof(toast), "%s", TR("Can't change with a key in a match (Esc > Players & match)", "試合では、キーでは変えられません（Esc → 選手と試合）")); toastT = 2.0f; } while (0)
         if (IsKeyPressed(KEY_T) && !DEMO_ONLY && !(SALE_ONLY && matchLive)) {   // 体験版はスローなし（チャレンジのため）。売る版は試合中もなし
             slowMo = !slowMo;
             if (slowMo && matchLive) matchAssisted = true;
         }
         if (DEMO_ONLY && mode == MODE_MATCH && !score.over && (style != STYLE_REAL || ai.level < 1)) demoClean = false;
-        if (IsKeyPressed(KEY_V) && !matchLive && !targetChal) { proFeed = !proFeed; rallyStreak = 0; }   // 球出しの設定：試合では意味がない（的あての間は変えない）
-        if (IsKeyPressed(KEY_F) && !matchLive) feedTimer = 0.0f;
+        if (IsKeyPressed(KEY_V) && !matchLock && !targetChal) { proFeed = !proFeed; rallyStreak = 0; }   // 球出しの設定：試合では意味がない（的あての間は変えない）
+        if (IsKeyPressed(KEY_F) && !matchLock) feedTimer = 0.0f;
         // ================= リプレイ（スロー、横からのカメラ） =================
         if (rp.on) {
             int n = 0; const char *cap = "REPLAY";
@@ -1488,11 +1489,11 @@ int main(void)
         bool restart = forceRestart;
         forceRestart = false;
         if (IsKeyPressed(KEY_G)) {
-            if (matchLive) MATCH_LOCKED_TOAST();
+            if (matchLock) MATCH_LOCKED_TOAST();
             else { mode = (PracticeMode)((mode + 1) % MODE_COUNT); targetChal = false; restart = true; }
         }
         for (int k = 0; k < 3; k++) if ((mode == MODE_MATCH || mode == MODE_RETURN) && IsKeyPressed(KEY_ONE + k)) {   // リターン練習のサーブも AI の強さで変わる
-            if (matchLive) MATCH_LOCKED_TOAST();
+            if (matchLock) MATCH_LOCKED_TOAST();
             else { ai.level = k; restart = true; }
         }
         bool suggested = false;   // 試合の後の提案のページを開いた（このフレームは次の試合にしない。continue は入力の更新を飛ばすので使わない）
@@ -1530,7 +1531,7 @@ int main(void)
         }
         if (IsKeyPressed(KEY_H)) assistLevel = (assistLevel + 2) % 3;
         if (IsKeyPressed(KEY_N)) {
-            if (matchLive) MATCH_LOCKED_TOAST();
+            if (matchLock) MATCH_LOCKED_TOAST();
             else style = (PlayStyle)((style + 1) % STYLE_COUNT);
         }
         #undef MATCH_LOCKED_TOAST
@@ -3871,10 +3872,8 @@ int main(void)
         y += 20;
         { const char *cl = ControlsLine(); int cfs = 16; while (cfs > 12 && MeasureText(cl, cfs) > GetScreenWidth() - 30) cfs--;   // 画面の幅に収める
           DrawText(cl, 20, y, cfs, LIGHTGRAY); } y += 18;
-        if (mode == MODE_MATCH && !score.over)   // 試合の途中は 1 キーで設定を変えない（Esc のメニューから）
+        if (mode == MODE_MATCH)   // 試合では 1 キーで設定を変えない（Esc のメニューから）
             DrawText(TR("Esc: menu", "Esc：メニュー"), 20, y, 16, LIGHTGRAY);
-        else if (mode == MODE_MATCH)
-            DrawText(TextFormat(TR("G mode: MATCH   1/2/3 AI level: %s   T slow", "G モード：試合   1/2/3 AI の強さ：%s   T スロー"), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else if (mode == MODE_RETURN)   // リターン練習のサーブは試合の AI と同じ（速さ・コース・フォルトは AI の強さで変わる）
             DrawText(TextFormat(TR("G mode: %s   1/2/3 AI level: %s   F next serve  T slow", "G モード：%s   1/2/3 AI の強さ：%s   F 次のサーブ  T スロー"), ModeName(mode), LevelNameUI(ai.level)), 20, y, 16, LIGHTGRAY);
         else
