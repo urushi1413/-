@@ -2235,6 +2235,9 @@ int main(void)
                         LogTimingAnalysis(&plog, P.pos, &pre, type, swingCharge, &bestQ, &offMs);
                         if (P.swingQ.age >= 0.0f) offMs += (P.swingQ.releaseAge - pre.age) * 1000.0f;   // 実際に離した瞬間で記録
                         notes[noteHead] = (ShotNote){ offMs, c.side, c.miss == MISS_NONE ? c.quality : 0.0f, bestQ, (int)c.miss, bestQ > 0.0f };   // 当たりの説明の目盛り
+                        if (!notes[noteHead].timed && (c.miss == MISS_EARLY || c.miss == MISS_LATE)) {   // 早すぎ・遅すぎの空振り：ずれは測れないので、目盛りの端に出す
+                            notes[noteHead].off = c.miss == MISS_EARLY ? -150.0f : 150.0f; notes[noteHead].timed = true;
+                        }
                         noteHead = (noteHead + 1) % 5; if (nNotes < 5) nNotes++;
                         plog.swung = true;
                         plog.swings++;
