@@ -2697,7 +2697,10 @@ int main(void)
                 TraceLog(LOG_INFO, "POINT end: %s -> %s", pointMsg, winner == 0 ? "YOU" : "AI");
                 SfxPointEnd(rallyHits, endKind == 1 || endKind == 2);
                 if (bigKind && winner != bigFor && !score.over) {   // 大事なポイントをしのいだ
-                    snprintf(toast, sizeof(toast), "%s", bigKind == 3 ? TR("Match point saved!", "マッチポイントをしのいだ！") : bigKind == 2 ? TR("Set point saved!", "セットポイントをしのいだ！") : TR("Break point saved!", "ブレークポイントをしのいだ！"));
+                    if (bigFor == 1)   // 相手の大事なポイントを自分がしのいだ
+                        snprintf(toast, sizeof(toast), "%s", bigKind == 3 ? TR("Match point saved!", "マッチポイントをしのいだ！") : bigKind == 2 ? TR("Set point saved!", "セットポイントをしのいだ！") : TR("Break point saved!", "ブレークポイントをしのいだ！"));
+                    else               // 自分の大事なポイントを相手にしのがれた
+                        snprintf(toast, sizeof(toast), "%s", bigKind == 3 ? TR("Match point escaped!", "マッチポイントをしのがれた！") : bigKind == 2 ? TR("Set point escaped!", "セットポイントをしのがれた！") : TR("Break point escaped!", "ブレークポイントをしのがれた！"));
                     toastT = 2.0f; crowdExcite = fmaxf(crowdExcite, 0.8f);
                 }
                 crowdExcite = Clamp01(0.25f + (rallyHits - 2) / 12.0f + ((endKind == 1 || endKind == 2) ? 0.35f : 0.0f) + 0.4f * gPointImportance);   // 観客が沸く
