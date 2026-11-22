@@ -140,9 +140,29 @@ const Persona PERSONAS[PERSONA_COUNT] = {
 };
 
 // 強さに選手の癖を足した、実際の能力
+// 強さ level と、隣の強さの間を boost（-1〜+1）で補間した能力。PRO より上・EASY より下には伸ばさない
+static AiLevel LevelLerp(int level, float boost)
+{
+    AiLevel a = AI_LEVELS[level % 3];
+    int nb = boost > 0.0f ? level + 1 : level - 1;
+    if (nb < 0 || nb > 2 || boost == 0.0f) return a;
+    AiLevel b = AI_LEVELS[nb]; float t = fabsf(boost);
+    #define LF(f) a.f = a.f + (b.f - a.f) * t
+    LF(speed); LF(reaction); LF(timingSigmaMs); LF(posErr); LF(aggression); LF(lineJudge);
+    LF(serve1Kmh); LF(serve2Kmh); LF(serveSkill); LF(serveMargin); LF(serveDepth);
+    #undef LF
+    return a;
+}
+float LevelTableLerp(const float tbl[3], int level, float boost)   // LEVEL_LAPSE などの表にも同じ補間
+{
+    int nb = boost > 0.0f ? level + 1 : level - 1;
+    if (nb < 0 || nb > 2 || boost == 0.0f) return tbl[level % 3];
+    return tbl[level % 3] + (tbl[nb] - tbl[level % 3]) * fabsf(boost);
+}
+
 AiLevel EffLevel(const Opponent *ai)
 {
-    AiLevel L = AI_LEVELS[ai->level];
+    AiLevel L = LevelLerp(ai->level, ai->boost);   // 大会のラウンドで、隣の強さとの間へ寄せる
     const Persona *p = &PERSONAS[ai->persona % PERSONA_COUNT];
     // 選手の上乗せは難易度で変える（EASY は 4 割、NORMAL と PRO は全部）
     static const float LEVEL_BOOST[3] = { 0.25f, 1.0f, 1.0f };
@@ -316,6 +336,19 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
             ai->leaving = true;
             ai->planned = false;
             ai->standPos = ai->netRush ? ai->pos : AiHomeFor(ai);   // ネットにいれば、そのまま見送る
+            if (gBattle || gRuleBodyShot) {   // 見送る球でも、ノーバウンドで体に当たれば失点（ボディショット）。体に向かってくるなら横へよける
+                float r = gBattle ? BATTLE_BODY_R : BODY_HIT_R;
+                Ball w = *worldBall, w0;
+                for (int i = 0; i < 240 * 3 && w.active && w.bounces == 0; i++) {
+                    w0 = w; StepBall(&w, PHYS_DT);
+                    Vector3 at;
+                    if (BodyShotHit(&w0, &w, ai->standPos, r + 0.15f, 0.0f, BodyTop(ai->persona, 0.0f) + 0.15f, &at)) {   // 少し余裕をもって
+                        float sx = at.x >= ai->standPos.x ? -1.0f : 1.0f;   // 球と反対の側へ
+                        ai->standPos.x += sx * (BODY_DODGE + (gBattle ? BATTLE_BODY_R - BODY_HIT_R : 0.0f));
+                        break;
+                    }
+                }
+            }
             return;
         }
     }
@@ -395,6 +428,7 @@ void AiPlan(Opponent *ai, const Ball *worldBall)
     ai->leaving = false;
 }
 
+int gRallyHits = 0;   // 今のラリーの打数（サーブも 1）。長いラリーほど AI の集中が切れる
 static bool sAttack;   // 直前に選んだショットが「決めにいく」球か
 
 // AI のショット選び（AI 座標）
@@ -527,12 +561,13 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     static const float LEVEL_ERR[3] = { 2.4f, 1.25f, 0.72f };   // NORMAL を少しぶれやすく   // 難易度でミスの量が変わる（EASY はかなりぶれる）
     gRiseSkill = pp->risingPref;   // ライジングが得意な選手は、跳ね上がりの分を面で抑えられる
-    gErrMul = LEVEL_ERR[ai->level % 3] * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
+    gErrMul = LevelTableLerp(LEVEL_ERR, ai->level, ai->boost) * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)   // ミスの少なさ（大事なポイントほど減る）
             * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)          // 得意なコートほどミスが減る
             * (1.0f - RAGE_ERR * Clamp01(ai->rage));                            // ラケットを叩きつけた後はミスが減る
     gTimingTolMul = 1.0f;   // AI のタイミングの許容幅はそのまま（人間だけ広い）
     gReachAdd = HeightDelta(ai->persona) * REACH_PER_CM;   // 身長で届く範囲が変わる
     gHeightDelta = HeightDelta(ai->persona);              // 背が高いほど低い球がつらい
+    gRunBack = meVel.z;   // 後ろへ走って追いついた低い球は、股抜きで返す
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     sAttack = false;
     bool sLapse = false;
@@ -545,7 +580,9 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     //   これがないと AI はハイライトのようなプレーしかしない。現実のプロでも 100 ポイントに 10〜15 本は凡ミスする
     if (!c.isReturn && !c.volley && !c.dive && !c.stretch) {
         static const float LEVEL_LAPSE[3] = { AI_LAPSE_EASY, AI_LAPSE_NORMAL, AI_LAPSE_PRO };
-        float lapse = LEVEL_LAPSE[ai->level % 3] * (sAttack ? AI_LAPSE_ATTACK : 1.0f)
+        float pressure = gRallyPartner ? 1.0f   // 長いラリーほど集中が切れる（ラリー練習の相手には効かせない：続けたい練習なので）
+                       : fminf(RALLY_PRESSURE_MAX, 1.0f + RALLY_PRESSURE_K * fmaxf(0.0f, (float)(gRallyHits - RALLY_PRESSURE_START)));
+        float lapse = LevelTableLerp(LEVEL_LAPSE, ai->level, ai->boost) * (sAttack ? AI_LAPSE_ATTACK : 1.0f) * pressure
                     * pp->errMul * (1.0f - 0.40f * pp->clutch * gPointImportance)
                     * Clamp(1.0f - 1.2f * pp->surfSpeed[gSurface], 0.5f, 1.6f)
                     * (1.0f - RAGE_LAPSE * Clamp01(ai->rage))
@@ -556,6 +593,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     }
     ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
+    gRunBack = 0.0f;
     if (sLapse) c.quality *= AI_LAPSE_Q;   // 打ち損じ：芯を外す
     if (c.isReturn && c.miss == MISS_NONE) {
         // 速いサーブ・体から遠いサーブは返せないことがある（反応が間に合わず、ラケットに当たらない・枠に当たる）。
@@ -576,7 +614,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     if (c.miss == MISS_NONE && c.volley && !c.overhead)   // ボレーのうまい選手は、当たりの悪さを取り戻す
         c.quality += (1.0f - c.quality) * 0.5f * pp->volleySkill;
     ai->anim.lastContact = c;
-    if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeT = LUNGE_TIME; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
+    if (c.miss == MISS_NONE && c.lunge && !c.dive) { ai->anim.lungeDur = c.stretch ? STRETCH_TIME : LUNGE_TIME; ai->anim.lungeT = ai->anim.lungeDur; ai->anim.lungeSide = c.forehand ? 1.0f : -1.0f; }
     ai->anim.contactLocal = (Vector3){ b.pos.x - me.x, b.pos.y, me.z - b.pos.z };
     ai->anim.swingT = 0.0f;
     ai->anim.smash = c.overhead;
@@ -781,6 +819,12 @@ void AiUpdate(Opponent *ai, const Ball *ball, float dt)
         } else {
             ai->vel = MoveToward(&ai->pos, ai->vel, ai->standPos, lv->speed, dt);
         }
+    }
+    // ネットに触れない・すり抜けない（AI の側は z<0）。ネットの幅（ポストの外 0.5m まで）の所だけ
+    if (fabsf(ai->pos.x) < NET_POST_X + 0.5f && ai->pos.z > -NET_AI_KEEP) {
+        ai->pos.z = -NET_AI_KEEP;
+        if (ai->vel.z > 0.0f) ai->vel.z = 0.0f;
+        ai->sliding = false;
     }
     ai->anim.sliding = ai->sliding;
     if (Vector3Length(ai->vel) > 0.3f) ai->anim.slideSide = -ai->vel.x;   // AI は +z 向きなので右＝-x

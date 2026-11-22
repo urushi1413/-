@@ -313,7 +313,7 @@ void SfxHit(float q, float kmh, bool slice, bool voice, bool defensive, float di
     else if (slice)     Play(S_HIT_SLICE, q < 0.5f ? S_HIT_BAD : S_HIT_OK, vol, Jitter());
     else if (q < 0.45f) Play(S_HIT_BAD, S_HIT_OK, vol, Jitter());
     else if (q < 0.75f) Play(S_HIT_OK, S_HIT_GOOD, vol, Jitter());
-    else                Play(S_HIT_GOOD, S_HIT_OK, vol, Jitter());
+    else                Play(S_HIT_GOOD, S_HIT_OK, vol * (q >= 0.80f ? 1.15f : 1.0f), Jitter() * (q >= 0.80f ? 1.04f : 1.0f));   // 芯は少し大きく、少し高く
 }
 
 // ラケットを地面に叩きつける音（racket_smash がなければ鳴らさない）。k 回目は k 番目の録音（_2, _3 …）を鳴らす

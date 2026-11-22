@@ -1,0 +1,23 @@
+# 骨の対応表：決まった名前（ゲームが見る名前） ← 元のモデルの骨の名前（AnimationLibrary_Godot_Standard.glb）
+hips         <- DEF-hips
+spine1       <- DEF-spine.001
+spine2       <- DEF-spine.002
+spine3       <- DEF-spine.003
+neck         <- DEF-neck
+head         <- DEF-head
+clavicle.R   <- DEF-shoulder.R
+upperarm.R   <- DEF-upper_arm.R
+forearm.R    <- DEF-forearm.R
+hand.R       <- DEF-hand.R
+thigh.R      <- DEF-thigh.R
+shin.R       <- DEF-shin.R
+foot.R       <- DEF-foot.R
+toe.R        <- DEF-toe.R
+clavicle.L   <- DEF-shoulder.L
+upperarm.L   <- DEF-upper_arm.L
+forearm.L    <- DEF-forearm.L
+hand.L       <- DEF-hand.L
+thigh.L      <- DEF-thigh.L
+shin.L       <- DEF-shin.L
+foot.L       <- DEF-foot.L
+toe.L        <- DEF-toe.L

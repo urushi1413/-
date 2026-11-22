@@ -17,9 +17,14 @@ int CurrentServer(const Score *s)
 // デュースサイドか（ゲーム内のポイント数が偶数ならデュース）
 bool DeuceCourt(const Score *s) { return (s->points[0] + s->points[1]) % 2 == 0; }
 
+// 試合の長さ（メニューの値）→ 何セット取れば勝ちか・1 セットのゲーム数。0〜3 の意味は前のまま（保存した設定がそのまま使える）
+int LenSets(int len)  { return len == 2 ? 2 : len == 3 ? 3 : 1; }
+int LenGames(int len) { return len == 4 ? 4 : 6; }
+
 void AwardPoint(Score *s, int w)
 {
     int l = 1 - w;
+    int G = s->setGames > 0 ? s->setGames : 6;   // 1 セットのゲーム数（ショートセットは 4）
     s->points[w]++;
     bool gameWon;
     if (s->tiebreak) gameWon = s->points[w] >= 7 && s->points[w] - s->points[l] >= 2;
@@ -34,7 +39,7 @@ void AwardPoint(Score *s, int w)
     int firstServer = s->server;
     if (s->nGames < 16) { s->gameWinner[s->nGames] = w; s->gameServer[s->nGames] = firstServer; s->nGames++; }
     s->points[0] = s->points[1] = 0;
-    bool setWon = (s->games[w] >= 6 && s->games[w] - s->games[l] >= 2) || (s->tiebreak);
+    bool setWon = (s->games[w] >= G && s->games[w] - s->games[l] >= 2) || (s->tiebreak);
     s->tiebreak = false;
     s->server = 1 - firstServer;
     if (setWon) {
@@ -47,7 +52,7 @@ void AwardPoint(Score *s, int w)
         s->games[0] = s->games[1] = 0;
         s->nGames = 0;    // ゲームの流れはセットごと
         s->over = s->sets[w] >= (s->setsToWin > 0 ? s->setsToWin : 1);
-    } else if (s->games[0] == 6 && s->games[1] == 6) {
+    } else if (s->games[0] == G && s->games[1] == G) {
         s->tiebreak = true;
     }
 }

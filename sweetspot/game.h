@@ -18,7 +18,32 @@ enum { LANG_EN, LANG_JA };
 extern int gLang;
 extern int gLook;   // 見た目：0 = ふつう、1 = アニメ調、2 = ドット風（render.c）
 void PixelBegin(void);   // ドット風：DrawSky の前に
-void PixelEnd(void);     // ドット風：AtmosOverlay の後に
+void PixelEnd(void);     // ドット風：AtmosOverlay の後に（ふつうの見た目ならここでポスト処理をかける）
+// ---- 見た目の底上げ（「ふつう」の見た目のときだけ効く。アニメ調・ドット風は今までどおり） ----
+//   1 = 入れる、0 = 切る。作るときに make CFLAGS="... -DFX_POST=0" のようにも切れる
+#ifndef FX_SOFT_SHADOW
+#define FX_SOFT_SHADOW 1      // 選手とボールの下の柔らかい影
+#endif
+#ifndef FX_POST
+#define FX_POST        1      // ポスト処理のシェーダー：色調補正＋軽いビネット
+#endif
+#ifndef FX_BLOOM
+#define FX_BLOOM       1      // ポスト処理の中の軽いブルーム（FX_POST が 1 のときだけ。重ければこれだけ切れる）
+#endif
+#ifndef FX_BALL_TRAIL
+#define FX_BALL_TRAIL  1      // ボールの短い残像
+#endif
+#define FX_SATURATION   1.10f   // 色の濃さ（1 = そのまま）
+#define FX_CONTRAST     0.22f   // 明暗のめりはり（0 = そのまま。S 字のカーブをこの割合だけ混ぜる）
+#define FX_VIGNETTE     0.20f   // ビネット：画面の四隅をこの割合まで暗くする
+#define FX_BLOOM_K      0.32f   // ブルームの強さ
+#define FX_BLOOM_THRESH 0.80f   // この明るさより上だけがにじむ
+#define FX_TRAIL_TIME   0.12f   // 残像の長さ（秒）
+#define FX_TRAIL_V0     7.0f    // この速さ（m/s）から残像が出始め
+#define FX_TRAIL_V1     22.0f   //   この速さで最大
+#define FX_TRAIL_N      16      // 残像に使う点の数の上限
+void DrawBallShadow(Vector3 ball, float vr);   // ボールの影（真下。高いほど大きく薄くぼける）
+void DrawBallAfterimage(const Vector3 *pts, int n, Vector3 camPos, float vr, float strength, Color col);   // pts は古い順
 #define TR(en, ja) (gLang == LANG_JA ? (ja) : (en))
 #define TL(en, ja) (en)   // 試合中のテロップ（コール・判定・警告）は英語のまま（いずれ音声のコールにする）
 void UiFontInit(void);
@@ -123,6 +148,17 @@ typedef struct {
 #define BH_STRETCH_ERR  1.35f    // 走らされた・高い打点（BH_HIGH_H より上）のバックのぶれ
 #define BH_HIGH_H       1.30f
 #define AI_LAPSE_PRO     0.060f
+// 長いラリーほど AI の集中が切れる：この打数（サーブも 1）を超えたら、凡ミスの起きやすさが 1 打ごとに K ずつ増える（上限 MAX 倍）
+#ifndef RALLY_PRESSURE_START
+#define RALLY_PRESSURE_START 6
+#endif
+#ifndef RALLY_PRESSURE_K
+#define RALLY_PRESSURE_K     0.12f
+#endif
+#ifndef RALLY_PRESSURE_MAX
+#define RALLY_PRESSURE_MAX   3.0f
+#endif
+extern int gRallyHits;   // 今のラリーの打数（サーブも 1）。AI が打つ直前に入れる
 #define AI_LAPSE_ATTACK  3.0f    //   決めにいく球はこの倍
 #define AI_LAPSE_ERR     2.0f    //   打ち損じたときのぶれの倍率
 #define AI_LAPSE_Q       0.35f   //   打ち損じたときの当たりの質の倍率
@@ -132,6 +168,14 @@ typedef struct {
 #define KNEE_LOAD        0.07f   // ストロークで引いたときにさらに沈む量（打つときに脚で押し上げる）
 #define SPLIT_TIME       0.32f   // スプリットステップ（跳んで着地するまで）の長さ（秒）
 #define CELEB_TIME       1.7f    // ポイント後のしぐさの長さ（秒）
+// 版：リリースまでは表紙（タイトル画面の右上）に出す。どの版で遊んでいるかがすぐわかるように
+//   GAME_VERSION は手で上げる。BUILD_ID はビルドのときに Makefile が git から入れる（コミット・その日時・ブランチ。手元の変更があれば +）
+//   リリースのときは SHOW_VERSION を 0 にする
+#define GAME_VERSION "0.9.0"
+#define SHOW_VERSION 1
+#ifndef BUILD_ID
+#define BUILD_ID "unknown"
+#endif
 // 売る版（make SALE=1）：実在の選手・大会に似せたものを架空のものにする。PN(自分用, 売る版)
 #ifdef SALE_BUILD
 #define PN(real, sale) sale
@@ -235,6 +279,17 @@ extern bool gDecidingSet;   // 最終セット
 #define TOL_ANG_COMPACT  55.0f   // タイミング（向き）の許容幅。溜めなしのコンパクトなスイング
 #define TOL_ANG_FULL     40.0f   //   〃 フルスイング。大きく振るほどシビア
 #define VOLLEY_TOL_BONUS 1.30f   // ボレーはテイクバックが小さいので許容幅が広い
+// 股抜き（トゥイーナー）：後ろへ走って追いついた低い球を、股の間から打つ（shots.c）
+#define TWEENER_RUN      2.0f    // ネットから離れる向きにこれ以上の速さ（m/s）で走っている
+#define TWEENER_DZ0     -0.05f   // 球が体よりこれだけ後ろ（走る先）から
+#define TWEENER_DZ1     -1.30f   //   ここまで（m。マイナスが後ろ）
+#define TWEENER_DX       0.60f   // 体の真ん中から横にこれ以内（股の下を通せる）
+#define TWEENER_IDEAL_DZ -0.50f  // 理想：体の 50cm 先
+#define TWEENER_IDEAL_H  0.55f   //   膝の上くらいの高さ
+#define TWEENER_Q_MAX    0.70f   // 当たりの質の上限
+#define TWEENER_CHARGE   0.30f   // 振りの強さの上限
+#define TWEENER_ERR      2.6f    // ぶれの倍率
+#define TWEENER_YAW_ERR  9.0f    // 横のぶれの上乗せ（度）
 #define BEHIND_LIMIT    -75.0f   // これより後ろに入られたら振り遅れ（空振り）。それより手前なら、遅れても押し出すように当たる
 // 振っている途中でもラケットはボールに合わせにいく（人間は振りながら微調整している）。
 // 早く振っても、この時間先までなら当たる。ただし早かった分だけ質が落ち、引っ張り気味になる
@@ -251,13 +306,25 @@ extern bool gDecidingSet;   // 最終セット
 #define BATTLE_DMG_BODY    24.0f   // 体にボールを当てられた
 #define BATTLE_BODY_R      0.40f   // 体に当たったとみなす、体の中心からの距離（m）
 #define BATTLE_AI_BODY     0.20f   // AI が体を狙う割合
+// ボディショット（ふつうの試合も。現実のルール：打った球が相手の体・服に当たったら、打った側のポイント）
+//   体は足元を中心にした円柱とみなす（腕とラケットは入れない：ラケットに当たったら打ち返したのと同じ）
+#define BODY_HIT_R         0.24f   // 円柱の半径（m）：肩幅の半分 ＋ 球の半径
+#define BODY_CROUCH_K      0.35f   // しゃがむ（Q）と、円柱の高さがこの割合だけ低くなる（ネット前で顔をよける）
+#define BODY_DODGE         0.75f   // AI が見送る球が体に向かってくるとき、横へよける距離（m）
+// ネット：選手はネットをすり抜けない。ルール「ネットタッチ」があれば、ポイント中に体が触れるかラケットがネットを越えたら失点
+#define NET_BODY_R         0.20f   // 体の前後の厚みの半分（つま先まで、m）。体の中心がネットからこれだけの所で、体がネットに触れる。ここより先へは進めない
+#define NET_RACKET_R       0.13f   // ラケットの面の半分の幅。打った瞬間、球がネットからこれより近いと、ラケットがネットを越える（触れる）
+#define NET_AI_KEEP        0.45f   // AI（自動操作も）は、体の中心がこれより前へ出ない（走ってネットに触れない）
+// ルールの設定（設定 → ルール。保存される）。バトルのボディショットは設定に関係なくいつもあり
+extern bool gRuleNetTouch;   // ネットタッチ：体がネットに触れる・ラケットがネットを越えたら失点
+extern bool gRuleBodyShot;   // ボディショット：生きている球が体に当たったら、打った方のポイント
 extern bool gBattle;   // バトルモードの試合中（AI が体を狙う）
 extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつなぐ
 // 「お静かに」：サーブの前に観客がざわつく（QUIET_TIME 秒）→ 残り QUIET_SAY 秒で主審が注意 → 残り QUIET_THANKS 秒で「ありがとう」→ サーブ
 #define QUIET_TIME   4.2f
 #define QUIET_SAY    3.0f
 #define QUIET_THANKS 1.0f
-#define RETURN_WAIT 2.2f   // リターン練習：返球が終わってから、相手がボールをつき始めるまで（秒）
+#define RETURN_POINT_GAP 2.0f   // リターン練習：ポイントが終わってから、相手が次のサーブの準備（儀式）を始めるまで。試合と同じ（その間に主審のスコアコール）
 #define INPUT_LOCK 0.6f   // 試合・練習に入った直後、打つ・サーブの入力を受けない時間（秒）
 #define CINE_COUNT 4   // 撮影モードのカメラの数
 #define TUT_SPOT ((Vector3){ 2.6f, 0.02f, HALF_LEN - 1.2f })   // 練習：最初に動いていく場所（自分のコートの右寄り）
@@ -265,7 +332,14 @@ extern bool gRallyPartner;   // ラリー練習：AI は打ちやすい所へつ
 // 踏み込み（ランジ）：打点に入れていない球へ、体ごと倒れ込んで届かせる。止まっていても使える
 #define STRETCH_VOLLEY   0.80f   // ボレーで届く範囲の上乗せ（m）。ネット前で横を抜かれにくくなる
 #define STRETCH_GROUND   0.50f   // ストローク（バウンド後）の上乗せ
-#define STRETCH_QUALITY  0.50f   // 当たりの質はこの割合に落ちる（面を合わせるだけ）
+// ぎりぎり届く球は、足を大きく踏み出し、腕とラケットを伸ばしきって取る（現実のテニスと同じ）。
+//   届く限界は体の大きさで決まる：身長 185cm で、踏み出し＋体の傾き＋肩＋腕＋ラケット ≒ 2.6m（REACH_SIDE ＋ STRETCH_GROUND）。
+//   背が高いほど遠くまで届き、低いほど届かない。伸びるほど面を合わせるだけになる（当たりの質が落ちる）。
+//   走っていても、伸びて届く球には飛びつかずに伸びて取る（飛びつきは、伸びても届かない球だけ）
+#define STRETCH_Q_NEAR   0.70f   // 伸びて取った球の当たりの質の倍率：届く範囲を少し超えただけのとき
+#define STRETCH_Q_FAR    0.35f   //   伸びきって、ぎりぎり届いたとき（面を合わせるだけ）
+#define STRETCH_PER_CM   0.0095f // 伸びきったときの届く範囲が、身長 1cm あたりどれだけ変わるか（m）。ふつうの届く範囲の分（REACH_PER_CM）と合わせて 2.6m ÷ 185cm
+#define STRETCH_TIME     0.60f   // 伸びた体を戻すまでの見た目の長さ（秒）。STRETCH_RECOVER と同じ
 #define STRETCH_RECOVER  0.60f   // 打ったあと、体勢を立て直すまで（秒）。この間は動きが遅い
 #define STRETCH_MOVE     0.35f   //   その間の走る速さの割合
 #define OVERHEAD_MIN_H   1.85f   // これより高い球は頭上で打つ（スマッシュ・ハイボレー）
@@ -414,6 +488,7 @@ typedef struct {
     bool  isReturn;    // サーブのリターン
     bool  lunge;       // 足を大きく踏み出して（跳んで）伸びて取った
     bool  stretch;     // 届く範囲を超えた球に、体ごと倒れ込んで届かせた（体勢が崩れる）
+    float stretchK;    //   どれだけ伸びたか（0 = 届く範囲を少し超えた、1 = 伸びきってぎりぎり）
     float sit;         // 上から叩ける球の度合い（0〜1）。高くて遅い球ほど大きい
     float easeKmh;     // 「遅い球なので余裕がある」の判定に使う速さ（サーブのリターンは反応で打つので余裕なし扱い）
     bool  volley;      // ノーバウンドで打った
@@ -423,6 +498,7 @@ typedef struct {
     float vyBall;      // 打った瞬間のボールの上下の速さ（プラス＝上がり際＝ライジング）
     float qTiming, qDist, qHeight;
     float quality;     // 0〜1。3つの積
+    bool  tweener;     // 股抜き（トゥイーナー）：後ろへ走って追いついた低い球を、背中を向けたまま股の間から打ち返した
 } Contact;
 
 // 見た目用：体とラケットの動き
@@ -438,6 +514,7 @@ typedef struct {
     float   slideSide;     // 滑っている向き（体から見て右 +1、左 -1）
     float   crouch;        // しゃがみ（0〜1、見た目）
     float   lungeT;        // 跳んで伸びて取った後の残り時間（見た目）
+    float   lungeDur;      //   その見た目の長さ（0 なら LUNGE_TIME。伸びきって取ったときは STRETCH_TIME：ゆっくり戻る）
     float   lungeSide;     // 跳んだ向き（体から見て右 +1、左 -1）
     bool    atNet;         // ネット前にいる（ボレーの構え：ラケットを前に出して小さく構える）
     bool    lefty;         // 左利き（見た目を左右反転して描く）
@@ -473,6 +550,7 @@ typedef struct {
     float   staggerK;      // よろめきの強さ（0〜1、見た目）
     float   staggerSide;   // よろめく向き（体から見て右 +1、左 -1）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
+    int     lookId;        // 見た目の選手（ApplyLook の persona。-1 = 自分＝癖なし）。パーツモデルの色の表を選手ごとに選ぶ
 } SwingAnim;
 
 // ---- 定数（ほかのファイルから移したもの） ----
@@ -589,7 +667,10 @@ typedef struct {
     float   planH;         // 打つ予定の打点の高さ（スマッシュの構えを見せるため）
     float   tilt;          // 気持ちが崩れている量（0〜1）。ポイントごとに弱まる
     float retFromX;          // サーブが打たれたときの横の位置（AI の座標）。リターンでどれだけ横へ動かされたかに使う
+    float boost;             // 強さの上乗せ（-1〜+1）。隣の強さとの間を補間する（大会のラウンドで使う。ふつうの試合は 0）
 } Opponent;
+float LevelTableLerp(const float tbl[3], int level, float boost);   // 強さの表（3 つ）を、隣の強さとの間で補間
+float TourBoost(int round);   // 大会のラウンドごとの相手の強さの上乗せ
 
 typedef struct {
     int points[2];   // 0=自分, 1=AI
@@ -605,7 +686,10 @@ typedef struct {
     int nSetsDone;           // 終わったセットの数
     int setScore[5][2];      // 終わったセットのゲーム数（タイブレークだけの試合は、タイブレークの点）
     bool tbOnly;             // タイブレークだけの試合（7 点先取、2 点差）
+    int setGames;            // 1 セットのゲーム数（0 は 6）。ショートセットは 4（4-4 でタイブレーク）
 } Score;
+int LenSets(int len);    // 試合の長さ（メニューの値 0 タイブレーク 1 1 セット 2 3 セットマッチ 3 5 セットマッチ 4 ショートセット）→ 何セット取れば勝ちか
+int LenGames(int len);   //   → 1 セットのゲーム数
 
 // 試合の統計（中継のマッチサマリーと同じ項目）。1st サーブの入り・ダブルフォールトは mst から
 typedef struct {
@@ -718,11 +802,14 @@ const RFrame *Highlight(int k, int *n, const char **caption);
 #define REPLAY_VIEWS 4   // リプレイのカメラ：横（中継）、自分の後ろ、ボールを追う、相手の後ろ
 Camera3D ReplayCamera(int view, Vector3 ball, Camera3D prev, bool first);
 void DrawReplayFrame(const RFrame *f, Camera3D cam);
+void DrawReplayAfterimage(const RFrame *fr, int idx, Camera3D cam);
 void DrawCourt(void);
 void InitBoards(void);              // 奥の壁の看板とスピードメーターを作る（ウィンドウを開いた後に 1 回）
 void UpdateSpeedBoard(int kmh);     // スピードメーターの数字（最後のサーブの速さ）
 
 // 試合の記録（matchlog.csv）
+void StoreRestore(const char *file);   // 読む前：ブラウザ版なら localStorage からファイルへ戻す（storage.c）
+void StorePersist(const char *file);   // 書いた後：ブラウザ版ならファイルを localStorage へ写す
 void MLogOpen(void);
 void MLogNewMatch(void);
 void MLogShot(int point, int shotNo, bool ai, const char *type, float kmh, float q, bool attack, bool lapse, bool volley, bool ret,
@@ -765,6 +852,7 @@ extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
+extern float gRunBack;   // 打つ人がネットから離れる向きに走っている速さ（m/s）。股抜き（トゥイーナー）の判定に使う。打つ直前に入れて、打ったら 0 に戻す
 // 自分が使う選手（0 = 自分＝癖なし）。選手の癖（足、回転、ミス、サーブ、身長、利き手、声、見た目）が自分にも効く
 extern int   gYouPersona;
 extern char  gPlayerName[16];        // 設定で入れた自分の名前（癖なしの選手のときに出す）
@@ -819,6 +907,9 @@ Vector3 AirAccel(Vector3 vel, Vector3 spin);
 void Bounce(Ball *b);
 void StepBall(Ball *b, float dt);
 Ball MakeShot(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
+bool BodyShotHit(const Ball *a, const Ball *b, Vector3 feet, float r, float yLo, float yHi, Vector3 *at);   // 1 ステップ（a → b）の球が体に当たったか
+float BodyTop(int persona, float crouch);   // 体の円柱の上端（m）：身長。しゃがむと低い
+Vector3 LungeRootWorld(Vector3 pos, bool facingNegZ, const SwingAnim *a);   // 伸びきったときの腰の位置（ネットタッチの判定）
 float PredictLandingDist(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float PredictNetClearance(Vector3 from, Vector3 dirFlat, float speed, float angle, float rpm);
 float SolveLaunchAngle(Vector3 from, Vector3 dirFlat, float dist, float speed, float rpm, bool high);
@@ -834,7 +925,6 @@ Ball FlyToFirstBounce(Ball b);
 void SolveServe(Vector3 from, Vector3 target, float speed, Vector3 spinRpm, Vector3 *outDir, float *outPitch);
 void ServiceBox(float serverX, int side, float *x0, float *x1);
 Ball HitServe(Vector3 contact, Vector3 target, ServeType type, float charge, float q, float x0, float x1, float *outKmh);
-Ball MachineServe(void);
 Ball MachineFeed(bool pro);
 void LineAlongX(float z, float x0, float x1);
 void LineAlongZ(float x, float z0, float z1);
@@ -853,6 +943,40 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
 // 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
 void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
+// 体のモデル（Blender で作った models/player.glb。試作）：コードが計算した関節の位置で曲げて描く（body_model.c）
+extern int  gBodyModel;   // 設定：選手の体の描き方。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキニング（models/players/pNN.glb。tools/make_skinned_players.py）。モデルが読めなければ図形
+extern bool gModelOutline;   // 設定：パーツモデルに輪郭線（背面法）を付ける
+enum { BJ_PELVIS, BJ_WAIST, BJ_CHEST, BJ_NECK, BJ_HEAD, BJ_HEADTOP,
+       BJ_SH_R, BJ_EL_R, BJ_HD_R, BJ_TIP_R, BJ_SH_L, BJ_EL_L, BJ_HD_L, BJ_TIP_L,
+       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_HEADBASE,
+       BJ_SPINE, BJ_CLAV, BJ_BALL_R, BJ_BALL_L, BJ_TOETIP_R, BJ_TOETIP_L, BJ_COUNT };
+// 骨のねじれの基準の向き（スキニングのモデル）：腰の前・背骨の下と中ほどの前・胸の前・顔の前・腕（肘が曲がる側＝-pole）・上・後ろ
+enum { BREF_HIPF, BREF_SP1, BREF_SP2, BREF_CHESTF, BREF_FACEF, BREF_ARM_R, BREF_ARM_L, BREF_UP, BREF_BACK, BREF_COUNT };
+enum { BR_SKIN, BR_SHIRT, BR_SHORTS, BR_SOCKS, BR_SHOES, BR_SOLE, BR_HAIR, BR_ACCENT, BR_WRIST, BR_EYE, BR_COUNT };
+typedef struct {
+    Vector3 j[BJ_COUNT];   // 関節（体の座標：x 右・y 上・z 前、身長 1 の単位。右利きで計算したもの）
+    Vector3 side[5];       // 骨の横向きの基準：0 腰の線 1 肩の線 2 顔の右 3 右足のつま先の右 4 左足の
+    Vector3 fwd;           // 体の前（横の基準が使えないとき）
+    Vector3 ref[BREF_COUNT];   // スキニングのモデルの骨のねじれの基準
+    Color col[BR_COUNT];
+    float thickArm, thickLeg, thickBody;
+    Vector3 pos; bool facingNegZ; float mx, sc;   // 世界への置き方（render.c の W と同じ）
+    int lookId;            // 選手（色の表のファイルを選ぶ。-1 = 自分＝癖なし）
+    int hairStyle;         // 髪型（HS_*。パーツモデルの髪型の候補を選ぶ）
+    bool female;
+    Color eyeCol;          // 瞳の色（顔の絵の瞳をこの色にする）
+    float beard;           // ひげ（0 なし、0.15〜 剃り跡、0.4〜 ひげ）
+} BodyPose;
+bool BodyModelReady(void);              // モデルを読む（初めの 1 回だけ）。読めたか
+void DrawBodyModel(const BodyPose *bp);
+void BodyFrame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], float *len);   // 骨の向き（Y = 頭→しっぽ、X = 横の基準、Z = X×Y）
+bool PartsModelReady(void);             // パーツモデル（models/player.glb）を読む。読めたか
+void DrawPartsModel(const BodyPose *bp);
+bool LitOutlinePass(void);              // 輪郭線の回か（render.c）
+void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol);
+const Color *PartsPaletteFor(const BodyPose *bp);   // 選手ごとの色の表（256 マス。parts_model.c）
+Texture2D PartsFaceTex(const BodyPose *bp);          // 選手ごとの顔の絵（瞳の色・ひげ入り）
+void PartsApplyLook(BodyPose *bp);                   // models/players.txt の色（肌・瞳・髪）を入れる
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);
 Color QualityColor(float q);
@@ -967,7 +1091,7 @@ enum { TB_TOP, TB_SLICE, TB_FLAT, TB_LOB, TB_DROP, TOUCH_BTN_COUNT, TB_PAUSE = T
 void ReadTouch(PlayerInput *in, float aimSens);
 bool TouchStickActive(void);
 bool TouchPauseTapped(void);
-void DrawTouchControls(bool serving);
+void DrawTouchControls(bool serving, bool pauseOnly);
 void TouchButtonRect(int b, Vector2 *c, float *r);
 #ifdef MOBILE_BUILD
 #define MOBILE_ONLY 1
@@ -1047,5 +1171,32 @@ void  SfxOoh(float level);                       // 観客の「おお〜」
 void  SfxSetLineJudges(bool human);             // 線審が声でアウトをコールする（クレー）
 void  SfxScoreCall(const Score *sc, int server, int winner, int kind, float delay);   // 主審のスコアコール（kind 0 ポイント / 1 ゲーム / 2 セット）
 const char *SfxDir(void);
+
+// 記録（career.c → sweetspot_records.txt）：通算成績と自己ベスト。自動操作・スロー・難しさの切り替えを使った試合は数えない
+typedef struct {
+    int   played[3][2], won[3][2];                 // [AI の強さ][難しさ 0=REAL 1=CASUAL]
+    int   vsPlayed[PERSONA_COUNT], vsWon[PERSONA_COUNT];
+    int   lossStreak;                              // 続けて負けた数（3 連敗で補助ありを提案）
+    float bestServeKmh, bestShotKmh;               // 入った球だけ
+    int   longestRally;                            // 試合の 1 ポイントの最長の打数
+    int   rallyBest;                               // ラリー練習の連続ラリー
+    int   targetBest;                              // 的あて 60 秒
+    int   aces, winners;
+    int   titles[SLAM_COUNT];
+    bool  hintLower;                               // 「補助あり」の提案を出した
+} Career;
+extern Career gCareer;
+void CareerLoad(void);
+void CareerSave(void);
+bool CareerBestF(float *slot, float v);   // 新記録なら書き換えて true（演出は呼んだ側）
+bool CareerBestI(int *slot, int v);
+int  CareerPlayed(void);
+int  CareerWon(void);
+int  CareerTitles(void);
+
+// 今日のコーチ（coach.c）：試合の後に、次に直すことを 1〜3 個
+typedef struct { int swings, hits, whiffs, early, late, onTime, pos, timing, noSwing, in, out, net; } CoachSnap;
+CoachSnap CoachTake(const PlayLog *L);   // 今の合計を写す
+int CoachTips(CoachSnap start, CoachSnap now, const MatchStats ms[2], const int mst[2][6], bool won, const char *out[3]);   // 戻り値は数。out は TR 済みの文
 
 #endif

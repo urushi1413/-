@@ -9,7 +9,7 @@ static float   gLightAmb = 0.55f, gLightDiff = 0.50f;   // 当たらない面の
 // 見た目（メニューの「見た目」）：0 = ふつう、1 = アニメ調（陰を 3 段に分け、人に輪郭線）、2 = ドット風（アニメ調を低い解像度で描いて拡大）
 int gLook = 0;
 static bool gOutline = false;          // 輪郭線を描く回：形を少し太らせて暗い色で、裏側の面だけ描く
-#define OUTLINE_W (gLook == 2 ? 0.030f : 0.014f)   // 輪郭線の太さ（m）。ドット風は粗いので太く
+#define OUTLINE_W (gLook == 2 ? 0.030f : gLook == 1 ? 0.014f : 0.007f)   // 輪郭線の太さ（m）。ドット風は粗いので太く。ふつうの見た目でパーツモデルに付ける輪郭線は細く
 static const Color OUTLINE_COL = { 28, 24, 32, 255 };
 static Color Shade(Color c, Vector3 n)
 {
@@ -40,6 +40,14 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
     }
     Color s = Shade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z);
 }
+void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c・parts_model.c から
+bool LitOutlinePass(void) { return gOutline; }
+void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol)   // スキニングのシェーダーに、同じ光と輪郭線を渡す
+{
+    *L = gLightL; *amb = gLightAmb; *diff = gLightDiff; *outlineW = OUTLINE_W; *outlineCol = OUTLINE_COL;
+}
+int  gBodyModel = 0;
+bool gModelOutline = false;
 // 太さの変わる筒（側面とふた）
 void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
 {
@@ -140,6 +148,84 @@ void LitCube(Vector3 p, float wx, float hy, float lz, Color col)
     }
     rlEnd();
 }
+// ---- 柔らかい影（FX_SOFT_SHADOW）：地面に、真ん中が濃く、ふちへ向けて消えるだ円を描く ----
+//   c：中心（地面のすぐ上）、ax：長い方の向き（x・z。長さ 1）、ra・rb：長い方・短い方の半径、alpha：真ん中の濃さ
+//   真ん中 → 中ほどの輪 → ふち の 3 段で濃さを落とす（まっすぐ落とすより、ふちがふんわり消える）。頂点の色だけで描くので軽い
+static void SoftShadow(Vector3 c, Vector2 ax, float ra, float rb, float alpha)
+{
+    const int seg = 20;
+    const float mid = 0.52f;
+    unsigned char a0 = (unsigned char)(Clamp01(alpha) * 255.0f), a1 = (unsigned char)(Clamp01(alpha) * 0.50f * 255.0f);
+    Vector2 px = { ax.y, -ax.x };   // 上から見て左回りに 90°
+    rlCheckRenderBatchLimit(seg * 9);
+    rlBegin(RL_TRIANGLES);
+    for (int i = 0; i < seg; i++) {
+        float t0 = 2.0f * PI * i / seg, t1 = 2.0f * PI * (i + 1) / seg;
+        float c0 = cosf(t0) * ra, s0 = sinf(t0) * rb, c1 = cosf(t1) * ra, s1 = sinf(t1) * rb;
+        Vector3 o0 = { c.x + ax.x * c0 + px.x * s0, c.y, c.z + ax.y * c0 + px.y * s0 }, o1 = { c.x + ax.x * c1 + px.x * s1, c.y, c.z + ax.y * c1 + px.y * s1 };
+        Vector3 m0 = Vector3Lerp(c, o0, mid), m1 = Vector3Lerp(c, o1, mid);
+        rlColor4ub(0, 0, 0, a0); rlVertex3f(c.x, c.y, c.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z); rlVertex3f(m1.x, m1.y, m1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z);
+        rlColor4ub(0, 0, 0, 0);  rlVertex3f(o0.x, o0.y, o0.z); rlVertex3f(o1.x, o1.y, o1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m0.x, m0.y, m0.z);
+        rlColor4ub(0, 0, 0, 0);  rlVertex3f(o1.x, o1.y, o1.z);
+        rlColor4ub(0, 0, 0, a1); rlVertex3f(m1.x, m1.y, m1.z);
+    }
+    rlEnd();
+}
+// 人の影：足元の濃い影（地面に立っている感じ）と、光と反対の向きへ伸びる体の影。影の長さと濃さは時間帯・天気の光で変わる
+//   （昼は約 1.1m、夕方は長く、ナイターは真上のライトで短い。くもりは体の影がほとんど出ない）
+static void FigureShadow(Vector3 pos, float sc)
+{
+    float hl = sqrtf(gLightL.x * gLightL.x + gLightL.z * gLightL.z);
+    Vector2 dir = hl > 1e-3f ? (Vector2){ -gLightL.x / hl, -gLightL.z / hl } : (Vector2){ 0.0f, -1.0f };
+    float len = Clamp(1.75f * sc * hl / fmaxf(gLightL.y, 0.2f), 0.0f, 2.4f);
+    float sun = Clamp01((gLightDiff - 0.15f) / 0.40f);
+    SoftShadow((Vector3){ pos.x + dir.x * 0.06f, 0.006f, pos.z + dir.y * 0.06f }, dir, 0.50f * sc, 0.40f * sc, 0.36f);
+    if (sun > 0.02f)
+        SoftShadow((Vector3){ pos.x + dir.x * len * 0.5f, 0.007f, pos.z + dir.y * len * 0.5f }, dir, 0.34f * sc + len * 0.5f, 0.36f * sc, 0.10f + 0.20f * sun);
+}
+// ボールの影：真下に落とす（どこに落ちるかを読む手がかりなので、光の向きへはずらさない）。高いほど大きく薄くぼける
+void DrawBallShadow(Vector3 ball, float vr)
+{
+    Vector3 g = { ball.x, 0.004f, ball.z };
+    if (!FX_SOFT_SHADOW || gLook != 0) { DrawCylinder(g, vr * 1.1f, vr * 1.1f, 0.002f, 14, (Color){ 0, 0, 0, 150 }); return; }   // 今までの影
+    float h = Clamp01((ball.y - BALL_R) / 3.0f);
+    float r = vr * (1.7f + 1.3f * h);
+    SoftShadow(g, (Vector2){ 1.0f, 0.0f }, r, r, 0.66f - 0.22f * h);
+}
+// ボールの残像（FX_BALL_TRAIL）：通った所に、ボールの太さから細く消えていく帯を描く。pts は古い順（最後がボールの今の位置）
+//   strength（0〜1）は球の速さで決める：遅い球（トス、ボールつき）には出さない
+void DrawBallAfterimage(const Vector3 *pts, int n, Vector3 camPos, float vr, float strength, Color col)
+{
+    if (!FX_BALL_TRAIL || gLook != 0 || n < 2 || strength <= 0.01f) return;
+    rlDrawRenderBatchActive(); rlDisableDepthMask(); rlDisableBackfaceCulling();   // 奥行きは書かない（ボールや人を隠さない）。帯は両面
+    rlCheckRenderBatchLimit((n - 1) * 6);
+    rlBegin(RL_TRIANGLES);
+    Vector3 pl = { 0 }, pr = { 0 }, side = { 0 };
+    unsigned char pa = 0;
+    for (int i = 0; i < n; i++) {
+        float k = (float)i / (float)(n - 1);   // 0 = いちばん古い、1 = ボール
+        Vector3 d = i + 1 < n ? Vector3Subtract(pts[i + 1], pts[i]) : Vector3Subtract(pts[i], pts[i - 1]);
+        Vector3 cr = Vector3CrossProduct(d, Vector3Subtract(camPos, pts[i]));   // 進む向きと、カメラへの向きの両方に直角（帯がいつもカメラを向く）
+        float cl = Vector3Length(cr);
+        if (cl > 1e-6f) side = Vector3Scale(cr, 1.0f / cl);
+        float w = vr * 0.92f * powf(k, 0.6f);
+        unsigned char al = (unsigned char)(255.0f * Clamp01(strength) * 0.60f * k * k);
+        Vector3 l = Vector3Subtract(pts[i], Vector3Scale(side, w)), r = Vector3Add(pts[i], Vector3Scale(side, w));
+        if (i > 0) {
+            rlColor4ub(col.r, col.g, col.b, pa); rlVertex3f(pl.x, pl.y, pl.z); rlVertex3f(pr.x, pr.y, pr.z);
+            rlColor4ub(col.r, col.g, col.b, al); rlVertex3f(r.x, r.y, r.z);
+            rlColor4ub(col.r, col.g, col.b, pa); rlVertex3f(pl.x, pl.y, pl.z);
+            rlColor4ub(col.r, col.g, col.b, al); rlVertex3f(r.x, r.y, r.z); rlVertex3f(l.x, l.y, l.z);
+        }
+        pl = l; pr = r; pa = al;
+    }
+    rlEnd();
+    rlDrawRenderBatchActive(); rlEnableDepthMask(); rlEnableBackfaceCulling();
+}
+
 // このファイルの中では、筒・球・箱をすべて陰影つきで描く
 static void LitSphere(Vector3 c, float r, Color col) { LitSphereEx(c, r, 8, 10, col); }
 // 楕円の断面の筒（胴体用）：横（sideA/B の向き）に広く、前後に薄い。下と上で向きを変えられる（腰と肩のひねり）
@@ -1173,6 +1259,22 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
             SampleKeys(k, n, a->swingT, &h, &d, &f);
             goto finish;
         }
+        if (c->tweener) {
+            // 股抜き：体はネットに背中を向けている（体の座標では後ろ＝ -z が前）。ラケットを前（走る先）で下げて、
+            //   股の間を後ろ（ネットの方）へ振り抜き、背中の側で上げて終わる。面はネットの方
+            *strokeOut = 0;
+            Vector3 p = { Clamp(cl.x, -0.30f, 0.30f), Clamp(cl.y, 0.25f, 1.0f), Clamp(cl.z, -1.0f, -0.15f) };
+            Vector3 hc = { -0.06f, 0.62f, -0.10f };
+            RKey k[5] = {
+                { 0.00f, { -0.26f, 0.78f, -0.48f }, { 0.05f, 0.30f, -0.95f }, { 0.0f, 0.3f, 1.0f } },
+                { 0.05f, { -0.12f, 0.66f, -0.40f }, { 0.05f, -0.60f, -0.80f }, { 0.0f, 0.3f, 1.0f } },
+                { SWING_LEAD, hc, Vector3Normalize(Vector3Subtract(p, hc)), { 0.0f, 0.4f, 1.0f } },
+                { 0.16f, { -0.04f, 0.52f, 0.10f }, { 0.00f, -0.35f, 0.94f }, { 0.0f, 0.9f, 0.3f } },
+                { 0.30f, { -0.08f, 0.70f, 0.22f }, { 0.00f, 0.55f, 0.83f }, { 0.0f, 0.6f, -0.8f } },
+            };
+            SampleKeys(k, 5, a->swingT, &h, &d, &f);
+            goto finish;
+        }
         float sgn = c->forehand ? 1.0f : -1.0f;
         *strokeOut = c->forehand ? 0 : 1;
         if (c->volley) {
@@ -1305,6 +1407,30 @@ Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint)
     return Vector3Add(Vector3Add(root, Vector3Scale(u, a)), Vector3Scale(perp, h));
 }
 
+// 肘：1 軸のヒンジ。曲がりは 0°（伸びきる）〜 ELBOW_MAX_FLEX° に制限し、曲がる向きは pole（体の下後方）の側だけ。
+//   逆に曲がる・横に曲がることはない（肘は肩と手を結ぶ線と pole を含む面の上で、pole の側にしか出ない）。
+//   手が肩に近すぎる（曲がりが上限を超える）ときは、手を肩から離す（*hand を直す）。
+//   pole が肩と手を結ぶ線とほぼ同じ向きのときは、alt（体の外側）を混ぜて向きを決める
+#define ELBOW_MAX_FLEX 150.0f
+static Vector3 ElbowIK(Vector3 s, Vector3 *hand, float l1, float l2, Vector3 pole, Vector3 alt)
+{
+    Vector3 d = Vector3Subtract(*hand, s);
+    float L = Vector3Length(d);
+    float inner = (180.0f - ELBOW_MAX_FLEX) * DEG2RAD;   // 腕の内側の角度の下限
+    float dmin = sqrtf(l1 * l1 + l2 * l2 - 2.0f * l1 * l2 * cosf(inner));
+    Vector3 u = L > 1e-4f ? Vector3Scale(d, 1.0f / L) : (Vector3){ 0, -1, 0 };
+    if (L < dmin) *hand = Vector3Add(s, Vector3Scale(u, dmin));
+    Vector3 pn = Vector3Normalize(pole);
+    Vector3 perp = Vector3Subtract(pn, Vector3Scale(u, Vector3DotProduct(pn, u)));
+    float pl = Vector3Length(perp);
+    if (pl < 0.35f) {   // pole が腕の線に近い：外側の向きを混ぜる
+        Vector3 an = Vector3Normalize(alt);
+        Vector3 ap = Vector3Subtract(an, Vector3Scale(u, Vector3DotProduct(an, u)));
+        perp = Vector3Add(Vector3Scale(perp, pl / 0.35f), Vector3Scale(ap, 1.0f - pl / 0.35f));
+    }
+    return TwoBone(s, *hand, l1, l2, perp);
+}
+
 // 太さの変わる棒（体の部品）
 static void Limb(Vector3 a, Vector3 b, float ra, float rb, Color c)
 {
@@ -1317,13 +1443,46 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 // 人を描く。アニメ調のときは、先に輪郭線（太らせた形の裏側）を描いてから、ふつうに描く
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
-    if (gLook >= 1) {
+    // 輪郭線（背面法）：アニメ調・ドット風はいつも。パーツモデルは設定で付けられる
+    if (gLook >= 1 || (gBodyModel == 1 && gModelOutline && PartsModelReady())) {
         rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_FRONT); gOutline = true;
         DrawFigureBody(pos, facingNegZ, shirt, a, speed);
         rlDrawRenderBatchActive(); rlSetCullFace(RL_CULL_FACE_BACK); gOutline = false;
     }
     DrawFigureBody(pos, facingNegZ, shirt, a, speed);
 }
+// 伸びて取る姿勢：取った球の位置（contactLocal。左利きは x を反転済み）から、腰を球の方へ出す量など（体の単位）。
+//   描く（DrawFigureBody）とネットタッチの判定（LungeRootWorld）で同じ式を使う
+typedef struct { float s, deep, lean, hipY, yaw; Vector2 dir; Vector3 ball; } LungePose;
+static LungePose LungePoseOf(const SwingAnim *a, float sc)
+{
+    LungePose p = { .lean = 0.28f, .hipY = 0.76f, .dir = { a->lungeSide >= 0.0f ? 1.0f : -1.0f, 0.0f } };
+    p.ball = (Vector3){ a->contactLocal.x / sc, Clamp(a->contactLocal.y / sc, 0.15f, 2.0f), a->contactLocal.z / sc };
+    float rc = sqrtf(p.ball.x * p.ball.x + p.ball.z * p.ball.z);
+    if (rc > 0.3f) p.dir = (Vector2){ p.ball.x / rc, p.ball.z / rc };
+    p.deep = Clamp01((rc - LUNGE_R) / (REACH_SIDE + STRETCH_GROUND - LUNGE_R));   // 0 = 少し遠い、1 = 伸びきる（2.6m）
+    p.lean = 0.28f + 0.14f * p.deep;          // 上体を球の方へ倒す
+    p.hipY = 0.76f - 0.20f * p.deep;          // 深く踏み込むほど腰が落ちる
+    // 打つ方の肩を球へ向ける（バックは背中を半分ネットに向けて、片手を伸ばす）
+    p.yaw = Clamp(atan2f(-p.dir.y, p.dir.x), -115.0f * DEG2RAD, 60.0f * DEG2RAD);
+    float shw0 = 0.20f, shY = p.hipY + 0.55f;
+    float shAlong = p.lean + shw0 * (cosf(p.yaw) * p.dir.x - sinf(p.yaw) * p.dir.y);   // 肩が球の方へどれだけ出ているか
+    float dy = shY - p.ball.y, armR = 1.06f;                                             // 腕 0.60 ＋ ラケットの面の中心まで 0.50（少し曲げた分を引く）
+    float hr = sqrtf(fmaxf(armR * armR - dy * dy, 0.09f));
+    p.s = Clamp(rc - (shAlong + hr), 0.0f, 1.20f);
+    return p;
+}
+// 伸びきったときの腰（体の中心）の位置（世界）。伸びて取っていなければ pos のまま
+Vector3 LungeRootWorld(Vector3 pos, bool facingNegZ, const SwingAnim *a)
+{
+    if (!(a->lungeT > 0.0f && a->downT <= 0.0f && !a->lastContact.overhead)) return pos;
+    SwingAnim m = *a;
+    if (a->lefty) { m.contactLocal.x = -a->contactLocal.x; m.lungeSide = -a->lungeSide; }
+    float sc = a->scale > 0.0f ? a->scale : 1.0f, MX = a->lefty ? -1.0f : 1.0f;
+    LungePose p = LungePoseOf(&m, sc);
+    return LocalToWorld(pos, facingNegZ, (Vector3){ MX * p.dir.x * p.s * sc, 0.0f, p.dir.y * p.s * sc });
+}
+
 static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed)
 {
     Color skin = a->skin.a ? a->skin : (Color){ 236, 196, 158, 255 }, frame = { 35, 35, 40, 255 };
@@ -1334,13 +1493,11 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
-    // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す
-    if (!gOutline) {
-        rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
-        for (int k = 0; k < 3; k++)
-            DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
-        rlDrawRenderBatchActive(); rlEnableDepthMask();
-    }
+    // 体をモデルで描く：図形は描かずに、関節の位置だけ集める。パーツモデルは頭（顔・髪）も、スキンの試作は首から下だけ
+    bool partsM = gBodyModel == 1 && PartsModelReady();
+    bool skinM = gBodyModel == 2 && BodyModelReady();   // スキニングのモデル（models/players/pNN.glb）：頭・顔・髪もモデル
+    bool useM = partsM || skinM;
+    BodyPose bp = { 0 };
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
     if (a->lefty) {
@@ -1352,6 +1509,37 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float MX = a->lefty ? -1.0f : 1.0f;
     #define W(x, y, z) LocalToWorld(pos, facingNegZ, (Vector3){ MX * (x) * sc, (y) * sc, (z) * sc })
     #define WV(v) W((v).x, (v).y, (v).z)
+
+    // ---- 伸びて取る：ぎりぎり届く球へ、足を大きく踏み出して体ごと球の方へ出て、腕とラケットを伸ばしきる ----
+    //   取った球の位置（contactLocal）から、腕とラケットを伸ばしても届かない分だけ、体（腰）を球の方へ出す（stS）。
+    //   体の大きさ（sc）の単位で計算するので、背の高い選手ほど遠くまで届いて見える（判定の届く範囲も身長で変わる）。
+    //   stE：取った瞬間に伸びきり、少し止まってから戻る。stDir：球の向き（体から見て x = 右、z = 前）
+    float stS = 0.0f, stE = 0.0f, stDeep = 0.0f, stLean = 0.28f, stHipY = 0.76f, stYaw = 0.0f;
+    Vector2 stDir = { a->lungeSide >= 0.0f ? 1.0f : -1.0f, 0.0f };
+    Vector3 stBall = { 0 };   // 球の位置（体の単位。腰を出す前の体から見て）
+    bool stOn = a->lungeT > 0.0f && a->downT <= 0.0f && !a->lastContact.overhead;
+    if (stOn) {
+        float dur = a->lungeDur > 0.0f ? a->lungeDur : LUNGE_TIME, el = dur - a->lungeT;
+        stE = el < 0.07f ? Smooth01(el / 0.07f) : 1.0f - Smooth01((el - 0.24f) / fmaxf(dur - 0.24f, 0.05f));
+        LungePose lp = LungePoseOf(a, sc);
+        stBall = lp.ball; stDir = lp.dir; stDeep = lp.deep; stLean = lp.lean; stHipY = lp.hipY; stYaw = lp.yaw; stS = lp.s;
+    }
+    Vector3 stRoot = { stDir.x * stS * stE, 0.0f, stDir.y * stS * stE };   // 腰を出す量（体の単位）
+    Vector3 pos0 = pos;                                                    // 腰を出す前の位置（後ろ足が残る所）
+    pos = LocalToWorld(pos, facingNegZ, (Vector3){ MX * stRoot.x * sc, 0.0f, stRoot.z * sc });
+    if (stOn && fabsf(pos.x) < NET_POST_X + 0.5f) {   // 伸びても、体はネットを越えない（ネットに触れた所で止める。めり込んで見えないように。触れたら失点かはルールの設定）
+        float sd = pos0.z >= 0.0f ? 1.0f : -1.0f, lim = fminf(sd * pos0.z, NET_BODY_R);
+        if (sd * pos.z < lim) pos.z = sd * lim;
+    }
+    // 足元の影（光と反対の向きへ少しずらす）。地面に立っている感じを出す。伸びて取るときは体について動く
+    if (!gOutline) {
+        rlDrawRenderBatchActive(); rlDisableDepthMask();   // たまっている図形を先に描いてから切り替える（後で描かれると奥が透ける）
+        if (FX_SOFT_SHADOW && gLook == 0) FigureShadow(pos, sc);   // 柔らかい影（ふつうの見た目だけ。アニメ調・ドット風は下の今までの影）
+        else
+        for (int k = 0; k < 3; k++)
+            DrawCylinder((Vector3){ pos.x - 0.10f - 0.06f * k, 0.006f, pos.z - 0.12f - 0.07f * k }, 0.34f - 0.06f * k, 0.34f - 0.06f * k, 0.001f, 18, Fade(BLACK, 0.12f));
+        rlDrawRenderBatchActive(); rlEnableDepthMask();
+    }
 
     if (a->downT > 0.0f) {
         // 飛びついて倒れている
@@ -1376,6 +1564,12 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 
     // ---- 体のひねり：構えで横を向き、振りながら前へ戻る ----
     int stroke; Vector3 nrm, hand, rdir; bool hasHand;
+    SwingAnim stA;
+    if (stOn) {   // 伸びて取る：球の位置を、腰を出した後の体から見た位置に（振りの「当たる点」が実際の球の所に来る）
+        stA = *a;
+        stA.contactLocal = (Vector3){ stBall.x - stRoot.x, stBall.y, stBall.z - stRoot.z };
+        a = &stA;
+    }
     Vector3 rl = RacketPose(a, &stroke, &nrm, &hand, &rdir, &hasHand);
     float sgnK = (stroke == 1) ? -1.0f : 1.0f;
     float yaw = 0.0f;
@@ -1389,6 +1583,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     else if (a->windup > 0)  yaw = sgnK * turn * Clamp01(a->windup * 1.4f);
     else if (a->serveStance) yaw = 80.0f;                     // サーブの構え：横を向く
     yaw *= DEG2RAD;
+    float stW = stOn ? stE * Smooth01((stDeep - 0.10f) / 0.25f) : 0.0f;   // 伸びた形の効き具合（少し遠いだけの球は今までどおり）
+    yaw = Lerp(yaw, stYaw, stW);
     float hipYaw = yaw * 0.6f;
     // 走り方：横へゆっくりなら、足を交差させずに横へ跳ねる（サイドステップ。体はネットを向いたまま）。
     //   横へ速く長く走るときは、体を走る向きへ回して走る。打つ準備（溜め）に入ったら正面へ戻す
@@ -1409,6 +1605,10 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         }
     }
     yaw += runYaw; hipYaw += runYaw;
+    // 股抜き：体ごと後ろ（走る先）を向いて、深く前に屈む
+    bool tweenerSw = swinging && a->lastContact.tweener;
+    float twK = tweenerSw ? Smooth01(a->swingT / 0.05f) * (1.0f - Smooth01((a->swingT - 0.22f) / 0.08f)) : 0.0f;
+    if (tweenerSw) { yaw = PI; hipYaw = PI; }
     float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
     // ボレー：当てるのに合わせて、球と反対の足（フォアなら左）を球の方へ踏み込む。低い球は膝を曲げて沈む
     bool volleySwing = swinging && a->lastContact.volley && !a->lastContact.overhead;
@@ -1424,6 +1624,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float hipY = 0.88f - KNEE_BEND * (1.0f - 0.3f * move) - load - 0.03f * move * fabsf(sinf(ph));
     Vector3 leanV = { mdx * 0.14f * move, 0.0f, 0.05f + mdz * 0.14f * move };   // 前傾（走る向きへ）
     hipY -= 0.30f * a->crouch;                 // しゃがむ（Q）：腰を落として前に屈む
+    if (tweenerSw) { hipY -= 0.14f * twK; leanV.z = -0.05f - 0.34f * twK; leanV.x = 0.0f; }   // 股抜き：後ろ（体の向いた方）へ屈む
     hipY -= 0.05f * shuffle;                   // サイドステップは低い姿勢で
     hipY -= volLow; leanV.z += 0.5f * volLow + 0.06f * volStep;
     leanV.z += 0.10f * a->crouch;
@@ -1502,12 +1703,14 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
 
     // ---- 跳んで伸びて取る（リターンなどで遠い球）：球の方へ跳び、体を倒して足を大きく開く ----
     bool lunging = a->lungeT > 0.0f && !overheadPose;
+    float stHop = 0.0f;
     if (lunging) {
-        float pr = 1.0f - a->lungeT / LUNGE_TIME;
-        pos.y += 0.22f * sinf(PI * Clamp01(pr * 1.3f));
-        leanV = (Vector3){ a->lungeSide * 0.28f, 0.0f, 0.10f };
-        hipY = 0.76f;
-        hipYaw = 0.0f;
+        float pr = 1.0f - a->lungeT / (a->lungeDur > 0.0f ? a->lungeDur : LUNGE_TIME);
+        stHop = 0.22f * sinf(PI * Clamp01(pr * 1.3f)) * (1.0f - 0.75f * stW);   // 深く踏み込むときは跳ばない（足を地面に残して伸びる）
+        pos.y += stHop;
+        leanV = (Vector3){ stDir.x * Lerp(0.28f, stLean, stW), 0.0f, 0.10f + stDir.y * stLean * stW };
+        hipY = Lerp(0.76f, stHipY, stW);
+        hipYaw = stYaw * 0.5f * stW;
     }
 
     // ---- 脚：ショーツ（太ももの半分まで）、脚、白いソックス、シューズ ----
@@ -1516,18 +1719,30 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         // スライド・飛びつき：腰を落として足を大きく開く。スライドは足元に滑った跡
         float sd = lunging ? a->lungeSide : (a->slideSide >= 0.0f ? 1.0f : -1.0f);
         if (!lunging) hipY = 0.70f;
-        float lift = lunging ? 0.10f : 0.0f;
+        float lift = lunging ? 0.10f * (1.0f - stW) : 0.0f;
         hips[0] = (Vector3){ sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f };  feet[0] = (Vector3){ sd * 0.85f, 0.07f, 0.10f };
         hips[1] = (Vector3){ -sd * 0.10f + leanV.x * 0.3f, hipY, 0.0f }; feet[1] = (Vector3){ -sd * 0.40f, 0.07f + lift, -0.20f };
-        knees[0] = TwoBone(hips[0], feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
-        knees[1] = TwoBone(hips[1], feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
+        if (lunging && stW > 0.0f) {
+            // 伸びて取る：前の足は球の方へ大きく踏み出し、後ろの足は元の場所に残す（届かなくなったら、つま先を引きずってついてくる）。
+            //   脚の長さ（0.90）を超えないように、足を置く所を腰から届く範囲に収める
+            float legH = sqrtf(fmaxf(0.88f * 0.88f - (hipY - 0.07f) * (hipY - 0.07f), 0.04f));   // 腰の高さから、足が横へ届く距離
+            Vector3 lead = { hips[0].x + stDir.x * legH * 0.92f, 0.07f, hips[0].z + stDir.y * legH * 0.92f + 0.06f };
+            Vector3 trail = { -stRoot.x - sd * 0.22f, 0.07f, -stRoot.z - 0.14f };                 // 元の立ち位置のあたり
+            float tx = trail.x - hips[1].x, tz = trail.z - hips[1].z, tl = sqrtf(tx * tx + tz * tz);
+            if (tl > legH) { trail.x = hips[1].x + tx * legH / tl; trail.z = hips[1].z + tz * legH / tl; }
+            feet[0] = Vector3Lerp(feet[0], lead, stW);
+            feet[1] = Vector3Lerp(feet[1], trail, stW);
+        }
+        // 膝：1 軸のヒンジ（0〜150°）。前に曲がる
+        knees[0] = ElbowIK(hips[0], &feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f }, (Vector3){ sd, 0.0f, 0.0f });
+        knees[1] = ElbowIK(hips[1], &feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f }, (Vector3){ -sd, 0.0f, 0.0f });
         toes[0] = sd * 1.0f; toes[1] = sd * 0.6f;
         if (!lunging) DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
     } else {
         for (int i = 0; i < 2; i++) {
             float sd = i == 0 ? 1.0f : -1.0f;
             float p = ph + (i == 0 ? 0.0f : PI);
-            float width = 0.14f + 0.10f * (1.0f - move) + 0.10f * splitWide;
+            float width = 0.14f + 0.10f * (1.0f - move) + 0.10f * splitWide + 0.10f * twK;   // 股抜き：足を開く
             float stride = 0.52f * move * (1.0f - shuffle);
             // 構え・振り：前足（フォアなら左）を踏み出し、後ろ足を引く。足と腰は横を向く
             float hc = cosf(hipYaw), hs = sinf(hipYaw);
@@ -1572,13 +1787,16 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             }
             Vector3 hint = { sd * 0.25f * cosf(hipYaw) + sinf(hipYaw), 0.0f, -sd * 0.25f * sinf(hipYaw) + cosf(hipYaw) };
             hips[i] = hip; feet[i] = foot; toes[i] = toe;
-            knees[i] = TwoBone(hip, foot, 0.44f, 0.44f, hint);
+            knees[i] = ElbowIK(hip, &foot, 0.44f, 0.44f, hint, (Vector3){ sd, 0.0f, 0.0f });   // 膝：1 軸のヒンジ（0〜150°）。前（少し外）に曲がる
+            feet[i] = foot;
         }
     }
+    Vector3 toePs[2];
     for (int i = 0; i < 2; i++) {
         Vector3 hp = hips[i], kn = knees[i], ft = feet[i];
         Vector3 mid = Vector3Lerp(hp, kn, 0.55f);                                // ショーツの裾
         Vector3 sockTop = Vector3Lerp(kn, ft, 0.78f);
+        if (useM) { float tx = sinf(toes[i]), tz = cosf(toes[i]); toePs[i] = (Vector3){ ft.x + tx * 0.16f, ft.y - 0.045f, ft.z + tz * 0.16f }; continue; }
         Limb(WV(kn), WV(ft), 0.050f * bLg, 0.040f * bLg, skin);                    // すね
         Limb(WV(hp), WV(kn), 0.068f * bLg, 0.052f * bLg, skin);                    // 太もも
         // ショーツの脚の部分：股関節より少し下から始める（太ももが前に傾くと、上の端がシャツの裾から飛び出すので）
@@ -1595,15 +1813,17 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float cy = cosf(yaw), sy = sinf(yaw), hcy = cosf(hipYaw), hsy = sinf(hipYaw);
     Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.02f, leanV.z * 0.3f };
     Vector3 waist  = { leanV.x * 0.55f, hipY + 0.20f, leanV.z * 0.55f };
-    Vector3 chest  = { leanV.x, hipY + 0.42f, leanV.z };
+    float twBend = 0.20f * twK;   // 股抜き：上体を前へ倒した分だけ胸と肩が下がる
+    Vector3 chest  = { leanV.x, hipY + 0.42f - twBend, leanV.z };
     float shw = (a->female ? 0.18f : 0.20f) * bSh;   // 肩幅
-    Vector3 rShoulder = { chest.x + shw * cy, hipY + 0.55f, chest.z - shw * sy };
-    Vector3 lShoulder = { chest.x - shw * cy, hipY + 0.55f, chest.z + shw * sy };
+    Vector3 rShoulder = { chest.x + shw * cy, hipY + 0.55f - 1.2f * twBend, chest.z - shw * sy };
+    Vector3 lShoulder = { chest.x - shw * cy, hipY + 0.55f - 1.2f * twBend, chest.z + shw * sy };
     // ショーツの腰：左右の股関節を包む（丸くしない）
     {
         Vector3 hl = { pelvis.x - 0.085f * hcy, pelvis.y, pelvis.z + 0.085f * hsy };
         Vector3 hr = { pelvis.x + 0.085f * hcy, pelvis.y, pelvis.z - 0.085f * hsy };
-        if (a->female) {
+        if (useM && !a->female) { }   // モデルのショーツ
+        else if (a->female) {
             // スカート：腰から広がる（走ると裾が揺れる）
             float fl = 0.27f + 0.03f * move * fabsf(sinf(ph * 2.0f));
             DrawCylinderEx(W(pelvis.x, pelvis.y + 0.13f, pelvis.z), W(pelvis.x * 1.2f, pelvis.y - 0.20f, pelvis.z * 1.2f), 0.15f, fl, 14, shorts);
@@ -1617,34 +1837,35 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         }
     }
     // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
-    {
+    if (!useM) {
         float fs = a->female ? 0.90f : 1.0f;
         Vector3 hipSide = Vector3Subtract(W(hcy, 0, -hsy), W(0, 0, 0)), shSide = Vector3Subtract(W(cy, 0, -sy), W(0, 0, 0));
         // シャツは出して着る（ショーツに入れない）：裾は腰より下まで垂れ、ショーツより少し大きい
         bool untucked = !a->female;
         Vector3 c0 = { pelvis.x, hipY + (untucked ? -0.035f : 0.07f), pelvis.z };
         Vector3 c1 = { waist.x, hipY + 0.22f, waist.z };
-        Vector3 c2 = { chest.x, hipY + 0.47f, chest.z };
-        Vector3 c3 = { chest.x, hipY + 0.57f, chest.z };
+        Vector3 c2 = { chest.x, hipY + 0.47f - twBend, chest.z };
+        Vector3 c3 = { chest.x, hipY + 0.57f - 1.2f * twBend, chest.z };
         if (untucked) LitEllipseTube(WV(c0), WV(((Vector3){ c1.x, c1.y + 0.015f, c1.z })), hipSide, hipSide, 0.198f * bWa, 0.132f * bBu, 0.150f * bWa, 0.100f * bBu, 14, shirt, false, false);   // 裾は開いている（上は次の筒とぴったり合わせる）
         else LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs * bWa, 0.110f * bBu, 0.150f * fs * bWa, 0.100f * bBu, 14, shirt, false, true);
         LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs * bWa, 0.100f * bBu, 0.190f * fs * bSh, 0.118f * bBu, 14, shirt, false, false);
         LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs * bSh, 0.118f * bBu, 0.120f * fs * bSh, 0.075f * bBu, 14, shirt, true, false);
     }
-    Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
+    if (!useM) Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
-    Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
-    Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
+    Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f - 1.25f * twBend, chest.z * 1.05f };
+    Vector3 head  = { chest.x * 1.12f, hipY + 0.79f - 1.5f * twBend, chest.z * 1.12f + 0.01f };
     head.y -= 0.04f * a->slouch; head.z += 0.05f * a->slouch;                   // うつむく
     if (celeb) {
         head.x += 0.03f * sinf(co.e * 12.0f) * co.headShake;                   // 首を振る
         head.z -= 0.03f * co.headUp; head.y += 0.02f * co.headUp;              // 天を仰ぐ
     }
-    DrawCylinderEx(WV(neckB), WV(head), 0.050f * bBu, 0.045f * bBu, 8, skin);
+    if (!useM) DrawCylinderEx(WV(neckB), WV(head), 0.050f * bBu, 0.045f * bBu, 8, skin);
     // 顔の向き：肩の向きの 3 割（構え・サーブでもネットの方を見る）。体ごと回るしぐさ（後ろを向く）ではそのまま回る。天を仰ぐ・うつむく
     float turnC = celeb ? co.turn : 0.0f;
     float headYaw = (yaw - turnC) * 0.30f + turnC;
     float pitchH = (celeb ? -0.45f * co.headUp : 0.0f) + 0.35f * a->slouch;   // プラス＝うつむく
+    if (tweenerSw) { headYaw = yaw; pitchH += 0.60f * twK; }   // 股抜き：体と同じ向きで、足元の球を見る
     Vector3 fF = { sinf(headYaw) * cosf(pitchH), -sinf(pitchH), cosf(headYaw) * cosf(pitchH) };   // 顔の前
     Vector3 rR = { cosf(headYaw), 0.0f, -sinf(headYaw) };                                       // 顔の右
     Vector3 uU = Vector3CrossProduct(fF, rR);                                                    // 顔の上
@@ -1671,6 +1892,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(b0, n0, col); LitVertex(a0, n0, col); LitVertex(a1, n1, col); LitVertex(b1, n1, col); \
             LitVertex(a0, n0, col); LitVertex(b0, n0, col); LitVertex(b1, n1, col); LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(a1, n1, col); \
         } rlEnd(); } while (0)
+    if (!partsM && !skinM) {   // パーツモデル・スキニングのモデルでは、頭・顔・髪・帽子もモデルが描く
     {   // 頭：だ円の球（顔の形）
         const int RG = 10, SL = 14;
         rlCheckRenderBatchLimit(RG * SL * 6);
@@ -1918,6 +2140,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         DrawSphere(WV(pb), 0.04f, hair);
         DrawCylinderEx(WV(pb), WV(pt), 0.04f, 0.015f, 8, hair);
     }
+    }   // !partsM
     #undef HP
     #undef HAIRBLOB
     #undef HEADBAND
@@ -1952,6 +2175,24 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             if (Vector3Length(nf) > 1e-3f) nrm = Vector3Normalize(nf);
         }
     }
+    // 伸びて取る：肩から球へ、腕とラケットをまっすぐ伸ばす（面の中心が球の所に来る）。面はネットの方へ向けて合わせるだけ
+    float stArm = (stOn && hasHand && stroke != 2) ? stW : 0.0f;
+    if (stArm > 0.0f) {
+        Vector3 bl = { stBall.x - stRoot.x, stBall.y - stHop / sc, stBall.z - stRoot.z };   // 球（今の体から見て）
+        Vector3 u = Vector3Subtract(bl, rShoulder);
+        float D = Vector3Length(u);
+        if (D > 1e-3f) {
+            u = Vector3Scale(u, 1.0f / D);
+            Vector3 hs = Vector3Add(rShoulder, Vector3Scale(u, Clamp(D - RACKET_REACH, 0.25f, 0.61f)));
+            hand = Vector3Lerp(hand, hs, stArm);
+            Vector3 dmix = Vector3Lerp(rdir, u, stArm);
+            if (Vector3Length(dmix) > 1e-3f) rdir = Vector3Normalize(dmix);
+            Vector3 nmix = Vector3Lerp(nrm, (Vector3){ 0.0f, 0.30f, 1.0f }, stArm);
+            Vector3 nf = Vector3Subtract(nmix, Vector3Scale(rdir, Vector3DotProduct(nmix, rdir)));
+            if (Vector3Length(nf) > 1e-3f) nrm = Vector3Normalize(nf);
+        }
+        if (stArm > 0.4f) twoHands = false;   // 両手バックでも、伸びきるときは片手で届かせる（左手はバランス）
+    }
     Vector3 neck = Vector3Add(hand, Vector3Scale(rdir, 0.28f));       // ラケットの首（のど）
     Vector3 shoulder = rShoulder, other = lShoulder;
     Vector3 otherHand;
@@ -1960,6 +2201,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     if (a->smashT > 0.0f)            otherHand = (Vector3){ -0.32f, hipY + 0.32f, 0.12f };            // 叩きつけ：片手で
     else if (stg > 0.25f && !swinging && a->windup <= 0.0f) otherHand = Vector3Lerp(neck, (Vector3){ -0.58f, hipY + 0.42f, -0.05f }, Clamp01(stg * 1.5f));   // よろめき：左手を広げてバランスを取る
     else if (celeb) { otherHand = co.lh; otherHand.y -= co.hipDrop + 0.42f * co.kneel; }
+    else if (tweenerSw) otherHand = (Vector3){ lShoulder.x + 0.20f, lShoulder.y - 0.45f, lShoulder.z - 0.12f };   // 股抜き：左手は横に下ろしてバランスを取る
     else if (swinging && volleyPose) {
         // ボレー：構えでは左手でラケットを支え、当てるときに離してバランスを取る（フォアは前へ、バックは後ろへ）
         float r = Smooth01((a->swingT - 0.02f) / 0.06f);
@@ -2018,17 +2260,72 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     // 腕：肩・肘・手首。半袖。肘は下外側に曲がる
     for (int arm = 0; arm < 2; arm++) {
         Vector3 s0 = arm == 0 ? shoulder : other, hd = arm == 0 ? hand : otherHand;
-        Vector3 hint = arm == 0 ? (Vector3){ 0.6f, -1.0f, -0.2f } : (Vector3){ -0.6f, -1.0f, -0.2f };
-        if (idle) { hint.x *= 0.35f; hint.z = 0.15f; }
-        if (idle && move >= 0.3f && arm == 1) hint = (Vector3){ -0.15f, -0.5f, -1.0f };   // 走り：肘は後ろへ   // 構え：肘は体の前に軽く曲げる（横に張ると腰に手を当てたように見える）
-        Vector3 el = TwoBone(s0, hd, 0.31f, 0.30f, hint);
+        // 肘の向き：体（肩の向き）の下後方、少し外へ。どの動きでも同じ（逆関節・横向きの曲がりが出ないように）
+        Vector3 shR = { cy, 0.0f, -sy }, shF = { sy, 0.0f, cy };   // 肩の右・前
+        float out = arm == 0 ? 1.0f : -1.0f;
+        Vector3 pole = Vector3Add(Vector3Add(Vector3Scale(shR, 0.30f * out), (Vector3){ 0.0f, -1.0f, 0.0f }), Vector3Scale(shF, -0.80f));
+        Vector3 alt = Vector3Add(Vector3Scale(shR, out), Vector3Scale(shF, -0.5f));
+        Vector3 el = ElbowIK(s0, &hd, 0.31f, 0.30f, pole, alt);
+        if (arm == 0) hand = hd; else otherHand = hd;   // 曲がりの上限で手を離した分（ラケットも手について行く）
         Vector3 sleeve = Vector3Lerp(s0, el, 0.45f);
+        if (useM) {   // モデル：腕の関節。手の先は、前腕の向きとラケットの向きの間（打つ方の手）
+            Vector3 fa = Vector3Normalize(Vector3Subtract(hd, el));
+            Vector3 hdir = arm == 0 ? Vector3Normalize(Vector3Add(fa, Vector3Normalize(rdir))) : fa;
+            bp.j[arm == 0 ? BJ_SH_R : BJ_SH_L] = s0; bp.j[arm == 0 ? BJ_EL_R : BJ_EL_L] = el; bp.j[arm == 0 ? BJ_HD_R : BJ_HD_L] = hd;
+            bp.j[arm == 0 ? BJ_TIP_R : BJ_TIP_L] = Vector3Add(hd, Vector3Scale(hdir, 0.09f));
+            bp.ref[arm == 0 ? BREF_ARM_R : BREF_ARM_L] = Vector3Negate(Vector3Normalize(pole));   // 腕の骨のねじれ：肘が曲がる側（前腕が来る側）
+        } else {
         Limb(WV(s0), WV(el), 0.050f * bAr, 0.043f * bAr, skin);                   // 上腕（ナダルは太い）
         Limb(WV(el), WV(hd), 0.042f * bAr, 0.034f * bAr, skin);
         DrawCylinderEx(WV(s0), WV(sleeve), 0.072f * fmaxf(bAr, 1.0f), 0.066f * fmaxf(bAr, 1.0f), 8, shirt);   // 袖
         DrawSphere(WV(hd), 0.042f, skin);
+        }
         if (a->headband.a && arm == 0)   // ヘッドバンドの選手はリストバンドも
             DrawCylinderEx(WV(Vector3Lerp(el, hd, 0.78f)), WV(Vector3Lerp(el, hd, 0.92f)), 0.046f, 0.044f, 8, a->headband);
+    }
+    if (useM) {   // 体のモデルを描く（関節はここまでに集めた）
+        bp.j[BJ_PELVIS] = pelvis; bp.j[BJ_WAIST] = waist; bp.j[BJ_CHEST] = chest; bp.j[BJ_NECK] = neckB;
+        bp.j[BJ_HEAD] = head; bp.j[BJ_HEADTOP] = Vector3Add(head, Vector3Scale(uU, 0.12f));
+        if (partsM || skinM) {   // パーツモデル・スキニング：首を短く（首の付け根から頭の中心までの 3 割で頭のパーツ）。頭の向きは顔の上
+            bp.j[BJ_HEADBASE] = Vector3Lerp(neckB, head, 0.30f);
+            bp.j[BJ_HEADTOP] = Vector3Add(bp.j[BJ_HEADBASE], Vector3Scale(uU, 0.30f));
+        }
+        Vector3 hipR = { hcy, 0.0f, -hsy };
+        int ri = Vector3DotProduct(Vector3Subtract(hips[0], hips[1]), hipR) >= 0.0f ? 0 : 1, li = 1 - ri;   // どちらが右脚か（滑り込みは逆のことがある）
+        bp.j[BJ_HIP_R] = hips[ri]; bp.j[BJ_KN_R] = knees[ri]; bp.j[BJ_AN_R] = feet[ri]; bp.j[BJ_TOE_R] = toePs[ri];
+        bp.j[BJ_HIP_L] = hips[li]; bp.j[BJ_KN_L] = knees[li]; bp.j[BJ_AN_L] = feet[li]; bp.j[BJ_TOE_L] = toePs[li];
+        bp.side[0] = hipR; bp.side[1] = (Vector3){ cy, 0.0f, -sy }; bp.side[2] = rR;
+        bp.side[3] = (Vector3){ cosf(toes[ri]), 0.0f, -sinf(toes[ri]) }; bp.side[4] = (Vector3){ cosf(toes[li]), 0.0f, -sinf(toes[li]) };
+        bp.fwd = (Vector3){ hsy, 0.0f, hcy };
+        bp.j[BJ_SPINE] = Vector3Lerp(waist, chest, 0.5f);
+        bp.j[BJ_CLAV] = Vector3Lerp(chest, neckB, 0.75f);
+        for (int s2 = 0; s2 < 2; s2++) {   // 足の付け根（つま先の曲がる所）と、つま先の先
+            int an = s2 == 0 ? BJ_AN_R : BJ_AN_L, to = s2 == 0 ? BJ_TOE_R : BJ_TOE_L;
+            Vector3 d = Vector3Subtract(bp.j[to], bp.j[an]);
+            bp.j[s2 == 0 ? BJ_BALL_R : BJ_BALL_L] = Vector3Add(bp.j[an], Vector3Scale(d, 0.60f));
+            bp.j[s2 == 0 ? BJ_TOETIP_R : BJ_TOETIP_L] = Vector3Add(bp.j[an], Vector3Scale(d, 1.25f));
+        }
+        {
+            Vector3 hf = { hsy, 0.0f, hcy }, cf = { sy, 0.0f, cy };   // 腰の前・肩（胸）の前
+            bp.ref[BREF_HIPF] = hf; bp.ref[BREF_CHESTF] = cf;
+            bp.ref[BREF_SP1] = Vector3Normalize(Vector3Lerp(hf, cf, 0.33f)); bp.ref[BREF_SP2] = Vector3Normalize(Vector3Lerp(hf, cf, 0.66f));
+            bp.ref[BREF_FACEF] = fF; bp.ref[BREF_UP] = (Vector3){ 0, 1, 0 }; bp.ref[BREF_BACK] = Vector3Negate(hf);
+        }
+        bp.col[BR_SKIN] = skin; bp.col[BR_SHIRT] = shirt; bp.col[BR_SHORTS] = shorts; bp.col[BR_SOCKS] = sock;
+        bp.col[BR_SHOES] = shoe; bp.col[BR_SOLE] = sole; bp.col[BR_HAIR] = hair;
+        {   // シャツの差し色：明るいシャツは濃く、暗いシャツは明るく。リストバンドはヘッドバンドの色（なければ差し色）
+            float lum = 0.30f * shirt.r + 0.59f * shirt.g + 0.11f * shirt.b;
+            bp.col[BR_ACCENT] = lum > 150.0f ? (Color){ (unsigned char)(shirt.r * 0.45f), (unsigned char)(shirt.g * 0.45f), (unsigned char)(shirt.b * 0.55f), 255 }
+                                             : (Color){ (unsigned char)(shirt.r + (255 - shirt.r) * 0.6f), (unsigned char)(shirt.g + (255 - shirt.g) * 0.6f), (unsigned char)(shirt.b + (255 - shirt.b) * 0.6f), 255 };
+            if (shorts.r + shorts.g + shorts.b < 3 * 200 && lum > 150.0f) bp.col[BR_ACCENT] = shorts;   // 白いシャツ：パンツの色を差す
+            bp.col[BR_WRIST] = a->headband.a ? a->headband : bp.col[BR_ACCENT];
+            bp.col[BR_EYE] = (Color){ 30, 25, 25, 255 };
+        }
+        bp.lookId = a->lookId; bp.hairStyle = a->hairStyle; bp.female = a->female;
+        bp.eyeCol = a->eyeCol.a ? a->eyeCol : (Color){ 95, 62, 38, 255 }; bp.beard = a->beard;
+        bp.thickArm = bAr; bp.thickLeg = bLg; bp.thickBody = bBu;
+        bp.pos = pos; bp.facingNegZ = facingNegZ; bp.mx = MX; bp.sc = sc;
+        if (partsM) DrawPartsModel(&bp); else DrawBodyModel(&bp);
     }
     Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
     Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));
@@ -2234,9 +2531,127 @@ void PixelBegin(void)
     if (!gPixShaderOk) { gPixShader = LoadShaderFromMemory(0, PIX_FS); gPixShaderOk = true; }
     BeginTextureMode(gPixFull);
 }
+// ---- ポスト処理（FX_POST）：描き終えた 3D の画面に、色調補正・軽いビネット・軽いブルームをかける。文字（HUD）より前 ----
+//   「ふつう」の見た目のときだけ（アニメ調・ドット風には掛けない）。PixelEnd から呼ぶ。
+//   3D はこれまでどおり画面にそのまま描く（画面のなめらかさ＝アンチエイリアスを保つため。別の絵に描くとギザギザになる）。
+//   描き終えた画面を 1 枚の絵に写し取り（glCopyTexSubImage2D）、シェーダーを通して画面全体に描き戻す。
+//   ブルームは 1/4 → 1/8 の小さな絵でぼかすので軽い（全画面で読む絵は 2 枚だけ）。
+//   シェーダーが作れない・画面と描く大きさが違うなどのときは、何もしない（今までどおりの絵になる）
+#if FX_POST
+#if defined(PLATFORM_WEB)
+#include <GLES2/gl2.h>
+// 画面と同じ大きさの絵を 1 ドットずつ読むので、使える機種では精度を上げる（mediump のままだと、スマホによっては絵がわずかにずれてぼける）
+#define FX_HEAD "#version 100\n#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\nvarying vec2 fragTexCoord;\nvarying vec4 fragColor;\nuniform sampler2D texture0;\n#define TEX texture2D\n#define OUT gl_FragColor\n"
+#else
+// raylib のヘッダーには OpenGL の関数が出ていないので、使う 1 つだけ自分で宣言する（OpenGL 1.1 からある関数。Makefile がつないでいる OpenGL のライブラリに入っている）
+#if defined(_WIN32)
+__declspec(dllimport) void __stdcall glCopyTexSubImage2D(unsigned int target, int level, int xoffset, int yoffset, int x, int y, int width, int height);
+#else
+void glCopyTexSubImage2D(unsigned int target, int level, int xoffset, int yoffset, int x, int y, int width, int height);
+#endif
+#define FX_HEAD "#version 330\nin vec2 fragTexCoord;\nin vec4 fragColor;\nuniform sampler2D texture0;\nout vec4 finalColor;\n#define TEX texture\n#define OUT finalColor\n"
+#endif
+#define FX_GL_TEXTURE_2D 0x0DE1
+// 明るい所だけを取り出して 1/4 に縮める（4 か所を混ぜて読む＝元の 4×4 ドットの平均）
+static const char *FX_BRIGHT_FS = FX_HEAD
+    "uniform vec4 fxp;\n"   // xy = 元の絵の 1 ドットの大きさ、z = しきい値
+    "void main(){ vec2 d = fxp.xy;\n"
+    "  vec3 c = 0.25 * (TEX(texture0, fragTexCoord + vec2(-d.x, -d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, -d.y)).rgb\n"
+    "                 + TEX(texture0, fragTexCoord + vec2(-d.x, d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, d.y)).rgb);\n"
+    "  float l = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "  OUT = vec4(c * smoothstep(fxp.z, 1.0, l), 1.0); }\n";
+// ぼかし（真ん中と斜め 4 か所）
+static const char *FX_BLUR_FS = FX_HEAD
+    "uniform vec4 fxp;\n"   // xy = ずらす量
+    "void main(){ vec2 d = fxp.xy;\n"
+    "  vec3 c = 0.28 * TEX(texture0, fragTexCoord).rgb + 0.18 * (TEX(texture0, fragTexCoord + vec2(-d.x, -d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, -d.y)).rgb\n"
+    "                 + TEX(texture0, fragTexCoord + vec2(-d.x, d.y)).rgb + TEX(texture0, fragTexCoord + vec2(d.x, d.y)).rgb);\n"
+    "  OUT = vec4(c, 1.0); }\n";
+// 仕上げ：ブルームを足す → 色の濃さ → 明暗のめりはり（S 字）→ ビネット
+static const char *FX_FINAL_FS = FX_HEAD
+    "uniform sampler2D fxBloom;\n"
+    "uniform vec4 fxp;\n"   // x = ブルームの強さ、y = 色の濃さ、z = めりはり、w = ビネット
+    "void main(){\n"
+    "  vec3 c = TEX(texture0, fragTexCoord).rgb;\n"
+    "  c = clamp(c + TEX(fxBloom, fragTexCoord).rgb * fxp.x, 0.0, 1.0);\n"
+    "  float l = dot(c, vec3(0.299, 0.587, 0.114));\n"
+    "  c = clamp(mix(vec3(l), c, fxp.y), 0.0, 1.0);\n"
+    "  c = mix(c, c * c * (3.0 - 2.0 * c), fxp.z);\n"
+    "  vec2 q = (fragTexCoord - 0.5) * vec2(1.0, 0.82);\n"
+    "  c *= 1.0 - fxp.w * smoothstep(0.30, 0.78, length(q));\n"
+    "  OUT = vec4(c, 1.0); }\n";
+static Texture2D gFxCopy; static RenderTexture2D gFxA, gFxB, gFxC;
+static int gFxW = 0, gFxH = 0;
+static Shader gFxBright, gFxBlur, gFxFinal;
+static int gFxBrightP, gFxBlurP, gFxFinalP, gFxFinalBloom;
+static int gFxState = 0;   // 0 = まだ、1 = 使える、-1 = 使えない（シェーダーが作れなかった）
+static void PostFxApply(void)
+{
+    if (gLook != 0 || gFxState < 0) return;
+    int W = GetRenderWidth(), H = GetRenderHeight();
+    if (W < 16 || H < 16 || W != GetScreenWidth() || H != GetScreenHeight()) return;   // 画面と描く大きさが違うとき（引きのばした全画面など）は掛けない
+    if (gFxState == 0) {
+        unsigned int def = rlGetShaderIdDefault();
+        gFxFinal = LoadShaderFromMemory(0, FX_FINAL_FS);
+        gFxBright = LoadShaderFromMemory(0, FX_BRIGHT_FS);
+        gFxBlur = LoadShaderFromMemory(0, FX_BLUR_FS);
+        if (!gFxFinal.id || gFxFinal.id == def || !gFxBright.id || gFxBright.id == def || !gFxBlur.id || gFxBlur.id == def) { gFxState = -1; return; }
+        gFxFinalP = GetShaderLocation(gFxFinal, "fxp"); gFxFinalBloom = GetShaderLocation(gFxFinal, "fxBloom");
+        gFxBrightP = GetShaderLocation(gFxBright, "fxp"); gFxBlurP = GetShaderLocation(gFxBlur, "fxp");
+        gFxState = 1;
+    }
+    if (W != gFxW || H != gFxH) {   // 画面の大きさが変わったら作り直す
+        if (gFxW) { UnloadTexture(gFxCopy); UnloadRenderTexture(gFxA); UnloadRenderTexture(gFxB); UnloadRenderTexture(gFxC); }
+        Image im = GenImageColor(W, H, BLACK);
+        gFxCopy = LoadTextureFromImage(im); UnloadImage(im);
+        gFxA = LoadRenderTexture(W / 4, H / 4); gFxB = LoadRenderTexture(W / 8, H / 8); gFxC = LoadRenderTexture(W / 8, H / 8);
+        Texture2D *t[4] = { &gFxCopy, &gFxA.texture, &gFxB.texture, &gFxC.texture };
+        for (int i = 0; i < 4; i++) { SetTextureFilter(*t[i], TEXTURE_FILTER_BILINEAR); SetTextureWrap(*t[i], TEXTURE_WRAP_CLAMP); }
+        gFxW = W; gFxH = H;
+    }
+    if (!gFxCopy.id || !gFxA.id || !gFxB.id || !gFxC.id) return;
+    // 描き終えた画面を写し取る
+    rlDrawRenderBatchActive();
+    rlActiveTextureSlot(0); rlEnableTexture(gFxCopy.id);
+    glCopyTexSubImage2D(FX_GL_TEXTURE_2D, 0, 0, 0, 0, 0, W, H);
+    rlDisableTexture();
+    Rectangle full = { 0, 0, (float)W, (float)-H };   // 写し取った絵は上下が逆なので、逆さに読む（描く先の絵も同じ）
+    if (FX_BLOOM) {
+        float p[4];
+        int aw = gFxA.texture.width, ah = gFxA.texture.height, bw = gFxB.texture.width, bh = gFxB.texture.height;
+        BeginTextureMode(gFxA);   // 明るい所だけを 1/4 に
+        BeginShaderMode(gFxBright);
+        p[0] = 1.0f / W; p[1] = 1.0f / H; p[2] = FX_BLOOM_THRESH; p[3] = 0.0f; SetShaderValue(gFxBright, gFxBrightP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxCopy, full, (Rectangle){ 0, 0, (float)aw, (float)ah }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+        BeginTextureMode(gFxB);   // 1/8 に縮めながらぼかす
+        BeginShaderMode(gFxBlur);
+        p[0] = 1.0f / aw; p[1] = 1.0f / ah; SetShaderValue(gFxBlur, gFxBlurP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxA.texture, (Rectangle){ 0, 0, (float)aw, (float)-ah }, (Rectangle){ 0, 0, (float)bw, (float)bh }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+        BeginTextureMode(gFxC);   // もう一度、広めにぼかす
+        BeginShaderMode(gFxBlur);
+        p[0] = 1.6f / bw; p[1] = 1.6f / bh; SetShaderValue(gFxBlur, gFxBlurP, p, SHADER_UNIFORM_VEC4);
+        DrawTexturePro(gFxB.texture, (Rectangle){ 0, 0, (float)bw, (float)-bh }, (Rectangle){ 0, 0, (float)bw, (float)bh }, (Vector2){ 0 }, 0.0f, WHITE);
+        EndShaderMode();
+        EndTextureMode();
+    }
+    // 仕上げを画面全体に描き戻す
+    float fp[4] = { FX_BLOOM ? FX_BLOOM_K : 0.0f, FX_SATURATION, FX_CONTRAST, FX_VIGNETTE };
+    BeginShaderMode(gFxFinal);
+    SetShaderValue(gFxFinal, gFxFinalP, fp, SHADER_UNIFORM_VEC4);
+    SetShaderValueTexture(gFxFinal, gFxFinalBloom, gFxC.texture);
+    DrawTexturePro(gFxCopy, full, (Rectangle){ 0, 0, (float)W, (float)H }, (Vector2){ 0 }, 0.0f, WHITE);
+    EndShaderMode();
+}
+#else
+static void PostFxApply(void) { }
+#endif
 void PixelEnd(void)
 {
-    if (!gPixOn) return;
+    if (!gPixOn) { PostFxApply(); return; }
     gPixOn = false;
     EndTextureMode();
     int lw = gPixLow.texture.width, lh = gPixLow.texture.height;

@@ -28,10 +28,17 @@ ifeq ($(SALE),1)
     endif
 endif
 
-SRC = main.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c touch.c
+# 版の印（表紙に出す）：コミットの短い番号・コミットの日時・ブランチ（claude/ は省く）。手元に変更があれば + を付ける。git がなければ unknown
+GIT_ID     := $(shell git log -1 "--format=%h %cd" "--date=format-local:%m/%d %H:%M" 2>/dev/null)
+GIT_BRANCH := $(patsubst claude/%,%,$(shell git rev-parse --abbrev-ref HEAD 2>/dev/null))
+GIT_DIRTY  := $(if $(shell git status --porcelain --untracked-files=no 2>/dev/null),+,)
+BUILD_ID   := $(if $(GIT_ID),$(GIT_ID)$(GIT_DIRTY)  $(GIT_BRANCH),unknown)
+VERFLAGS    = -DBUILD_ID='"$(BUILD_ID)"'
+
+SRC = main.c body_model.c parts_model.c player.c input.c audio.c data.c physics.c shots.c serve.c render.c ai.c score.c assist.c playlog.c platform_ime.c tour.c replay.c matchlog.c lang.c demo.c events.c touch.c storage.c career.c coach.c
 
 $(TARGET): $(SRC) game.h ja_glyphs.h
-	$(CC) $(CFLAGS) $(SRC) -o $(TARGET) $(LIBS)
+	$(CC) $(CFLAGS) $(VERFLAGS) $(SRC) -o $(TARGET) $(LIBS)
 
 clean:
 	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
@@ -62,15 +69,15 @@ web/demo_secret.txt:
 	python3 -c "import secrets; print(secrets.token_hex(16))" > web/demo_secret.txt
 web: $(SRC) game.h ja_glyphs.h web/shell.html web/demo_secret.txt
 	mkdir -p web/out
-	emcc -std=gnu99 -O2 -Wall -DSALE_BUILD -DDEMO_BUILD -DDEMO_SECRET=\"$(shell cat web/demo_secret.txt 2>/dev/null)\" -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/out/index.html \
-	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32 \
-	    --shell-file web/shell.html --preload-file sounds --preload-file fonts
+	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DDEMO_BUILD -DDEMO_SECRET=\"$(shell cat web/demo_secret.txt 2>/dev/null)\" -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/out/index.html \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
+	    --shell-file web/shell.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 # スマホ版（ブラウザ）：make mobile。タイブレークの試合だけ、画面を触る操作、売る版の名前。web/mobile/ にできる
 mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
 	mkdir -p web/mobile
-	emcc -std=gnu99 -O2 -Wall -DSALE_BUILD -DMOBILE_BUILD -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile/index.html \
-	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32 \
-	    --shell-file web/shell_mobile.html --preload-file sounds --preload-file fonts
+	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DMOBILE_BUILD -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile/index.html \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
+	    --shell-file web/shell_mobile.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 .PHONY: dist clean sim web mobile

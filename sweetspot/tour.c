@@ -53,6 +53,9 @@ static float EntrantStr(const Tournament *t, int e)
 // ランキング（シード順）：3 つのコートの強さの平均
 static float RankStr(int p) { return (TOUR_STR[p][0] + TOUR_STR[p][1] + TOUR_STR[p][2]) / 3.0f; }
 
+// 大会のラウンドごとの相手の強さの上乗せ（4 回戦・準々決勝・準決勝・決勝）。1 回戦はやさしめ、決勝は一段上へ
+float TourBoost(int round) { static const float B[TOUR_ROUNDS] = { -0.5f, -0.2f, 0.15f, 0.35f }; return B[round < 0 ? 0 : round >= TOUR_ROUNDS ? TOUR_ROUNDS - 1 : round]; }
+
 void TourStart(Tournament *t, bool women, int slam, int setsToWin)
 {
     // シーズンの記録は残す
@@ -66,19 +69,19 @@ void TourStart(Tournament *t, bool women, int slam, int setsToWin)
     for (int i = 0; i < TourPersonaCount(women) && np < TOUR_SIZE - 1; i++)
         if (TourPersonaAt(women, i) != gYouPersona) pool[np++] = TourPersonaAt(women, i);   // 自分が使う選手は出ない
     for (int i = 0; i < np; i++) for (int j = i + 1; j < np; j++) if (RankStr(pool[j]) > RankStr(pool[i])) { int x = pool[i]; pool[i] = pool[j]; pool[j] = x; }
-    // シードの位置：1 は一番上、2 は一番下、3・4 は 5 番目と 12 番目（くじ）、5〜8 は 4・8・9・13 番目（くじ）
+    // シードは 4 人：1 は一番上、2 は一番下、3・4 は 5 番目と 12 番目（くじ）。前は 8 人で、1 回戦の 8 試合すべてにシードがいた（自分の初戦は必ずシード）
     for (int i = 0; i < TOUR_SIZE; i++) t->slot[i] = -2;   // まだ空き
-    int nSeed = np < 8 ? np : 8;
-    int pos34[2] = { 4, 11 }, pos58[4] = { 3, 7, 8, 12 };
+    int nSeed = np < 4 ? np : 4;
+    int pos34[2] = { 4, 11 };
     if (GetRandomValue(0, 1)) { pos34[0] = 11; pos34[1] = 4; }
-    for (int i = 3; i > 0; i--) { int j = GetRandomValue(0, i); int x = pos58[i]; pos58[i] = pos58[j]; pos58[j] = x; }
     for (int s = 0; s < nSeed; s++) {
-        int pos = s == 0 ? 0 : s == 1 ? TOUR_SIZE - 1 : s < 4 ? pos34[s - 2] : pos58[s - 4];
+        int pos = s == 0 ? 0 : s == 1 ? TOUR_SIZE - 1 : pos34[s - 2];
         t->slot[pos] = pool[s]; t->seed[pos] = s + 1;
     }
-    // 残り：シードのない選手と自分と予選上がりを、空いた枠にくじで
+    // 自分は 7〜10 番目のどれか（くじ）：1 回戦はシードなし、準々決勝で第 3 か第 4 シード、準決勝で第 1 か第 2 シード
+    { static const int MINE[4] = { 6, 7, 8, 9 }; t->slot[MINE[GetRandomValue(0, 3)]] = -1; }
+    // 残り：シードのない選手と予選上がりを、空いた枠にくじで
     int rest[TOUR_SIZE], nr = 0;
-    rest[nr++] = -1;
     for (int s = nSeed; s < np; s++) rest[nr++] = pool[s];
     int free[TOUR_SIZE], nf = 0;
     for (int i = 0; i < TOUR_SIZE; i++) if (t->slot[i] == -2) free[nf++] = i;
@@ -149,7 +152,8 @@ static int SimMatch(const Tournament *t, int ea, int eb, char *score, int n)
     float sa = EntrantStr(t, ea) / 100.0f, sb = EntrantStr(t, eb) / 100.0f;
     float p = Clamp(0.5f + (sa - sb) * 0.40f, 0.30f, 0.70f);
     Score s = { 0 };
-    s.setsToWin = t->setsToWin;
+    s.setsToWin = LenSets(t->setsToWin); s.setGames = LenGames(t->setsToWin);
+    if (t->setsToWin == 0) { s.tbOnly = true; s.tiebreak = true; }   // タイブレークだけの大会：ほかの試合もタイブレーク
     for (int i = 0; i < 4000 && !s.over; i++) AwardPoint(&s, RandRange(0.0f, 1.0f) < p ? 0 : 1);
     int w = s.sets[0] > s.sets[1] ? 0 : 1;
     ScoreText2(&s, w, score, n);
@@ -275,7 +279,9 @@ const char *TourEndMessage(const Tournament *t)
         else
             msg = TextFormat(TR("You lost in the %s.   Enter: back to title", "%sで負けた   Enter：タイトルに戻る"), TourRoundName(t->outRound));
     } else {
-        msg = TextFormat(TR("Next: %s vs %s   -   Enter: play", "次：%s  対 %s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t));
+        float tb = TourBoost(t->round);
+        const char *hard = tb < -0.3f ? TR("  (easier)", "（やさしめ）") : tb > 0.25f ? TR("  (tougher)", "（手ごわい）") : "";
+        msg = TextFormat(TR("Next: %s vs %s%s   -   Enter: play", "次：%s  対 %s%s   -   Enter：試合開始"), TourRoundName(t->round), TourOpponentName(t), hard);
     }
     return msg;
 }

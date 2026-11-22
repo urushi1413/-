@@ -9,6 +9,7 @@ float gSpinMul = 1.0f;
 float gSliceEdge = 0.0f;
 float gErrMul = 1.0f;
 float gRiseSkill = 0.0f;
+float gRunBack = 0.0f;
 bool  gWomen = false;
 float gTimingTolMul = HUMAN_TIMING_TOL;
 float gReachAdd = 0.0f;
@@ -68,6 +69,8 @@ float PersonaHeight(int persona)
     if (persona <= 0) return gWomen ? 175.0f : 185.0f;
     return PERSONA_HEIGHT[persona % PERSONA_COUNT];
 }   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
+bool  gRuleNetTouch = true;   // ルール（設定 → ルール）
+bool  gRuleBodyShot = true;
 bool  gHumanShot = false;
 float gPointImportance = 0.0f;     // 自分の打球を評価している間だけ、しゃがんでいれば true
 bool gCasual = false;     // 自分の打球を評価している間だけ、簡単モードなら true
@@ -124,6 +127,7 @@ void ApplyLook(SwingAnim *a, int persona)
         { 226, 190, 150, 255 }, { 242, 210, 185, 255 },                                                   // 錦織、ズベレフ
     };
     a->scale = PersonaHeight(persona) / 185.0f;
+    a->lookId = persona;
     if (persona < 0) {   // 人間：紺のショーツ
         a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
