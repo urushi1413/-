@@ -181,9 +181,9 @@ def hairline(d, style="hair_short"):
     """髪の生え際：方位ごとの高さ（前は額の上、横は耳の上、後ろは襟足）。プラスなら髪の中"""
     az = math.atan2(d.x, d.z)                     # 前 0、横 ±π/2、後ろ ±π
     c = math.cos(az)                              # 前 1、横 0、後ろ -1
-    front, side, back = 0.50, 0.05, -0.62
+    front, side, back = 0.52, 0.05, -0.50   # 前は額の上（顔にかぶせない）、後ろはうなじまで
     if style == "hair_buzz": front = 0.56
-    if style == "hair_wave": front, side, back = 0.42, -0.25, -0.85   # ウェーブ：耳と襟足までかぶる
+    if style == "hair_wave": front, side, back = 0.50, -0.10, -0.58   # ウェーブ：耳の下・うなじまで（首にはかぶせない）
     y0 = side + (front - side) * max(c, 0) - (side - back) * max(-c, 0) * (1.0 if style != "hair_tied" else 0.9)
     if abs(c) < 0.5 and d.z < 0.2 and style != "hair_wave": y0 = min(y0, 0.10)   # 耳の上（もみあげの所）
     return d.y - y0
