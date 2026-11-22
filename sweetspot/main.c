@@ -339,7 +339,7 @@ static const char *PersonaBlurb(int p)
 
 // タイトル・選手選択の背景：コートの上に自分と相手が並んで立つ（ボールをつく）。カメラはゆっくり揺れる
 bool gSlideOn = false;
-static bool oppRandom = false, courtRandom = false;   // 選手と試合：相手・コートをランダムに（試合ごとに選び直す）
+static bool oppRandom = false, courtRandom = false, youRandom = false;   // youRandom：使う選手をランダムに（試合・大会ごとに選び直す）   // 選手と試合：相手・コートをランダムに（試合ごとに選び直す）
 bool gBounceRit = true;   // サーブ前のボールつき（設定）：自分も相手もつく。なしにすると、すぐサーブ   // 滑り込み（設定）：はじめは「なし」（走ると止まれないと不評だったため）
 
 // 能力のグラフ（六角形）：サーブ・強打・足と守備・安定・ネット・勝負強さ。全選手の中で比べて 3〜10 に
@@ -349,7 +349,7 @@ static void PersonaRadar(int p, float out[RADAR_N])
     static float lo[RADAR_N], hi[RADAR_N]; static bool ready = false;
     #define RAW(q, v) do { const Persona *e = &PERSONAS[q]; \
         v[0] = e->serveAdd / 18.0f + 3.0f * e->serveSkillAdd - 2.0f * e->serveMarginAdd; \
-        v[1] = 2.0f * e->aggrAdd + 1.5f * (e->spinMul - 1.0f); \
+        v[1] = e->aggrAdd + 0.1f * e->returnAggro; /* 球の速さは強気さで決まる（回転の量は速さに関係ないので入れない） */ \
         v[2] = e->speedAdd - 5.0f * e->reactionAdd; \
         v[3] = -2.0f * (e->errMul - 1.0f) - (e->timingMul - 1.0f); \
         v[4] = e->volleySkill + 0.5f * (e->netRushMul - 1.0f) + e->serveVolley; \
@@ -1004,12 +1004,13 @@ int main(void)
                         forceRestart = true;
                     } break;
                     case MI_AI:     ai.level = (ai.level + 3 + change) % 3; forceRestart = true; break;
-                    case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); gYouPersona = 0; forceRestart = true; break;
-                    case MI_PLAYER: {   // 自分が使う選手：癖なし（0）→ そのツアーの選手
-                        int cnt = TourPersonaCount(gWomen) + 1;
-                        int k = gYouPersona ? TourPersonaIndex(gWomen, gYouPersona) + 1 : 0;
+                    case MI_TOUR:   gWomen = !gWomen; ai.persona = TourPersonaAt(gWomen, 0); gYouPersona = 0; youRandom = false; forceRestart = true; break;
+                    case MI_PLAYER: {   // 自分が使う選手：癖なし（0）→ そのツアーの選手 →（最後の次）ランダム
+                        int cnt = TourPersonaCount(gWomen) + 2;
+                        int k = youRandom ? cnt - 1 : gYouPersona ? TourPersonaIndex(gWomen, gYouPersona) + 1 : 0;
                         k = (k + cnt + change) % cnt;
-                        gYouPersona = k ? TourPersonaAt(gWomen, k - 1) : 0;
+                        youRandom = k == cnt - 1;
+                        if (!youRandom) gYouPersona = k ? TourPersonaAt(gWomen, k - 1) : 0;
                         forceRestart = true;
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
@@ -1074,6 +1075,7 @@ int main(void)
                 } else if (it == MI_SLAM_GO) {
                     // 大会を始める：今のツアー（男子・女子）、試合の長さで
                     SaveSettings();
+                    if (youRandom) gYouPersona = TourPersonaAt(gWomen, GetRandomValue(0, TourPersonaCount(gWomen) - 1));   // 使う選手：ランダム（大会のあいだは同じ選手）
                     if (slamSel == SLAM_COUNT) TourStartSeason(&tour, gWomen, setsToWin);
                     else TourStart(&tour, gWomen, slamSel, setsToWin);
                     app = APP_BRACKET; bracketWait = 0.4f;
@@ -1245,7 +1247,7 @@ int main(void)
                     case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 4 ? TR("SHORT SET (first to 4 games)", "ショートセット（4 ゲーム先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
-                    case MI_PLAYER:  label = TR("Play as", "使う選手");         value = gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
+                    case MI_PLAYER:  label = TR("Play as", "使う選手");         value = youRandom ? TR("RANDOM", "ランダム") : gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
                     case MI_OPP:     label = TR("Opponent", "相手");        value = oppRandom ? TR("RANDOM", "ランダム") : PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
@@ -1569,6 +1571,8 @@ int main(void)
             P.downT = 0.0f; P.recoverT = 0.0f;
             P.sliding = false;
             if (!tour.active && oppRandom) ai.persona = TourPersonaAt(gWomen, GetRandomValue(0, TourPersonaCount(gWomen) - 1));   // 相手：ランダム
+            if (!tour.active && youRandom)   // 使う選手：ランダム（相手と同じ選手にはしない）
+                do gYouPersona = TourPersonaAt(gWomen, GetRandomValue(0, TourPersonaCount(gWomen) - 1)); while (gYouPersona == ai.persona && TourPersonaCount(gWomen) > 1);
             if (!tour.active && courtRandom) gSurface = (SurfaceType)GetRandomValue(0, SURF_COUNT - 1);                          // コート：ランダム
             score = (Score){ 0 };
             score.server = rand() % 2;
