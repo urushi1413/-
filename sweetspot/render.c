@@ -1403,6 +1403,30 @@ Vector3 TwoBone(Vector3 root, Vector3 end, float l1, float l2, Vector3 hint)
     return Vector3Add(Vector3Add(root, Vector3Scale(u, a)), Vector3Scale(perp, h));
 }
 
+// 肘：1 軸のヒンジ。曲がりは 0°（伸びきる）〜 ELBOW_MAX_FLEX° に制限し、曲がる向きは pole（体の下後方）の側だけ。
+//   逆に曲がる・横に曲がることはない（肘は肩と手を結ぶ線と pole を含む面の上で、pole の側にしか出ない）。
+//   手が肩に近すぎる（曲がりが上限を超える）ときは、手を肩から離す（*hand を直す）。
+//   pole が肩と手を結ぶ線とほぼ同じ向きのときは、alt（体の外側）を混ぜて向きを決める
+#define ELBOW_MAX_FLEX 150.0f
+static Vector3 ElbowIK(Vector3 s, Vector3 *hand, float l1, float l2, Vector3 pole, Vector3 alt)
+{
+    Vector3 d = Vector3Subtract(*hand, s);
+    float L = Vector3Length(d);
+    float inner = (180.0f - ELBOW_MAX_FLEX) * DEG2RAD;   // 腕の内側の角度の下限
+    float dmin = sqrtf(l1 * l1 + l2 * l2 - 2.0f * l1 * l2 * cosf(inner));
+    Vector3 u = L > 1e-4f ? Vector3Scale(d, 1.0f / L) : (Vector3){ 0, -1, 0 };
+    if (L < dmin) *hand = Vector3Add(s, Vector3Scale(u, dmin));
+    Vector3 pn = Vector3Normalize(pole);
+    Vector3 perp = Vector3Subtract(pn, Vector3Scale(u, Vector3DotProduct(pn, u)));
+    float pl = Vector3Length(perp);
+    if (pl < 0.35f) {   // pole が腕の線に近い：外側の向きを混ぜる
+        Vector3 an = Vector3Normalize(alt);
+        Vector3 ap = Vector3Subtract(an, Vector3Scale(u, Vector3DotProduct(an, u)));
+        perp = Vector3Add(Vector3Scale(perp, pl / 0.35f), Vector3Scale(ap, 1.0f - pl / 0.35f));
+    }
+    return TwoBone(s, *hand, l1, l2, perp);
+}
+
 // 太さの変わる棒（体の部品）
 static void Limb(Vector3 a, Vector3 b, float ra, float rb, Color c)
 {
@@ -2229,10 +2253,13 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     // 腕：肩・肘・手首。半袖。肘は下外側に曲がる
     for (int arm = 0; arm < 2; arm++) {
         Vector3 s0 = arm == 0 ? shoulder : other, hd = arm == 0 ? hand : otherHand;
-        Vector3 hint = arm == 0 ? (Vector3){ 0.6f, -1.0f, -0.2f } : (Vector3){ -0.6f, -1.0f, -0.2f };
-        if (idle) { hint.x *= 0.35f; hint.z = 0.15f; }
-        if (idle && move >= 0.3f && arm == 1) hint = (Vector3){ -0.15f, -0.5f, -1.0f };   // 走り：肘は後ろへ   // 構え：肘は体の前に軽く曲げる（横に張ると腰に手を当てたように見える）
-        Vector3 el = TwoBone(s0, hd, 0.31f, 0.30f, hint);
+        // 肘の向き：体（肩の向き）の下後方、少し外へ。どの動きでも同じ（逆関節・横向きの曲がりが出ないように）
+        Vector3 shR = { cy, 0.0f, -sy }, shF = { sy, 0.0f, cy };   // 肩の右・前
+        float out = arm == 0 ? 1.0f : -1.0f;
+        Vector3 pole = Vector3Add(Vector3Add(Vector3Scale(shR, 0.30f * out), (Vector3){ 0.0f, -1.0f, 0.0f }), Vector3Scale(shF, -0.80f));
+        Vector3 alt = Vector3Add(Vector3Scale(shR, out), Vector3Scale(shF, -0.5f));
+        Vector3 el = ElbowIK(s0, &hd, 0.31f, 0.30f, pole, alt);
+        if (arm == 0) hand = hd; else otherHand = hd;   // 曲がりの上限で手を離した分（ラケットも手について行く）
         Vector3 sleeve = Vector3Lerp(s0, el, 0.45f);
         if (useM) {   // モデル：腕の関節。手の先は、前腕の向きとラケットの向きの間（打つ方の手）
             Vector3 fa = Vector3Normalize(Vector3Subtract(hd, el));
@@ -2273,6 +2300,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             bp.col[BR_EYE] = (Color){ 30, 25, 25, 255 };
         }
         bp.lookId = a->lookId; bp.hairStyle = a->hairStyle; bp.female = a->female;
+        bp.eyeCol = a->eyeCol.a ? a->eyeCol : (Color){ 95, 62, 38, 255 }; bp.beard = a->beard;
         bp.thickArm = bAr; bp.thickLeg = bLg; bp.thickBody = bBu;
         bp.pos = pos; bp.facingNegZ = facingNegZ; bp.mx = MX; bp.sc = sc;
         if (partsM) DrawPartsModel(&bp); else DrawBodyModel(&bp);

@@ -960,6 +960,8 @@ typedef struct {
     int lookId;            // 選手（色の表のファイルを選ぶ。-1 = 自分＝癖なし）
     int hairStyle;         // 髪型（HS_*。パーツモデルの髪型の候補を選ぶ）
     bool female;
+    Color eyeCol;          // 瞳の色（顔の絵の瞳をこの色にする）
+    float beard;           // ひげ（0 なし、0.15〜 剃り跡、0.4〜 ひげ）
 } BodyPose;
 bool BodyModelReady(void);              // モデルを読む（初めの 1 回だけ）。読めたか
 void DrawBodyModel(const BodyPose *bp);

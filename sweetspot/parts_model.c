@@ -258,31 +258,47 @@ static const Color *PaletteFor(const BodyPose *bp)
     return pal;
 }
 
-// ---- 選手ごとの髪型と顔の絵：models/players.txt（「番号 hair=short|wave|tied|buzz face=01」）。なければ選手の髪型から選ぶ ----
-typedef struct { signed char hair, face; } PlayerLook;
+// ---- 選手ごとの髪型・顔の絵・色：models/players.txt ----
+//   「番号 hair=short|wave|tied|buzz face=01 skin=#rrggbb eye=#rrggbb haircolor=#rrggbb beard=0|1|2」（どれも省略できる）。
+//   書いていないものは、ゲームの選手の値（髪型・男女・肌・瞳・髪の色・ひげ）から決める
+typedef struct { signed char hair, face, beard; Color skin, eye, hairCol; } PlayerLook;
 static PlayerLook gLookCfg[PERSONA_COUNT];
 static bool gLookLoaded = false;
+static Color HexCol(const char *p) { unsigned int v = 0; if (*p == '#') p++; sscanf(p, "%6x", &v); return (Color){ (unsigned char)(v >> 16), (unsigned char)(v >> 8), (unsigned char)v, 255 }; }
 static void LoadLookConfig(void)
 {
     gLookLoaded = true;
-    for (int i = 0; i < PERSONA_COUNT; i++) gLookCfg[i] = (PlayerLook){ -1, -1 };
+    for (int i = 0; i < PERSONA_COUNT; i++) gLookCfg[i] = (PlayerLook){ -1, -1, -1, { 0 }, { 0 }, { 0 } };
     const char *f = FindFile("models/players.txt");
     if (!f) return;
     char *txt = LoadFileText(f);
     if (!txt) return;
     for (char *line = strtok(txt, "\n"); line; line = strtok(NULL, "\n")) {
-        char *hash = strchr(line, '#'); if (hash) *hash = 0;
+        char *hash = strchr(line, '#');
+        while (hash && hash > line && hash[-1] == '=') hash = strchr(hash + 1, '#');   // 「=#rrggbb」の # はメモではない
+        if (hash) *hash = 0;
         int id = -1; if (sscanf(line, " %d", &id) != 1 || id < 0 || id >= PERSONA_COUNT) continue;
-        char *h = strstr(line, "hair="), *fc = strstr(line, "face=");
-        if (h) { h += 5; gLookCfg[id].hair = !strncmp(h, "short", 5) ? 0 : !strncmp(h, "wave", 4) ? 1 : !strncmp(h, "tied", 4) ? 2 : !strncmp(h, "buzz", 4) ? 3 : -1; }
-        if (fc) gLookCfg[id].face = (signed char)Clamp(atoi(fc + 5), 1, 99);
+        PlayerLook *L = &gLookCfg[id];
+        char *h = strstr(line, "hair="), *fc = strstr(line, "face="), *sk = strstr(line, "skin="), *ey = strstr(line, "eye="), *hc = strstr(line, "haircolor="), *bd = strstr(line, "beard=");
+        if (h) { h += 5; L->hair = !strncmp(h, "short", 5) ? 0 : !strncmp(h, "wave", 4) ? 1 : !strncmp(h, "tied", 4) ? 2 : !strncmp(h, "buzz", 4) ? 3 : -1; }
+        if (fc) L->face = (signed char)Clamp(atoi(fc + 5), 1, 99);
+        if (sk) L->skin = HexCol(sk + 5);
+        if (ey) L->eye = HexCol(ey + 4);
+        if (hc) L->hairCol = HexCol(hc + 10);
+        if (bd) L->beard = (signed char)Clamp(atoi(bd + 6), 0, 2);
     }
     UnloadFileText(txt);
 }
+static const PlayerLook *LookOf(const BodyPose *bp)
+{
+    static const PlayerLook none = { -1, -1, -1, { 0 }, { 0 }, { 0 } };
+    if (!gLookLoaded) LoadLookConfig();
+    return (bp->lookId >= 0 && bp->lookId < PERSONA_COUNT) ? &gLookCfg[bp->lookId] : &none;
+}
 static int HairFor(const BodyPose *bp)   // 0 短髪 1 ウェーブ 2 束ねる 3 坊主寄り
 {
-    if (!gLookLoaded) LoadLookConfig();
-    if (bp->lookId >= 0 && bp->lookId < PERSONA_COUNT && gLookCfg[bp->lookId].hair >= 0) return gLookCfg[bp->lookId].hair;
+    const PlayerLook *L = LookOf(bp);
+    if (L->hair >= 0) return L->hair;
     switch (bp->hairStyle) {
         case HS_CURLY: case HS_CURLY_SHORT: case HS_NADAL: return 1;
         case HS_PONY: case HS_BUN: return 2;
@@ -290,24 +306,75 @@ static int HairFor(const BodyPose *bp)   // 0 短髪 1 ウェーブ 2 束ねる 
         default: return 0;
     }
 }
+// 顔の絵を選手ごとに組み立てる：ひげ（髪の色を混ぜる）の上に顔の絵、瞳の色を入れる。同じ組み合わせは使い回す
+typedef struct { int face, beard; Color eye, hair; Texture2D tex; } FaceEntry;
+static FaceEntry gFaces[48]; static int gFaceN = 0;
 static Texture2D FaceTex(const BodyPose *bp)
 {
-    static Texture2D tex[100]; static signed char state[100];
-    if (!gLookLoaded) LoadLookConfig();
-    int id = bp->female ? 3 : 1;
-    if (bp->lookId >= 0 && bp->lookId < PERSONA_COUNT && gLookCfg[bp->lookId].face > 0) id = gLookCfg[bp->lookId].face;
-    if (state[id] == 0) {
-        state[id] = 1;
-        const char *f = FindFile(TextFormat("models/faces/face_%02d.png", id));
-        if (f) { tex[id] = LoadTexture(f); if (tex[id].id) { SetTextureFilter(tex[id], TEXTURE_FILTER_BILINEAR); state[id] = 2; } }
+    const PlayerLook *L = LookOf(bp);
+    int face = L->face > 0 ? L->face : (bp->female ? 3 : 1);
+    int beard = L->beard >= 0 ? L->beard : (bp->female ? 0 : bp->beard >= 0.40f ? 2 : bp->beard >= 0.15f ? 1 : 0);
+    Color eye = bp->eyeCol, hair = bp->col[BR_HAIR];
+    for (int i = 0; i < gFaceN; i++) {
+        FaceEntry *e = &gFaces[i];
+        if (e->face == face && e->beard == beard && ColorToInt(e->eye) == ColorToInt(eye) && ColorToInt(e->hair) == ColorToInt(hair)) return e->tex;
     }
-    if (state[id] != 2 && id != 1) return FaceTex(&(BodyPose){ .lookId = -1, .female = false });   // なければ 01
-    return state[id] == 2 ? tex[id] : (Texture2D){ 0 };
+    const char *f = FindFile(TextFormat("models/faces/face_%02d.png", face));
+    if (!f) f = FindFile("models/faces/face_01.png");
+    if (!f || gFaceN >= 48) return (Texture2D){ 0 };
+    Image im = LoadImage(f);
+    ImageFormat(&im, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+    Color *px = (Color *)im.data;
+    for (int i = 0; i < im.width * im.height; i++) {   // 瞳：決まった色（赤紫）のところを、選手の瞳の色に
+        Color c = px[i];
+        int key = (c.r < c.b ? c.r : c.b) - c.g;   // 赤紫らしさ
+        if (c.a > 0 && key > 60) {
+            float k = Clamp((key - 60) / 140.0f, 0.0f, 1.0f);
+            px[i].r = (unsigned char)(c.r + (eye.r - c.r) * k); px[i].g = (unsigned char)(c.g + (eye.g - c.g) * k); px[i].b = (unsigned char)(c.b + (eye.b - c.b) * k);
+        }
+    }
+    Image out = im;
+    if (beard > 0) {   // ひげ：髪の色を暗くした色で、顔の絵の下に
+        const char *bf = FindFile(TextFormat("models/faces/beard_%d.png", beard));
+        if (bf) {
+            Image bi = LoadImage(bf);
+            ImageFormat(&bi, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
+            Color *bp2 = (Color *)bi.data;
+            for (int i = 0; i < bi.width * bi.height; i++) { bp2[i].r = (unsigned char)(hair.r * 0.55f); bp2[i].g = (unsigned char)(hair.g * 0.55f); bp2[i].b = (unsigned char)(hair.b * 0.55f); }
+            if (bi.width != im.width || bi.height != im.height) ImageResize(&bi, im.width, im.height);
+            {   // 顔の絵をひげの上に重ねる（アルファで合成。raylib の版で関数の名前が違うので自分で）
+                Color *d = (Color *)bi.data, *sp = (Color *)im.data;
+                for (int i = 0; i < im.width * im.height; i++) {
+                    float sa = sp[i].a / 255.0f, da = d[i].a / 255.0f, oa = sa + da * (1.0f - sa);
+                    if (oa <= 0.0f) continue;
+                    d[i].r = (unsigned char)((sp[i].r * sa + d[i].r * da * (1.0f - sa)) / oa);
+                    d[i].g = (unsigned char)((sp[i].g * sa + d[i].g * da * (1.0f - sa)) / oa);
+                    d[i].b = (unsigned char)((sp[i].b * sa + d[i].b * da * (1.0f - sa)) / oa);
+                    d[i].a = (unsigned char)(oa * 255.0f);
+                }
+            }
+            UnloadImage(im);
+            out = bi;
+        }
+    }
+    Texture2D t = LoadTextureFromImage(out);
+    UnloadImage(out);
+    SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
+    gFaces[gFaceN++] = (FaceEntry){ face, beard, eye, hair, t };
+    return t;
 }
 
-void DrawPartsModel(const BodyPose *bp)
+void DrawPartsModel(const BodyPose *bpIn)
 {
     if (!PartsModelReady()) return;
+    BodyPose bpL = *bpIn;   // 選手ごとの色（models/players.txt）を上書きした写し
+    const BodyPose *bp = &bpL;
+    {
+        const PlayerLook *L = LookOf(bpIn);
+        if (L->skin.a) bpL.col[BR_SKIN] = L->skin;
+        if (L->eye.a) bpL.eyeCol = L->eye;
+        if (L->hairCol.a) bpL.col[BR_HAIR] = L->hairCol;
+    }
     const Color *pal = PaletteFor(bp);
     bool outline = LitOutlinePass();
     int hair = HairFor(bp);
