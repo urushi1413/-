@@ -677,6 +677,7 @@ int main(void)
     bool showStats = false;        // Tab：このセッションの統計
     int  assistLevel = 2;          // H：手がかり表示 2=立つ場所＋タイミング 1=タイミングだけ 0=なし
     PlayStyle style = STYLE_CASUAL;  // N：難易度。初めての人は補助あり（カジュアル）から（設定ファイルがあればそちら）
+    int  sugPending = 0;           // 提案のページから試合のスタッツを見に戻った：結果の画面で Enter を押したら、その提案をもう一度出す
     int  suggestKind = 0;          // 提案のページ（menuPage 6）の中身：1 = リアルに挑戦、2 = 補助ありにする、3 = 初めての試合へ
     int  sugLosses = 0;            // 提案 2 の文に出す連敗の数
     int  menuPageReq = -1;         // メニューを開くときに出すページ（提案のページを試合の側から開くため。-1 = ふつう）
@@ -987,7 +988,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -1009,6 +1010,7 @@ int main(void)
                 items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_BODY; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
+                if (suggestKind != 3) items[n++] = MI_SUG_STATS;   // 試合の後の提案：スタッツを見てから決められる
             } else if (menuPage == 7) {   // ルール
                 items[n++] = MI_RULE_NET; items[n++] = MI_RULE_BODY; items[n++] = MI_BACK;
             } else if (menuPage == 0) {
@@ -1115,6 +1117,9 @@ int main(void)
             }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; selWant = MI_KEYS; n = 0; activate = false; change = 0;
+            } else if (IsKeyPressed(KEY_TAB) && menuPage == 6 && suggestKind != 3) {   // 提案：Tab で試合のスタッツへ
+                for (int q = 0; q < n; q++) if (items[q] == MI_SUG_STATS) menuSel = q;
+                activate = true; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 6) {   // 提案：Esc は「いいえ」と同じ
                 for (int q = 0; q < n; q++) if (items[q] == MI_SUG_NO) menuSel = q;
                 activate = true; change = 0;
@@ -1129,7 +1134,7 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it >= MI_KEY0;
+            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it == MI_SUG_STATS || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -1225,6 +1230,12 @@ int main(void)
                 else if (it >= MI_KEY0) { keyCap = it - MI_KEY0; while (GetKeyPressed() > 0) { } }   // 次に押されたキーを割り当てる
                 else if (it == MI_BACK && menuPage == 5) { menuPage = 2; selWant = MI_KEYS; }
                 else if (it == MI_PG_RULES) { menuPage = 7; menuSel = 0; }
+                else if (it == MI_SUG_STATS) {   // 提案のページ：試合の結果の画面へ戻って、試合のスタッツを開く。Enter でまた提案を出す
+                    sugPending = suggestKind; suggestKind = 0;
+                    menuPage = 0; menuSel = 0;
+                    app = APP_PLAY; inputLockT = INPUT_LOCK;
+                    showStats = false; showSummary = true;
+                }
                 else if (it == MI_SUG_YES || it == MI_SUG_NO) {   // 提案のページ：はい／いいえ
                     bool yes = it == MI_SUG_YES;
                     if (suggestKind == 1 && yes) style = STYLE_REAL;
@@ -1412,6 +1423,7 @@ int main(void)
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
+                    case MI_SUG_STATS: label = TR("See match stats first (Tab)", "先に試合のスタッツを見る（Tab）"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
                     case MI_BODY:      label = TR("Player body", "選手の体"); value = !gBodyModel ? TR("SHAPES (code)", "図形（今まで）") : BodyModelReady() ? TR("BLENDER MODEL (test)", "Blender のモデル（試作）") : TR("MODEL NOT FOUND", "モデルが見つからない"); break;
                     case MI_SHAKE:     label = TR("Hit impact", "芯の手応え"); value = gImpact == 0 ? TR("OFF", "なし") : gImpact == 1 ? TR("PAUSE ONLY", "一瞬止まるだけ") : TR("PAUSE + SHAKE", "止まる＋画面が揺れる"); break;
@@ -1641,7 +1653,11 @@ int main(void)
             else { ai.level = k; restart = true; }
         }
         bool suggested = false;   // 試合の後の提案のページを開いた（このフレームは次の試合にしない。continue は入力の更新を飛ばすので使わない）
-        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle) {
+        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle && sugPending) {   // スタッツを見終わった：さっきの提案をもう一度
+            suggestKind = sugPending; sugPending = 0; suggested = true;
+            app = APP_PAUSE; menuPageReq = 6; menuSel = 0; mouseLocked = false; EnableCursor();
+        }
+        else if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle) {
             // 提案：補助ありで（補助を使わずに）勝ったら、リアルを 1 回だけ勧める
             if (!hintRealDone && style == STYLE_CASUAL && score.sets[0] > score.sets[1] && !matchAssisted) {
                 hintRealDone = true; SaveSettings();
@@ -1690,6 +1706,7 @@ int main(void)
             }
         }
         if (restart) {
+            sugPending = 0;
             pointMsg = ""; scoreCall[0] = 0; serveMsg = ""; rageMsgT = 0.0f; toastT = 0.0f; hawkT = 10.0f; hawkPending = false;   // 前の試合のテロップを消す
             feedTimer = 0.5f;
             retScore = (Score){ .server = 1 }; retPhase = RET_WAIT;
@@ -2427,7 +2444,7 @@ int main(void)
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
                         ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, SHOTS[type].name, P.lastKmh, c.quality, false, false, c.volley, c.isReturn, P.pos, c.height, ai.pos, Vector3Length(ai.vel));
-                        if (mode == MODE_MATCH && gYouPersona && SfxHasRoar(gYouPersona) && ClearWinner(&ball, ai.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)
+                        if (mode == MODE_MATCH && gYouPersona && SfxHasRoar(gYouPersona) && !(c.volley && !c.overhead) && P.pos.z > VOICE_NET_Z && ClearWinner(&ball, ai.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)   // ボレー・ネット前では叫ばない
                             SfxHitRoar(gYouPersona, Vector3Distance(cam.position, P.pos));   // 自分がジョコビッチを使っているときも
                         else
                         SfxHit(c.quality, P.lastKmh, IsSliceShot(type), playerGrunt,
@@ -2571,7 +2588,7 @@ int main(void)
                     youMinDist = 99.0f;
                     P.anim.splitT = bot.anim.splitT = SPLIT_TIME;   // 相手が打った：スプリットステップ
                     // 決まったと確信したショット：雄叫び（ジョコビッチ）。いつもではなく、大事なポイントほど
-                    if (mode == MODE_MATCH && SfxHasRoar(ai.persona) && ClearWinner(&ball, P.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)
+                    if (mode == MODE_MATCH && SfxHasRoar(ai.persona) && !(ai.anim.lastContact.volley && !ai.anim.lastContact.overhead) && ai.pos.z < -VOICE_NET_Z && ClearWinner(&ball, P.pos) && RandRange(0.0f, 1.0f) < 0.5f + 0.5f * gPointImportance)   // ボレー・ネット前では叫ばない
                         SfxHitRoar(ai.persona, Vector3Distance(cam.position, ai.pos));
                     else
                     SfxHit(ai.anim.lastContact.quality, ai.lastKmh, IsSliceShot(ai.lastType), aiGrunt,
