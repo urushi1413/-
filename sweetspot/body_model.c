@@ -13,6 +13,19 @@
 
 void LitVertexExt(Vector3 p, Vector3 n, Color c);   // render.c
 
+// raylib の版の違い：6 から骨の情報は Model.skeleton にまとまり、頂点の骨の番号は boneIndices になった（5.5 は Model.bones・Mesh.boneIds）
+#if RAYLIB_VERSION_MAJOR >= 6
+#define PM_BONECOUNT(m)   ((int)(m).skeleton.boneCount)
+#define PM_BONES(m)       ((m).skeleton.bones)
+#define PM_BINDPOSE(m)    ((m).skeleton.bindPose)
+#define PM_BONEIDS(mesh)  ((mesh)->boneIndices)
+#else
+#define PM_BONECOUNT(m)   ((m).boneCount)
+#define PM_BONES(m)       ((m).bones)
+#define PM_BINDPOSE(m)    ((m).bindPose)
+#define PM_BONEIDS(mesh)  ((mesh)->boneIds)
+#endif
+
 #define PM_PATH "models/player.glb"
 #define PM_MAX_BONES 64
 #define PM_MAX_MATS  32
@@ -112,7 +125,7 @@ static const char *TAILBONE[][2] = {   // しっぽの位置を知るための�
 };
 static int BoneIndex(const char *name)
 {
-    for (int b = 0; b < gPM.boneCount; b++) if (!strcmp(gPM.bones[b].name, name)) return b;
+    for (int b = 0; b < PM_BONECOUNT(gPM); b++) if (!strcmp(PM_BONES(gPM)[b].name, name)) return b;
     return -1;
 }
 
@@ -169,7 +182,7 @@ bool BodyModelReady(void)
     if (!path) { TraceLog(LOG_WARNING, "BODY MODEL: %s not found", PM_PATH); return false; }
     char pathCopy[512]; snprintf(pathCopy, sizeof(pathCopy), "%s", path);
     gPM = LoadModel(pathCopy);
-    if (gPM.meshCount == 0 || gPM.boneCount == 0 || gPM.boneCount > PM_MAX_BONES) { TraceLog(LOG_WARNING, "BODY MODEL: no skinned mesh"); return false; }
+    if (gPM.meshCount == 0 || PM_BONECOUNT(gPM) == 0 || PM_BONECOUNT(gPM) > PM_MAX_BONES) { TraceLog(LOG_WARNING, "BODY MODEL: no skinned mesh"); return false; }
     // マテリアルの名前（glb の JSON）
     for (int i = 0; i < PM_MAX_MATS; i++) gPMRole[i] = -1;
     int sz = 0; unsigned char *raw = LoadFileData(pathCopy, &sz);
@@ -186,12 +199,12 @@ bool BodyModelReady(void)
     }
     if (raw) UnloadFileData(raw);
     // 骨：関節の対応と、元の姿勢の向き
-    for (int b = 0; b < gPM.boneCount; b++) { gPMBoneJ[b][0] = gPMBoneJ[b][1] = -1; gPMBoneRef[b] = 0; gPMBoneThick[b] = 0; }
+    for (int b = 0; b < PM_BONECOUNT(gPM); b++) { gPMBoneJ[b][0] = gPMBoneJ[b][1] = -1; gPMBoneRef[b] = 0; gPMBoneThick[b] = 0; }
     for (int k = 0; k < (int)(sizeof(BMAP) / sizeof(BMAP[0])); k++) {
         int b = BoneIndex(BMAP[k].name), tb = BoneIndex(TAILBONE[k][1]);
         if (b < 0 || tb < 0) continue;
         gPMBoneJ[b][0] = BMAP[k].head; gPMBoneJ[b][1] = BMAP[k].tail; gPMBoneRef[b] = BMAP[k].ref; gPMBoneThick[b] = BMAP[k].thick;
-        Vector3 h = gPM.bindPose[b].translation, t = gPM.bindPose[tb].translation;
+        Vector3 h = PM_BINDPOSE(gPM)[b].translation, t = PM_BINDPOSE(gPM)[tb].translation;
         Xf f; Frame(h, t, (Vector3){ 1, 0, 0 }, (Vector3){ 0, 0, 1 }, f.m, &gPMBindLen[b]);
         // 逆：回転は転置、平行移動は -R^T h
         Xf inv;
@@ -204,7 +217,7 @@ bool BodyModelReady(void)
     for (int i = 0; i < gPM.meshCount; i++) if (gPM.meshes[i].vertexCount > gPMMaxVerts) gPMMaxVerts = gPM.meshes[i].vertexCount;
     gPMPos = malloc(sizeof(Vector3) * gPMMaxVerts); gPMNrm = malloc(sizeof(Vector3) * gPMMaxVerts);
     int tris = 0; for (int i = 0; i < gPM.meshCount; i++) tris += gPM.meshes[i].triangleCount;
-    TraceLog(LOG_INFO, "BODY MODEL: %s  meshes %d  bones %d  triangles %d", pathCopy, gPM.meshCount, gPM.boneCount, tris);
+    TraceLog(LOG_INFO, "BODY MODEL: %s  meshes %d  bones %d  triangles %d", pathCopy, gPM.meshCount, PM_BONECOUNT(gPM), tris);
     gPMOk = true;
     return true;
 }
@@ -214,12 +227,12 @@ void DrawBodyModel(const BodyPose *bp)
     if (!BodyModelReady()) return;
     // 骨ごとの動き（元の姿勢 → 今の姿勢）
     static Xf skin[PM_MAX_BONES]; static bool done[PM_MAX_BONES];
-    for (int b = 0; b < gPM.boneCount; b++) done[b] = false;
+    for (int b = 0; b < PM_BONECOUNT(gPM); b++) done[b] = false;
     for (int pass = 0; pass < 2; pass++)
-    for (int b = 0; b < gPM.boneCount; b++) {
+    for (int b = 0; b < PM_BONECOUNT(gPM); b++) {
         if (done[b]) continue;
         if (gPMBoneJ[b][0] < 0) {   // 使わない骨：親と同じに動く（親がまだなら次の回で）
-            int p = gPM.bones[b].parent;
+            int p = PM_BONES(gPM)[b].parent;
             if (p < 0) { skin[b] = (Xf){ { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }, { 0, 0, 0 } }; done[b] = true; }
             else if (done[p]) { skin[b] = skin[p]; done[b] = true; }
             continue;
@@ -235,7 +248,7 @@ void DrawBodyModel(const BodyPose *bp)
         skin[b] = XfCompose(&cur, &gPMBindInv[b]);
         done[b] = true;
     }
-    for (int b = 0; b < gPM.boneCount; b++) if (!done[b]) skin[b] = (Xf){ { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }, { 0, 0, 0 } };
+    for (int b = 0; b < PM_BONECOUNT(gPM); b++) if (!done[b]) skin[b] = (Xf){ { { 1, 0, 0 }, { 0, 1, 0 }, { 0, 0, 1 } }, { 0, 0, 0 } };
 
     // 体の座標 → 世界（render.c の W と同じ：左右の反転・身長・向き）
     float sx = bp->facingNegZ ? 1.0f : -1.0f;
@@ -245,7 +258,7 @@ void DrawBodyModel(const BodyPose *bp)
 
     for (int mi = 0; mi < gPM.meshCount; mi++) {
         Mesh *m = &gPM.meshes[mi];
-        if (!m->vertices || !m->boneIds || !m->boneWeights) continue;
+        if (!m->vertices || !PM_BONEIDS(m) || !m->boneWeights) continue;
         int mat = gPM.meshMaterial ? gPM.meshMaterial[mi] : 0;
         int role = (mat >= 0 && mat < PM_MAX_MATS) ? gPMRole[mat] : -1;
         Color col = role >= 0 ? bp->col[role] : gPM.materials[mat].maps[MATERIAL_MAP_DIFFUSE].color;
@@ -256,7 +269,7 @@ void DrawBodyModel(const BodyPose *bp)
             Vector3 p = { 0 }, n = { 0 };
             for (int q = 0; q < 4; q++) {
                 float w = m->boneWeights[4 * v + q]; if (w <= 0.0f) continue;
-                int bi = m->boneIds[4 * v + q]; if (bi >= gPM.boneCount) continue;
+                int bi = PM_BONEIDS(m)[4 * v + q]; if (bi >= PM_BONECOUNT(gPM)) continue;
                 p = Vector3Add(p, Vector3Scale(XfMul(&skin[bi], p0), w));
                 n = Vector3Add(n, Vector3Scale(XfDir(&skin[bi], n0), w));
             }
