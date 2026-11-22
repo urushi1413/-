@@ -42,6 +42,7 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
 }
 void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c・parts_model.c から
 bool LitOutlinePass(void) { return gOutline; }
+#define SKIN_HEADBASE 0.10f   // スキニングのモデル：頭の付け根（首の骨のしっぽ）を、頭の中心からこれだけ下に
 void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol)   // スキニングのシェーダーに、同じ光と輪郭線を渡す
 {
     *L = gLightL; *amb = gLightAmb; *diff = gLightDiff; *outlineW = OUTLINE_W; *outlineCol = OUTLINE_COL;
@@ -2287,7 +2288,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         bp.j[BJ_PELVIS] = pelvis; bp.j[BJ_WAIST] = waist; bp.j[BJ_CHEST] = chest; bp.j[BJ_NECK] = neckB;
         bp.j[BJ_HEAD] = head; bp.j[BJ_HEADTOP] = Vector3Add(head, Vector3Scale(uU, 0.12f));
         if (partsM || skinM) {   // パーツモデル・スキニング：首を短く（首の付け根から頭の中心までの 3 割で頭のパーツ）。頭の向きは顔の上
-            bp.j[BJ_HEADBASE] = Vector3Lerp(neckB, head, 0.30f);
+            bp.j[BJ_HEADBASE] = skinM ? Vector3Subtract(head, Vector3Scale(uU, SKIN_HEADBASE)) : Vector3Lerp(neckB, head, 0.30f);   // スキニング：頭の付け根は頭の中心の 10cm 下（首をちゃんと出す）
             bp.j[BJ_HEADTOP] = Vector3Add(bp.j[BJ_HEADBASE], Vector3Scale(uU, 0.30f));
         }
         Vector3 hipR = { hcy, 0.0f, -hsy };

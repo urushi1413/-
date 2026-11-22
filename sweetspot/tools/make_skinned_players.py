@@ -28,7 +28,7 @@ SLIM_TORSO_W = 0.86   # 胴の横幅
 SLIM_TORSO_D = 0.86   # 胴の厚み
 SLIM_ARM     = 0.80   # 腕の太さ
 SLIM_LEG     = 0.92   # 脚の太さ
-TRAP_K       = 0.45   # 僧帽筋（首から肩への盛り上がり）の高さの倍率
+TRAP_K       = 0.55   # 僧帽筋（首から肩への盛り上がり）の高さの倍率（首は動かさない）
 NECK_SLIM    = 0.78   # 首の太さ
 HEAD_W       = 0.86   # 頭（顔）の横幅
 JAW_NARROW   = 0.80   # あごのあたりの横幅（頬から下を細く）
@@ -174,7 +174,7 @@ def apply_body(arm, body, prm):
     B = {n: bone_ws(arm, n) for n in BONE_ALIASES}
     side = lambda n: 1.0 if n.endswith(".L") else (-1.0 if n.endswith(".R") else 0.0)
     sh_z = (B["upperarm.L"][0].z + B["upperarm.R"][0].z) * 0.5   # 肩の高さ
-    neck_r = 0.06
+    neck_r = 0.085   # これより外（肩寄り）だけ低くする
     for v, w in zip(body.data.vertices, W):
         p = mw @ v.co
         d = Vector((0, 0, 0))
@@ -199,7 +199,7 @@ def apply_body(arm, body, prm):
                 d.x += wt * sd * (sh - 1.0) * SHOULDER_DX * f
         p = p + d
         # 僧帽筋：肩の高さより上の、首のまわり（胸の上・鎖骨）の盛り上がりを低く
-        tw = sum(w.get(n2, 0.0) for n2 in ("spine3", "clavicle.R", "clavicle.L", "neck"))
+        tw = sum(w.get(n2, 0.0) for n2 in ("spine3", "clavicle.R", "clavicle.L")) * (1.0 - min(w.get("neck", 0.0) * 2.0, 1.0))   # 首は動かさない
         if tw > 0.2 and p.z > sh_z and abs(p.x) > neck_r:
             k2 = smooth((abs(p.x) - neck_r) / 0.05) * min(tw, 1.0)
             p.z = sh_z + (p.z - sh_z) * lerp(1.0, TRAP_K, k2)
