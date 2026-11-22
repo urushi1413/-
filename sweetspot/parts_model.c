@@ -112,7 +112,7 @@ static const PartMap PMAP[] = {
 #define PMAP_N ((int)(sizeof(PMAP) / sizeof(PMAP[0])))
 
 // パレットのマス（tools/make_player.py の PAL と同じ）
-enum { PC_SKIN = 0, PC_SHIRT, PC_ACCENT, PC_PANTS, PC_SHOES, PC_SOCKS, PC_HAIR, PC_WRIST, PC_EYE, PC_SOLE };
+enum { PC_SKIN = 0, PC_SHIRT, PC_ACCENT, PC_PANTS, PC_SHOES, PC_SOCKS, PC_HAIR, PC_WRIST, PC_EYE, PC_SOLE, PC_NOSE };
 
 static const char *FindFile(const char *rel)
 {
@@ -252,7 +252,17 @@ static const Color *PaletteFor(const BodyPose *bp)
         if (state[id] == 2) return filePal[id];
     }
     memcpy(pal, gPal, sizeof(pal));
-    pal[PC_SKIN] = bp->col[BR_SKIN]; pal[PC_SHIRT] = bp->col[BR_SHIRT]; pal[PC_ACCENT] = bp->col[BR_ACCENT];
+    {   // 肌：暖色寄りで少し彩度を上げる（血色）。鼻はごく薄い赤み（7%）
+        Color sk = bp->col[BR_SKIN];
+        Vector3 hsv = ColorToHSV(sk);
+        if (hsv.x > 22.0f && hsv.x < 60.0f) hsv.x -= 3.0f;   // 黄みを少し赤みへ
+        hsv.y = Clamp(hsv.y * 1.15f + 0.02f, 0.0f, 0.75f);
+        hsv.z = Clamp(hsv.z * 1.02f, 0.0f, 1.0f);
+        Color w = ColorFromHSV(hsv.x, hsv.y, hsv.z);
+        pal[PC_SKIN] = w;
+        pal[PC_NOSE] = (Color){ (unsigned char)(w.r + (220 - w.r) * 0.07f), (unsigned char)(w.g + (80 - w.g) * 0.07f), (unsigned char)(w.b + (70 - w.b) * 0.07f), 255 };
+    }
+ pal[PC_SHIRT] = bp->col[BR_SHIRT]; pal[PC_ACCENT] = bp->col[BR_ACCENT];
     pal[PC_PANTS] = bp->col[BR_SHORTS]; pal[PC_SHOES] = bp->col[BR_SHOES]; pal[PC_SOCKS] = bp->col[BR_SOCKS];
     pal[PC_HAIR] = bp->col[BR_HAIR]; pal[PC_WRIST] = bp->col[BR_WRIST]; pal[PC_EYE] = bp->col[BR_EYE]; pal[PC_SOLE] = bp->col[BR_SOLE];
     return pal;
@@ -313,7 +323,7 @@ static Texture2D FaceTex(const BodyPose *bp)
 {
     const PlayerLook *L = LookOf(bp);
     int face = L->face > 0 ? L->face : (bp->female ? 3 : 1);
-    int beard = L->beard >= 0 ? L->beard : (bp->female ? 0 : bp->beard >= 0.40f ? 2 : bp->beard >= 0.15f ? 1 : 0);
+    int beard = L->beard >= 0 ? L->beard : 0;   // 剃り跡・ひげは初めはなし。players.txt の beard=1（剃り跡）・2（ひげ）で選手ごとに付ける
     Color eye = bp->eyeCol, hair = bp->col[BR_HAIR];
     for (int i = 0; i < gFaceN; i++) {
         FaceEntry *e = &gFaces[i];
@@ -334,13 +344,13 @@ static Texture2D FaceTex(const BodyPose *bp)
         }
     }
     Image out = im;
-    if (beard > 0) {   // ひげ：髪の色を暗くした色で、顔の絵の下に
+    if (beard > 0) {   // 剃り跡（絵の青灰色のまま）・ひげ（髪の色を暗くした色）を、顔の絵の下に
         const char *bf = FindFile(TextFormat("models/faces/beard_%d.png", beard));
         if (bf) {
             Image bi = LoadImage(bf);
             ImageFormat(&bi, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
             Color *bp2 = (Color *)bi.data;
-            for (int i = 0; i < bi.width * bi.height; i++) { bp2[i].r = (unsigned char)(hair.r * 0.55f); bp2[i].g = (unsigned char)(hair.g * 0.55f); bp2[i].b = (unsigned char)(hair.b * 0.55f); }
+            if (beard == 2) for (int i = 0; i < bi.width * bi.height; i++) { bp2[i].r = (unsigned char)(hair.r * 0.55f); bp2[i].g = (unsigned char)(hair.g * 0.55f); bp2[i].b = (unsigned char)(hair.b * 0.55f); }
             if (bi.width != im.width || bi.height != im.height) ImageResize(&bi, im.width, im.height);
             {   // 顔の絵をひげの上に重ねる（アルファで合成。raylib の版で関数の名前が違うので自分で）
                 Color *d = (Color *)bi.data, *sp = (Color *)im.data;
