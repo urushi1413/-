@@ -2287,7 +2287,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         bp.j[BJ_PELVIS] = pelvis; bp.j[BJ_WAIST] = waist; bp.j[BJ_CHEST] = chest; bp.j[BJ_NECK] = neckB;
         bp.j[BJ_HEAD] = head; bp.j[BJ_HEADTOP] = Vector3Add(head, Vector3Scale(uU, 0.12f));
         if (partsM || skinM) {   // パーツモデル・スキニング：首を短く（首の付け根から頭の中心までの 3 割で頭のパーツ）。頭の向きは顔の上
-            bp.j[BJ_HEADBASE] = Vector3Lerp(neckB, head, 0.30f);   // スキニングでも首から上はパーツモデルなので同じ
+            bp.j[BJ_HEADBASE] = Vector3Lerp(neckB, head, 0.30f);
             bp.j[BJ_HEADTOP] = Vector3Add(bp.j[BJ_HEADBASE], Vector3Scale(uU, 0.30f));
         }
         Vector3 hipR = { hcy, 0.0f, -hsy };
@@ -2325,8 +2325,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         bp.eyeCol = a->eyeCol.a ? a->eyeCol : (Color){ 95, 62, 38, 255 }; bp.beard = a->beard;
         bp.thickArm = bAr; bp.thickLeg = bLg; bp.thickBody = bBu;
         bp.pos = pos; bp.facingNegZ = facingNegZ; bp.mx = MX; bp.sc = sc;
-        if (partsM) DrawPartsModel(&bp);
-        else { DrawBodyModel(&bp); if (PartsModelReady()) DrawPartsHead(&bp); }   // スキニング：首から下はスキニング、首から上はパーツモデル
+        if (partsM) DrawPartsModel(&bp); else DrawBodyModel(&bp);
     }
     Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
     Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));

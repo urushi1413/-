@@ -183,8 +183,9 @@ def hairline(d, style="hair_short"):
     c = math.cos(az)                              # 前 1、横 0、後ろ -1
     front, side, back = 0.50, 0.05, -0.62
     if style == "hair_buzz": front = 0.56
+    if style == "hair_wave": front, side, back = 0.42, -0.25, -0.85   # ウェーブ：耳と襟足までかぶる
     y0 = side + (front - side) * max(c, 0) - (side - back) * max(-c, 0) * (1.0 if style != "hair_tied" else 0.9)
-    if abs(c) < 0.5 and d.z < 0.2: y0 = min(y0, 0.10)   # 耳の上（もみあげの所）
+    if abs(c) < 0.5 and d.z < 0.2 and style != "hair_wave": y0 = min(y0, 0.10)   # 耳の上（もみあげの所）
     return d.y - y0
 
 def build_head(b):
@@ -297,8 +298,8 @@ def ponytail(b):
     """後ろで束ねた髪：結び目（ゴム）から下へ垂れる。ゴムはリストバンドの色"""
     root = head_shape(dir_from(-8, 180), 1.03 + HAIR_THICK)
     b2 = Builder()
-    b2.capsule([(0.0, 0.034, 0.030, "wrist"), (0.016, 0.034, 0.030, "wrist"), (0.016, 0.030, 0.027, "hair"), (0.09, 0.042, 0.034, "hair"),
-                (0.20, 0.033, 0.026, "hair"), (0.26, 0.012, 0.010, "hair")], dome0=True, dome1=False, n=12)
+    b2.capsule([(0.0, 0.032, 0.028, "wrist"), (0.016, 0.032, 0.028, "wrist"), (0.016, 0.028, 0.025, "hair"), (0.10, 0.040, 0.032, "hair"),
+                (0.24, 0.032, 0.025, "hair"), (0.34, 0.010, 0.008, "hair")], dome0=True, dome1=False, n=12)
     R = Matrix.Rotation(math.radians(162), 3, "X")   # 下へ、少し後ろへ
     base = len(b.v)
     for v in b2.v: b.v.append(root + R @ v)
@@ -307,23 +308,28 @@ def ponytail(b):
 
 CROWN = dir_from(68, 180)   # つむじ（頭の上の後ろ寄り）
 def build_hair(b, style):
-    if style == "hair_buzz":   # 坊主寄り：頭に沿った薄い髪だけ
-        build_shell(b, style, HAIR_THICK * 0.30); return
-    th = HAIR_THICK * (1.5 if style == "hair_wave" else 1.0)
-    build_shell(b, style, th)
-    if style == "hair_short":   # 短髪：つむじから外へ流れる 8 束（前髪へ 3・横へ 2・後ろへ 3）
-        for az in (-38, 0, 38): tuft(b, style, th, CROWN, dir_from(36, az), 0.42, 0.05, bulge=0.03)
-        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(8, sx * 100), 0.40, 0.02, bulge=0.025)
-        for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-28, az), 0.38, 0.02, bulge=0.025)
-    elif style == "hair_wave":  # ウェーブ：同じ流れで、ふくらんで、うねる 8 束
-        for az in (-40, 0, 40): tuft(b, style, th, CROWN, dir_from(30, az), 0.50, 0.10, bulge=0.08, curl=0.35)
-        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(-2, sx * 102), 0.46, 0.06, bulge=0.07, curl=0.35)
-        for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-34, az), 0.44, 0.05, bulge=0.06, curl=0.35)
-    elif style == "hair_tied":  # 長めを後ろで束ねる：前から後ろへ、結び目に集まる 7 束
+    """髪型ごとに、ベースの髪の厚み・生え際・毛束の大きさと浮き方をはっきり変える（遠くからでも見分けられるように）"""
+    if style == "hair_buzz":   # 坊主寄り：頭に沿ったごく薄い髪だけ
+        build_shell(b, style, HAIR_THICK * 0.22); return
+    if style == "hair_short":   # 短髪：薄く頭に沿い、前髪だけ少し立てる。つむじから外へ流れる 7 束
+        th = HAIR_THICK * 0.65
+        build_shell(b, style, th)
+        for az in (-34, 0, 34): tuft(b, style, th, CROWN, dir_from(40, az), 0.36, 0.09, bulge=0.02)   # 前髪：先を立てる
+        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(16, sx * 98), 0.32, 0.01, bulge=0.012)
+        for az in (160, 200):   tuft(b, style, th, CROWN, dir_from(-20, az), 0.32, 0.01, bulge=0.012)
+    elif style == "hair_wave":  # ウェーブ：厚く大きくふくらみ、耳と襟足にかぶる。うねる 8 束
+        th = HAIR_THICK * 2.0
+        build_shell(b, style, th)
+        for az in (-42, 0, 42): tuft(b, style, th, CROWN, dir_from(22, az), 0.62, 0.16, bulge=0.13, curl=0.55)
+        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(-22, sx * 100), 0.58, 0.10, bulge=0.12, curl=0.55)   # 耳にかぶる
+        for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-48, az), 0.56, 0.08, bulge=0.11, curl=0.55)   # 襟足にかぶる
+    elif style == "hair_tied":  # 長めを後ろで束ねる：薄くなでつけて、結び目に集まる 7 束と、長いポニーテール
+        th = HAIR_THICK * 0.55
+        build_shell(b, style, th)
         knot = dir_from(-8, 180)
-        for az in (-40, -14, 14, 40): tuft(b, style, th, dir_from(44, az), knot, 0.42, 0.0, bulge=0.02)
-        for sx in (-1, 1):            tuft(b, style, th, dir_from(12, sx * 85), knot, 0.40, 0.0, bulge=0.015)
-        tuft(b, style, th, dir_from(80, 0), knot, 0.40, 0.0, bulge=0.03)
+        for az in (-40, -14, 14, 40): tuft(b, style, th, dir_from(44, az), knot, 0.38, 0.0, bulge=0.012)
+        for sx in (-1, 1):            tuft(b, style, th, dir_from(12, sx * 85), knot, 0.36, 0.0, bulge=0.010)
+        tuft(b, style, th, dir_from(80, 0), knot, 0.36, 0.0, bulge=0.015)
         ponytail(b)
 
 def build(name, L):
