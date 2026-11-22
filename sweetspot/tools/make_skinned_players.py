@@ -9,7 +9,7 @@
 #     元の名前は Rigify（DEF-…）・Mixamo（mixamorig:…）・UE（upperarm_r …）などを見て探す（BONE_ALIASES）。ゲームはこの決まった名前だけを見る
 #   ・指などの細かい骨は、重みを親（手・足）に足して消す（骨の数を減らす：ブラウザ版の GPU で使える数に収める）
 #   ・服は体と一体のメッシュのまま、面ごとに UV をパレット（models/palette.png）のマスに置いて色分けする（シャツ・パンツ・靴下・靴・肌）
-#   ・髪・鼻・顔の絵を貼る面は、今のパーツモデルの作り方を流用して、元の頭の形に沿わせて作る（頭の骨に重み 100%）
+#   ・頭は作り替える：元の頭は縮めて中に隠し、パーツモデルと同じ形の頭（卵形・あご・鼻・耳）と、顔の絵を貼る面・髪を付ける（頭の骨に重み 100%）
 #   ・体型（肩幅・胴の厚み・腕・脚・腰回り）はゲームの選手の値（data.c の BODY）を読んで頂点を動かす。頭の倍率は HEAD_SCALE。
 #     身長はゲームが関節の位置で合わせる（モデルは元の身長のまま）
 import bpy, bmesh, os, re, math, sys
@@ -32,6 +32,10 @@ WAIST_K      = 0.55   # シャツとパンツの境（腰の骨の長さに対�
 COLLAR_T     = 0.30   # 襟：首の骨の付け根からこの割合まではシャツ
 COLLAR_BAND  = 0.012  # 襟の差し色の幅（m）
 HAIR_THICK   = 0.055  # ベースの髪の厚み（頭の半径に対する割合）
+NEW_HEAD_K   = 0.95   # 作り替えた頭の大きさ（元の頭の横幅に対する倍率）
+HEAD_DROP    = 0.20   # 作り替えた頭を下げる量（頭の半径の単位）
+BASE_HEAD_SHRINK = 0.40   # 元の頭を縮める倍率（新しい頭の中に隠す）
+NECK_SLIM    = 0.80   # 首の太さの倍率
 # ============================================================
 
 BONE_ALIASES = {   # 決まった名前 → 元のモデルの骨の名前の候補（大文字小文字は区別しない）
@@ -315,16 +319,14 @@ def to_world(c, right, up, fwd, v):   # 頭の座標（x 右・y 上・z 前）�
     return c + right * v.x + up * v.y + fwd * v.z
 
 def build_head_extras(arm, body, hair_style):
+    """頭を作り替える：元のモデルの頭（角ばった箱形で、顔の絵が浮いて見えた）は縮めて中に隠し、
+       パーツモデルと同じ形の頭（卵形・あご・鼻・耳。なめらかな面）を頭の骨に付ける。顔の絵と髪も同じ形に沿わせる"""
     c, R, right, up, fwd, radius = head_frame(arm, body)
-    # make_player の頭の形の関数を、実際の頭の表面（光線で測った半径）に置き換える
-    def head_shape(d, rho=1.0):
-        dw = (right * d.x + up * d.y + fwd * d.z).normalized()
-        r = radius(dw)
-        p = dw * r * rho
-        return Vector((p.dot(right), MP.HC_Y + p.dot(up), p.dot(fwd)))
-    MP.R_HEAD = R; MP.head_shape = head_shape
+    MP.R_HEAD = R / 0.88 * NEW_HEAD_K           # 元の頭の横幅に合わせる（パーツモデルの頭の横幅は R_HEAD の 0.88 倍）
+    MP.HC_Y = MP.R_HEAD * 1.02
+    hide_base_head(body, c)
     objs = []
-    hc = c - up * MP.HC_Y
+    hc = c - up * MP.HC_Y + up * HEAD_DROP * MP.R_HEAD
     def make_obj(name, b, mat):
         me = bpy.data.meshes.new(name)
         me.from_pydata([to_world(hc, right, up, fwd, v) for v in b.v], [], [f for f, _ in b.f])
@@ -338,45 +340,42 @@ def build_head_extras(arm, body, hair_style):
         # 法線を外へ（頭の中心から）
         bm = bmesh.new(); bm.from_mesh(me)
         for f in bm.faces:
-            if f.normal.dot(f.calc_center_median() - c) < 0: f.normal_flip()
+            if f.normal.dot(f.calc_center_median() - (hc + up * MP.HC_Y)) < 0: f.normal_flip()
         bm.to_mesh(me); bm.free()
         g = ob.vertex_groups.new(name="head"); g.add(list(range(len(me.vertices))), 1.0, "REPLACE")
         mod = ob.modifiers.new("Armature", "ARMATURE"); mod.object = arm
         ob.parent = arm
         objs.append(ob)
         return ob
+    # 頭（耳・鼻つき。生え際より上は髪の色）
+    bh0 = MP.Builder(); MP.build_head(bh0); make_obj("Head", bh0, MAT_PAL)
     # 顔の絵を貼る面
     bf = MP.Builder(); MP.build_face(bf); make_obj("Face", bf, MAT_FACE)
-    # 鼻（頭の形の作り方から鼻だけ）
-    bn = MP.Builder(); _nose(bn); make_obj("Nose", bn, MAT_PAL)
     # 髪
     if hair_style:
         bh = MP.Builder(); MP.build_hair(bh, hair_style); make_obj("Hair", bh, MAT_PAL)
     return objs
 
-def _nose(b):
-    yt, yb = 0.24, -0.40
-    fz = lambda u: MP.head_shape(Vector((0, u, math.sqrt(max(1 - u * u, 0))))).z
-    R = MP.R_HEAD
-    zt, zb = fz(yt) - 0.003, fz(yb) - 0.003
-    w0, w1, h0, h1 = 0.05 * R, 0.13 * R, 0.05 * R, 0.22 * R
-    Y = lambda u: MP.HC_Y + u * R
-    tl, tr, tc = b.add((-w0, Y(yt), zt)), b.add((w0, Y(yt), zt)), b.add((0, Y(yt), zt + h0))
-    bl, br, bc = b.add((-w1, Y(yb), zb)), b.add((w1, Y(yb), zb)), b.add((0, Y(yb) - 0.03 * R, zb + h1))
-    b.face([tl, tc, bc, bl], "nose"); b.face([tc, tr, br, bc], "nose"); b.face([bl, bc, br], "nose"); b.face([tl, tr, tc], "skin")
+def hide_base_head(body, c):
+    """元のモデルの頭を、頭の重みに応じて中心へ縮める（新しい頭の中に隠れる。首とはつながったまま）"""
+    W = vgroup_weights(body); mw = body.matrix_world; mi = mw.inverted()
+    for v, w in zip(body.data.vertices, W):
+        wt = w.get("head", 0.0)
+        if wt <= 0: continue
+        p = mw @ v.co
+        v.co = mi @ (c + (p - c) * (1.0 - (1.0 - BASE_HEAD_SHRINK) * wt))
 
-def scalp_hair_color(body, arm, hair_style):
-    """頭の皮膚の生え際から上を髪の色に（ベースの髪の下。すき間から肌が見えないように）"""
-    if not hair_style: return
-    c, R, right, up, fwd, radius = head_frame(arm, body)
-    W = vgroup_weights(body); mw = body.matrix_world
-    uv = body.data.uv_layers.active
-    for poly in body.data.polygons:
-        if sum(W[vi].get("head", 0) for vi in poly.vertices) / len(poly.vertices) < 0.5: continue
-        d = (mw @ poly.center - c).normalized()
-        dl = Vector((d.dot(right), d.dot(up), d.dot(fwd)))
-        if MP.hairline(dl, hair_style) > 0.06:
-            for li in poly.loop_indices: uv.data[li].uv = pal_uv("hair")
+def slim_neck(arm, body, k):
+    """首を細く（首の骨の軸へ寄せる）。元のモデルの首は頭と同じくらい太かった"""
+    W = vgroup_weights(body); mw = body.matrix_world; mi = mw.inverted()
+    a, b = bone_ws(arm, "neck")
+    ax = (b - a).normalized()
+    for v, w in zip(body.data.vertices, W):
+        wn = w.get("neck", 0.0)
+        if wn <= 0: continue
+        p = mw @ v.co
+        on = a + ax * (p - a).dot(ax)
+        v.co = mi @ (on + (p - on) * (1.0 - (1.0 - k) * wn))
 
 def materials():
     global MAT_PAL, MAT_FACE
@@ -410,11 +409,11 @@ if __name__ == "__main__":
         hs = HAIR_NAME.get(hair_tab.get(i, ""), hair_default(i))
         apply_body(arm, body, body_tab[i])
         apply_head_scale(arm, body, HEAD_SCALE)
+        slim_neck(arm, body, NECK_SLIM)
         cut_lines(arm, body)
         paint(arm, body)
         body.data.materials.clear(); body.data.materials.append(MAT_PAL)
-        for p in body.data.polygons: p.material_index = 0
-        scalp_hair_color(body, arm, hs)
+        for p in body.data.polygons: p.material_index = 0; p.use_smooth = True   # なめらかな面（カクカクした陰を出さない）
         build_head_extras(arm, body, hs)
         out = os.path.join(ROOT, "models", "players", "p%02d.glb" % i)
         export(arm, out)

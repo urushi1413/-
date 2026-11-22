@@ -43,7 +43,7 @@ HAIR_THICK   = 0.055  # ベースの髪の厚み（頭の半径に対する割�
 R_HIP, R_KNEE, R_ANKLE = 0.080, 0.050, 0.031     # 股関節（パンツの色）・膝・足首
 R_SHOULDER, R_ELBOW, R_WRIST = 0.050, 0.039, 0.030
 ARM_MID, FORE_BULGE, THIGH_MID, CALF = 0.045, 0.044, 0.068, 0.058
-FACE_TEX = 128        # 顔の絵の大きさ（ピクセル）
+FACE_TEX = 256        # 顔の絵の大きさ（ピクセル。128 では近くで見ると粗かった）
 # パレットのマス（列, 行）と初めの色（ゲームが選手ごとに上書きする）
 PAL = {
     "skin":     ((0, 0), (226, 178, 135)),
@@ -210,16 +210,27 @@ def build_head(b):
         base = len(b.v)
         for v in e.v: b.v.append(c + R @ v)
         for f, cl in e.f: b.f.append(([i + base for i in f], cl))
-    # 鼻：眉間から鼻先までの三角柱。鼻筋は高く長く
-    yt, yb = 0.24, -0.40
-    fz = lambda u: head_shape(Vector((0, u, math.sqrt(max(1 - u * u, 0))))).z
-    zt, zb = fz(yt) - 0.004, fz(yb) - 0.004
-    w0, w1, h0, h1 = 0.05 * R_HEAD, 0.13 * R_HEAD, 0.05 * R_HEAD, 0.24 * R_HEAD
+    build_nose(b)
+
+def build_nose(b):
+    """鼻：目の高さから始まる低い鼻筋 → 丸みのある鼻先 → 小鼻（横に広がる）。
+       前の三角柱（眉間から長く尖った形）は、串を刺したように見えたので作り直した"""
+    fz = lambda x, u: head_shape(Vector((x, u, math.sqrt(max(1 - u * u - x * x, 0))))).z
     Y = lambda u: HC_Y + u * R_HEAD
-    tl, tr, tc = b.add((-w0, Y(yt), zt)), b.add((w0, Y(yt), zt)), b.add((0, Y(yt), zt + h0))
-    bl, br, bc = b.add((-w1, Y(yb), zb)), b.add((w1, Y(yb), zb)), b.add((0, Y(yb) - 0.03 * R_HEAD, zb + h1))
-    b.face([tl, tc, bc, bl], "nose"); b.face([tc, tr, br, bc], "nose"); b.face([bl, bc, br], "nose"); b.face([tl, tr, tc], "skin")
-    b.mark([bl, bc, br])
+    R = R_HEAD
+    yt, ytip, yb = 0.06, -0.30, -0.40                 # 鼻筋の始まり（目の高さ）・鼻先・鼻の下
+    tl = b.add((-0.045 * R, Y(yt), fz(-0.04, yt) - 0.004)); tr = b.add((0.045 * R, Y(yt), fz(0.04, yt) - 0.004))
+    tc = b.add((0.0, Y(yt), fz(0.0, yt) + 0.025 * R))
+    ml = b.add((-0.16 * R, Y(-0.34), fz(-0.15, -0.34) - 0.004)); mr = b.add((0.16 * R, Y(-0.34), fz(0.15, -0.34) - 0.004))   # 小鼻（頬に付く所）
+    al = b.add((-0.09 * R, Y(-0.33), fz(-0.08, -0.33) + 0.07 * R)); ar = b.add((0.09 * R, Y(-0.33), fz(0.08, -0.33) + 0.07 * R))   # 小鼻のふくらみ
+    tip = b.add((0.0, Y(ytip), fz(0.0, ytip) + 0.17 * R))
+    bc = b.add((0.0, Y(yb), fz(0.0, yb) + 0.06 * R))   # 鼻の下（鼻の穴の間）
+    b.face([tl, tc, tip, al], "skin"); b.face([tc, tr, ar, tip], "skin")      # 鼻筋の両側
+    b.face([tl, al, ml], "skin"); b.face([tr, mr, ar], "skin")                # 小鼻の上
+    b.face([al, tip, bc], "nose"); b.face([tip, ar, bc], "nose")              # 鼻先の下（少し赤み）
+    b.face([ml, al, bc], "nose"); b.face([ar, mr, bc], "nose")                # 鼻の穴の所
+    b.face([tl, tr, tc], "skin")
+    b.mark([ml, bc, mr])
 
 # 顔の絵を貼る面：頭の前の面を少し外に出して重ねる。UV は正面からの投影（頭の半径の単位）
 FACE_TOP, FACE_BOT, FACE_HALFW = 0.62, -1.10, 0.82
@@ -312,7 +323,8 @@ def build_hair(b, style):
     th = HAIR_THICK * (1.5 if style == "hair_wave" else 1.0)
     build_shell(b, style, th)
     if style == "hair_short":   # 短髪：つむじから外へ流れる 8 束（前髪へ 3・横へ 2・後ろへ 3）
-        for az in (-38, 0, 38): tuft(b, style, th, CROWN, dir_from(36, az), 0.42, 0.05, bulge=0.03)
+        # 前髪：長さと向きをそろえない（一直線に切りそろえた形はヘルメットに見えた）。少し右へ流す
+        for az, el, w in ((-46, 30, 0.38), (-18, 24, 0.44), (10, 27, 0.44), (36, 31, 0.40)): tuft(b, style, th, CROWN, dir_from(el, az), w, 0.04, bulge=0.03)
         for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(8, sx * 100), 0.40, 0.02, bulge=0.025)
         for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-28, az), 0.38, 0.02, bulge=0.025)
     elif style == "hair_wave":  # ウェーブ：同じ流れで、ふくらんで、うねる 8 束
@@ -459,28 +471,50 @@ def to_px(xh, yh):   # 頭の座標（頭の半径の単位、中心から）→
     u = 0.5 + xh / (2 * FACE_HALFW); vt = (FACE_TOP - yh) / (FACE_TOP - FACE_BOT)
     return u * FACE_TEX, vt * FACE_TEX
 def make_face_png(name, prm):
-    cv = Canvas()
-    sh, dark, white, brow, mouth, blush = (0.20, 0.12, 0.10), (0.12, 0.08, 0.07), (1.0, 1.0, 1.0), (0.15, 0.10, 0.07), (0.62, 0.30, 0.28), (0.85, 0.32, 0.28)
+    """顔の絵。数値（FACES）は 128 ピクセルのときの大きさで、FACE_TEX に合わせて拡大する。
+       目：はっきり開いた白目と、上まぶたに少しかかる瞳（眠そうに見えないよう、上まぶたは目頭寄りが高く、左右の目で鏡写し）。
+       眉：細めで、ゆるい山形（吊り上げすぎると怒って見えた）。口：上唇の線＋下唇の淡い影。鼻の下に淡い影"""
+    cv = Canvas(); K = FACE_TEX / 128.0
+    sh, dark, white, brow, lip, blush = (0.20, 0.12, 0.10), (0.10, 0.07, 0.06), (0.97, 0.96, 0.95), (0.16, 0.11, 0.08), (0.55, 0.27, 0.25), (0.85, 0.32, 0.28)
     k = prm["shade"]
     # 大きくぼかした影と赤み（線は描かない）
     for sx in (-1, 1):
-        x, y = to_px(sx * 0.36, 0.14); cv.soft(x, y, 17, 7, sh, 0.08 * k)                  # 眉の下（彫り。眉骨の形と合わせて）
-        x, y = to_px(sx * 0.55, -0.34); cv.soft(x, y, 16, 9, sh, 0.05 * k, rot=-sx * 0.4)  # 頬骨の下
-        x, y = to_px(sx * 0.46, -0.24); cv.soft(x, y, 15, 10, blush, 0.07)                  # 頬の赤み
+        x, y = to_px(sx * 0.36, 0.12); cv.soft(x, y, 16 * K, 6 * K, sh, 0.07 * k)                   # 眉の下（彫り）
+        x, y = to_px(sx * 0.56, -0.36); cv.soft(x, y, 15 * K, 8 * K, sh, 0.04 * k, rot=-sx * 0.4)   # 頬骨の下
+        x, y = to_px(sx * 0.46, -0.24); cv.soft(x, y, 14 * K, 9 * K, blush, 0.06)                   # 頬の赤み
+    x, y = to_px(0.0, -0.47); cv.soft(x, y, 7 * K, 2.6 * K, sh, 0.16)                               # 鼻の下の影
+    ew, eh, ir = prm["ew"] * K, prm["eh"] * K * 1.12, prm["ir"] * K * 0.92
     for sx in (-1, 1):
         ex, ey = to_px(sx * 0.36, 0.0)
-        cv.ellipse(ex, ey, prm["ew"], prm["eh"], white)                                     # 白目（明るく）
-        cv.ellipse(ex - sx * 0.6, ey - 0.2, prm["ir"], prm["ir"] * 1.04, IRIS_KEY)         # 瞳（あとで選手の瞳の色に）
-        cv.ellipse(ex - sx * 0.6, ey - 0.2, prm["ir"] * 0.45, prm["ir"] * 0.47, (0.03, 0.03, 0.03))   # 瞳孔
-        cv.ellipse(ex - sx * 0.6 + 1.3, ey - 1.5, 1.2, 1.2, white)                         # 目の光
-        top = ey - prm["eh"] + 0.4
-        cv.line([(ex - prm["ew"], top + 1.4), (ex - prm["ew"] * 0.3, top - 0.2), (ex + prm["ew"], top + 1.2)], 1.1 if not prm["lash"] else 1.6, dark)   # 上まぶた
-        cv.line([(ex - prm["ew"] * 0.8, ey + prm["eh"] - 0.3), (ex + prm["ew"] * 0.8, ey + prm["eh"] - 0.3)], 0.5, dark, 0.35)                           # 下まぶた（薄く）
-        bx, by = to_px(sx * 0.36, 0.28)
-        a = math.radians(prm["brow"]); hl = 10.0
-        cv.line([(bx - sx * hl * math.cos(a), by + hl * math.sin(a)), (bx + sx * hl * math.cos(a), by - hl * math.sin(a))], prm["bt"] * 0.5 + 0.4, brow)   # 眉
-    mx, my = to_px(0.0, -0.68)
-    cv.line([(mx - prm["mw"], my + 0.4), (mx, my), (mx + prm["mw"], my + 0.4)], 1.2, mouth)                                                             # 口
+        inner = -sx   # 目頭の向き（絵の x で）。左右の目で鏡写しにする
+        cv.ellipse(ex, ey, ew, eh, white)                                                            # 白目
+        ix, iy = ex + inner * 0.5 * K, ey - 0.6 * K
+        cv.ellipse(ix, iy, ir, ir * 1.04, IRIS_KEY)                                                  # 瞳（あとで選手の瞳の色に）
+        cv.ellipse(ix, iy, ir * 0.42, ir * 0.44, (0.03, 0.03, 0.03))                                 # 瞳孔
+        cv.ellipse(ix - inner * 1.4 * K, iy - 1.5 * K, 1.3 * K, 1.3 * K, (1, 1, 1))                  # 目の光
+        cv.ellipse(ix + inner * 1.2 * K, iy + 1.6 * K, 0.6 * K, 0.6 * K, (1, 1, 1))                  # 小さな光
+        # 上まぶた：白目の上の縁に沿った弧（目頭寄りが高い）。白目の上にかぶせて、瞳の上を少し隠す
+        top = []
+        for t in range(11):
+            u = -1 + t / 5.0                                    # -1 目頭 … +1 目尻（絵の上では inner の向きで反転）
+            h = math.sqrt(max(0.0, 1 - u * u)) * eh * (1.0 + 0.10 * (-u))
+            top.append((ex - inner * u * ew * 1.02, ey - h + 0.2 * K))
+        cv.line(top, (0.9 if not prm["lash"] else 1.3) * K, dark)
+        if prm["lash"]: cv.line([top[-1], (top[-1][0] - inner * 2.4 * K, top[-1][1] - 1.6 * K)], 0.7 * K, dark)   # 目尻のまつげ
+        cv.line([(ex - ew * 0.6, ey + eh * 0.92), (ex + ew * 0.6, ey + eh * 0.92)], 0.4 * K, dark, 0.25)          # 下まぶた（ごく薄く）
+        # 眉：3 点のゆるい山形。目頭側が太く、目尻へ細く
+        bx, by = to_px(sx * 0.37, 0.30)
+        a = math.radians(prm["brow"] * 0.55); hl = 10.5 * K
+        p0 = (bx + inner * hl, by + 0.8 * K)                                    # 眉頭
+        p1 = (bx - inner * hl * 0.25, by - 1.6 * K - hl * math.sin(a) * 0.5)    # 眉山
+        p2 = (bx - inner * hl * 1.05, by - hl * math.sin(a) + 0.6 * K)          # 眉尻
+        bt = prm["bt"] * K * 0.36
+        cv.line([p0, p1], bt + 0.4 * K, brow); cv.line([p1, p2], bt * 0.75 + 0.3 * K, brow)
+    # 口：上唇の線（端は少しだけ上げる）＋下唇の淡い影と明るさ
+    mx, my = to_px(0.0, -0.66); mw = prm["mw"] * K * 1.25
+    cv.soft(mx, my + 3.4 * K, mw * 0.75, 2.4 * K, lip, 0.22)                                         # 下唇
+    cv.soft(mx, my + 6.5 * K, mw * 0.6, 2.0 * K, sh, 0.10)                                           # 下唇の下の影
+    cv.line([(mx - mw, my - 0.5 * K), (mx - mw * 0.45, my + 0.5 * K), (mx, my + 0.2 * K), (mx + mw * 0.45, my + 0.5 * K), (mx + mw, my - 0.5 * K)], 0.75 * K, lip)
     return cv.save(name)
 def make_beard_png(name, level):
     """1 = 剃り跡：あご〜口のまわりに、なめらかな青灰色のグラデーション（不透明度 12%）。点は打たない。
@@ -496,6 +530,7 @@ def make_beard_png(name, level):
             edge = 0.80 * jaw_width(yh) - abs(xh)                       # あごの輪郭の内側
             a = smooth((-0.46 - yh) / 0.14) * smooth(edge / 0.10)       # 頬の下からあごへ
             a = max(a, smooth((0.26 - abs(xh)) / 0.08) * smooth((yh + 0.64) / 0.04) * smooth((-0.50 - yh) / 0.04))   # 鼻の下
+            a *= smooth((0.66 - abs(xh)) / 0.16) * smooth((FACE_BOT + 0.12 - yh) / -0.12)   # 絵の端（頬の横・あごの下）では消す（端でまっすぐ切れてマスクに見えた）
             mouth = smooth((0.20 - abs(xh)) / 0.05) * smooth((0.05 - abs(yh + 0.68)) / 0.03)
             a *= 1.0 - mouth                                           # 唇はあける
             if a > 0.01: cv.put(pxl, py, col, amax * a)
