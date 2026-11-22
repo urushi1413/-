@@ -127,6 +127,7 @@ void ApplyLook(SwingAnim *a, int persona)
         { 226, 190, 150, 255 }, { 242, 210, 185, 255 },                                                   // 錦織、ズベレフ
     };
     a->scale = PersonaHeight(persona) / 185.0f;
+    a->lookId = persona;
     if (persona < 0) {   // 人間：紺のショーツ
         a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };

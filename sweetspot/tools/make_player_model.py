@@ -3,12 +3,12 @@
 #   使い方（どちらか）：
 #     blender --background --python tools/make_player_model.py
 #     python3 tools/make_player_model.py        （pip install bpy した Python で）
-#   できるもの：models/player.blend（手で直す元）と models/player.glb（ゲームが読む）
+#   できるもの：models/player_skin.blend（手で直す元）と models/player_skin.glb（ゲームが読む）
 #
-#   手で直すときは models/player.blend を開いて直し、glTF（.glb）で models/player.glb に書き出す。
+#   手で直すときは models/player_skin.blend を開いて直し、glTF（.glb）で models/player_skin.glb に書き出す。
 #   書き出しの設定：Format = glTF Binary、Include → Selected Objects は外す、Transform → +Y Up はオン（初めのまま）、
 #                   Data → Mesh → Apply Modifiers はオン、Armature → Export Deformation Bones Only は外す（_end の骨も要る）
-#   守ること（models/README.md にも書いた）
+#   守ること（models/README_skin.md にも書いた）
 #     ・骨の名前を変えない（ゲームは名前で骨を探す）。骨を足しても使わないだけで害はない
 #     ・マテリアルの名前で色を決める：skin（肌）shirt（シャツ）shorts（ショーツ）socks（ソックス）shoes（シューズ）sole（靴底）hair（髪）
 #       それ以外の名前のマテリアルは、Blender で付けた色のまま出る
@@ -180,8 +180,8 @@ if not ok:
         for n, w in ws: groups[n].add([v.index], w / tot, "REPLACE")
 
 bpy.ops.object.select_all(action="DESELECT")
-bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(os.path.join(OUT, "player.blend")))
-bpy.ops.export_scene.gltf(filepath=os.path.abspath(os.path.join(OUT, "player.glb")), export_format="GLB",
+bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(os.path.join(OUT, "player_skin.blend")))
+bpy.ops.export_scene.gltf(filepath=os.path.abspath(os.path.join(OUT, "player_skin.glb")), export_format="GLB",
                           export_skins=True, export_def_bones=False, export_apply=True, export_yup=True,
                           export_animations=False, export_morph=False, export_texcoords=False)
 print("verts", len(me.vertices), "faces", len(me.polygons))

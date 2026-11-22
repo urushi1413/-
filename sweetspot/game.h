@@ -550,6 +550,7 @@ typedef struct {
     float   staggerK;      // よろめきの強さ（0〜1、見た目）
     float   staggerSide;   // よろめく向き（体から見て右 +1、左 -1）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
+    int     lookId;        // 見た目の選手（ApplyLook の persona。-1 = 自分＝癖なし）。パーツモデルの色の表を選手ごとに選ぶ
 } SwingAnim;
 
 // ---- 定数（ほかのファイルから移したもの） ----
@@ -943,11 +944,12 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
 void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
 // 体のモデル（Blender で作った models/player.glb。試作）：コードが計算した関節の位置で曲げて描く（body_model.c）
-extern bool gBodyModel;   // 設定：体をモデルで描く（モデルが読めなければ今までの図形）
+extern int  gBodyModel;   // 設定：選手の体の描き方。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキンの試作（models/player_skin.glb）。モデルが読めなければ図形
+extern bool gModelOutline;   // 設定：パーツモデルに輪郭線（背面法）を付ける
 enum { BJ_PELVIS, BJ_WAIST, BJ_CHEST, BJ_NECK, BJ_HEAD, BJ_HEADTOP,
        BJ_SH_R, BJ_EL_R, BJ_HD_R, BJ_TIP_R, BJ_SH_L, BJ_EL_L, BJ_HD_L, BJ_TIP_L,
-       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_COUNT };
-enum { BR_SKIN, BR_SHIRT, BR_SHORTS, BR_SOCKS, BR_SHOES, BR_SOLE, BR_HAIR, BR_COUNT };
+       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_HEADBASE, BJ_COUNT };
+enum { BR_SKIN, BR_SHIRT, BR_SHORTS, BR_SOCKS, BR_SHOES, BR_SOLE, BR_HAIR, BR_ACCENT, BR_WRIST, BR_EYE, BR_COUNT };
 typedef struct {
     Vector3 j[BJ_COUNT];   // 関節（体の座標：x 右・y 上・z 前、身長 1 の単位。右利きで計算したもの）
     Vector3 side[5];       // 骨の横向きの基準：0 腰の線 1 肩の線 2 顔の右 3 右足のつま先の右 4 左足の
@@ -955,9 +957,14 @@ typedef struct {
     Color col[BR_COUNT];
     float thickArm, thickLeg, thickBody;
     Vector3 pos; bool facingNegZ; float mx, sc;   // 世界への置き方（render.c の W と同じ）
+    int lookId;            // 選手（色の表のファイルを選ぶ。-1 = 自分＝癖なし）
 } BodyPose;
 bool BodyModelReady(void);              // モデルを読む（初めの 1 回だけ）。読めたか
 void DrawBodyModel(const BodyPose *bp);
+void BodyFrame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], float *len);   // 骨の向き（Y = 頭→しっぽ、X = 横の基準、Z = X×Y）
+bool PartsModelReady(void);             // パーツモデル（models/player.glb）を読む。読めたか
+void DrawPartsModel(const BodyPose *bp);
+bool LitOutlinePass(void);              // 輪郭線の回か（render.c）
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);
 Color QualityColor(float q);

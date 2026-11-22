@@ -1,4 +1,4 @@
-// SWEET SPOT — 選手の体のモデル（Blender で作った models/player.glb）を、ゲームの関節の位置で曲げて描く（試作）
+// SWEET SPOT — 選手の体のモデル（Blender で作った models/player_skin.glb）を、ゲームの関節の位置で曲げて描く（試作）
 //
 //   動きは今までどおりコード（render.c の DrawFigureBody）が関節の位置を計算する。ここは、その関節の位置に
 //   モデルの骨を合わせて、頂点を骨の重みで動かす（CPU でのスキニング）だけ。だからモデルを差し替えても、打ち方・走り方は変わらない。
@@ -26,7 +26,7 @@ void LitVertexExt(Vector3 p, Vector3 n, Color c);   // render.c
 #define PM_BONEIDS(mesh)  ((mesh)->boneIds)
 #endif
 
-#define PM_PATH "models/player.glb"
+#define PM_PATH "models/player_skin.glb"
 #define PM_MAX_BONES 64
 #define PM_MAX_MATS  32
 
@@ -130,7 +130,7 @@ static int BoneIndex(const char *name)
 }
 
 // 骨の向き：Y = 頭からしっぽ、X = 基準の横向き（骨に直角にしたもの）、Z = X×Y
-static void Frame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], float *len)
+void BodyFrame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], float *len)
 {
     Vector3 y = Vector3Subtract(t, h); *len = Vector3Length(y);
     y = *len > 1e-6f ? Vector3Scale(y, 1.0f / *len) : (Vector3){ 0, 1, 0 };
@@ -193,7 +193,7 @@ bool BodyModelReady(void)
             char names[PM_MAX_MATS][32]; int n = GlbMaterialNames(json, names, PM_MAX_MATS - 1);
             static const char *ROLE[BR_COUNT] = { "skin", "shirt", "shorts", "socks", "shoes", "sole", "hair" };
             for (int i = 0; i < n; i++) for (int r = 0; r < BR_COUNT; r++)
-                if (!strcmp(names[i], ROLE[r])) gPMRole[i + 1] = r;   // raylib は 0 番に既定のマテリアルを入れるので +1
+                if (ROLE[r] && !strcmp(names[i], ROLE[r])) gPMRole[i + 1] = r;   // raylib は 0 番に既定のマテリアルを入れるので +1
             free(json);
         }
     }
@@ -205,7 +205,7 @@ bool BodyModelReady(void)
         if (b < 0 || tb < 0) continue;
         gPMBoneJ[b][0] = BMAP[k].head; gPMBoneJ[b][1] = BMAP[k].tail; gPMBoneRef[b] = BMAP[k].ref; gPMBoneThick[b] = BMAP[k].thick;
         Vector3 h = PM_BINDPOSE(gPM)[b].translation, t = PM_BINDPOSE(gPM)[tb].translation;
-        Xf f; Frame(h, t, (Vector3){ 1, 0, 0 }, (Vector3){ 0, 0, 1 }, f.m, &gPMBindLen[b]);
+        Xf f; BodyFrame(h, t, (Vector3){ 1, 0, 0 }, (Vector3){ 0, 0, 1 }, f.m, &gPMBindLen[b]);
         // 逆：回転は転置、平行移動は -R^T h
         Xf inv;
         for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) inv.m[i][j] = f.m[j][i];
@@ -240,7 +240,7 @@ void DrawBodyModel(const BodyPose *bp)
         Vector3 h = bp->j[gPMBoneJ[b][0]], t = bp->j[gPMBoneJ[b][1]];
         Vector3 side = bp->side[gPMBoneRef[b]];
         Xf cur; float len;
-        Frame(h, t, side, bp->fwd, cur.m, &len);
+        BodyFrame(h, t, side, bp->fwd, cur.m, &len);
         float s = gPMBindLen[b] > 1e-5f ? len / gPMBindLen[b] : 1.0f;
         float k = gPMBoneThick[b] == 1 ? bp->thickArm : gPMBoneThick[b] == 2 ? bp->thickLeg : gPMBoneThick[b] == 3 ? bp->thickBody : 1.0f;
         for (int i = 0; i < 3; i++) { cur.m[i][0] *= k; cur.m[i][1] *= s; cur.m[i][2] *= k; }   // 骨の向きの中で：横・前後は太さ、縦は長さ
