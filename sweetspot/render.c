@@ -1253,6 +1253,22 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
             SampleKeys(k, n, a->swingT, &h, &d, &f);
             goto finish;
         }
+        if (c->tweener) {
+            // 股抜き：体はネットに背中を向けている（体の座標では後ろ＝ -z が前）。ラケットを前（走る先）で下げて、
+            //   股の間を後ろ（ネットの方）へ振り抜き、背中の側で上げて終わる。面はネットの方
+            *strokeOut = 0;
+            Vector3 p = { Clamp(cl.x, -0.30f, 0.30f), Clamp(cl.y, 0.25f, 1.0f), Clamp(cl.z, -1.0f, -0.15f) };
+            Vector3 hc = { -0.06f, 0.62f, -0.10f };
+            RKey k[5] = {
+                { 0.00f, { -0.26f, 0.78f, -0.48f }, { 0.05f, 0.30f, -0.95f }, { 0.0f, 0.3f, 1.0f } },
+                { 0.05f, { -0.12f, 0.66f, -0.40f }, { 0.05f, -0.60f, -0.80f }, { 0.0f, 0.3f, 1.0f } },
+                { SWING_LEAD, hc, Vector3Normalize(Vector3Subtract(p, hc)), { 0.0f, 0.4f, 1.0f } },
+                { 0.16f, { -0.04f, 0.52f, 0.10f }, { 0.00f, -0.35f, 0.94f }, { 0.0f, 0.9f, 0.3f } },
+                { 0.30f, { -0.08f, 0.70f, 0.22f }, { 0.00f, 0.55f, 0.83f }, { 0.0f, 0.6f, -0.8f } },
+            };
+            SampleKeys(k, 5, a->swingT, &h, &d, &f);
+            goto finish;
+        }
         float sgn = c->forehand ? 1.0f : -1.0f;
         *strokeOut = c->forehand ? 0 : 1;
         if (c->volley) {
@@ -1555,6 +1571,10 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         }
     }
     yaw += runYaw; hipYaw += runYaw;
+    // 股抜き：体ごと後ろ（走る先）を向いて、深く前に屈む
+    bool tweenerSw = swinging && a->lastContact.tweener;
+    float twK = tweenerSw ? Smooth01(a->swingT / 0.05f) * (1.0f - Smooth01((a->swingT - 0.22f) / 0.08f)) : 0.0f;
+    if (tweenerSw) { yaw = PI; hipYaw = PI; }
     float stanceK = swinging ? 1.0f - Clamp01(a->swingT / SWING_TIME) : Clamp01(a->windup * 1.4f);   // 足を前後に開く量
     // ボレー：当てるのに合わせて、球と反対の足（フォアなら左）を球の方へ踏み込む。低い球は膝を曲げて沈む
     bool volleySwing = swinging && a->lastContact.volley && !a->lastContact.overhead;
@@ -1570,6 +1590,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float hipY = 0.88f - KNEE_BEND * (1.0f - 0.3f * move) - load - 0.03f * move * fabsf(sinf(ph));
     Vector3 leanV = { mdx * 0.14f * move, 0.0f, 0.05f + mdz * 0.14f * move };   // 前傾（走る向きへ）
     hipY -= 0.30f * a->crouch;                 // しゃがむ（Q）：腰を落として前に屈む
+    if (tweenerSw) { hipY -= 0.14f * twK; leanV.z = -0.05f - 0.34f * twK; leanV.x = 0.0f; }   // 股抜き：後ろ（体の向いた方）へ屈む
     hipY -= 0.05f * shuffle;                   // サイドステップは低い姿勢で
     hipY -= volLow; leanV.z += 0.5f * volLow + 0.06f * volStep;
     leanV.z += 0.10f * a->crouch;
@@ -1686,7 +1707,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         for (int i = 0; i < 2; i++) {
             float sd = i == 0 ? 1.0f : -1.0f;
             float p = ph + (i == 0 ? 0.0f : PI);
-            float width = 0.14f + 0.10f * (1.0f - move) + 0.10f * splitWide;
+            float width = 0.14f + 0.10f * (1.0f - move) + 0.10f * splitWide + 0.10f * twK;   // 股抜き：足を開く
             float stride = 0.52f * move * (1.0f - shuffle);
             // 構え・振り：前足（フォアなら左）を踏み出し、後ろ足を引く。足と腰は横を向く
             float hc = cosf(hipYaw), hs = sinf(hipYaw);
@@ -1756,10 +1777,11 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float cy = cosf(yaw), sy = sinf(yaw), hcy = cosf(hipYaw), hsy = sinf(hipYaw);
     Vector3 pelvis = { leanV.x * 0.3f, hipY + 0.02f, leanV.z * 0.3f };
     Vector3 waist  = { leanV.x * 0.55f, hipY + 0.20f, leanV.z * 0.55f };
-    Vector3 chest  = { leanV.x, hipY + 0.42f, leanV.z };
+    float twBend = 0.20f * twK;   // 股抜き：上体を前へ倒した分だけ胸と肩が下がる
+    Vector3 chest  = { leanV.x, hipY + 0.42f - twBend, leanV.z };
     float shw = (a->female ? 0.18f : 0.20f) * bSh;   // 肩幅
-    Vector3 rShoulder = { chest.x + shw * cy, hipY + 0.55f, chest.z - shw * sy };
-    Vector3 lShoulder = { chest.x - shw * cy, hipY + 0.55f, chest.z + shw * sy };
+    Vector3 rShoulder = { chest.x + shw * cy, hipY + 0.55f - 1.2f * twBend, chest.z - shw * sy };
+    Vector3 lShoulder = { chest.x - shw * cy, hipY + 0.55f - 1.2f * twBend, chest.z + shw * sy };
     // ショーツの腰：左右の股関節を包む（丸くしない）
     {
         Vector3 hl = { pelvis.x - 0.085f * hcy, pelvis.y, pelvis.z + 0.085f * hsy };
@@ -1786,8 +1808,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         bool untucked = !a->female;
         Vector3 c0 = { pelvis.x, hipY + (untucked ? -0.035f : 0.07f), pelvis.z };
         Vector3 c1 = { waist.x, hipY + 0.22f, waist.z };
-        Vector3 c2 = { chest.x, hipY + 0.47f, chest.z };
-        Vector3 c3 = { chest.x, hipY + 0.57f, chest.z };
+        Vector3 c2 = { chest.x, hipY + 0.47f - twBend, chest.z };
+        Vector3 c3 = { chest.x, hipY + 0.57f - 1.2f * twBend, chest.z };
         if (untucked) LitEllipseTube(WV(c0), WV(((Vector3){ c1.x, c1.y + 0.015f, c1.z })), hipSide, hipSide, 0.198f * bWa, 0.132f * bBu, 0.150f * bWa, 0.100f * bBu, 14, shirt, false, false);   // 裾は開いている（上は次の筒とぴったり合わせる）
         else LitEllipseTube(WV(c0), WV(c1), hipSide, hipSide, 0.160f * fs * bWa, 0.110f * bBu, 0.150f * fs * bWa, 0.100f * bBu, 14, shirt, false, true);
         LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs * bWa, 0.100f * bBu, 0.190f * fs * bSh, 0.118f * bBu, 14, shirt, false, false);
@@ -1795,8 +1817,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     }
     if (!useM) Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
-    Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
-    Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
+    Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f - 1.25f * twBend, chest.z * 1.05f };
+    Vector3 head  = { chest.x * 1.12f, hipY + 0.79f - 1.5f * twBend, chest.z * 1.12f + 0.01f };
     head.y -= 0.04f * a->slouch; head.z += 0.05f * a->slouch;                   // うつむく
     if (celeb) {
         head.x += 0.03f * sinf(co.e * 12.0f) * co.headShake;                   // 首を振る
@@ -1807,6 +1829,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float turnC = celeb ? co.turn : 0.0f;
     float headYaw = (yaw - turnC) * 0.30f + turnC;
     float pitchH = (celeb ? -0.45f * co.headUp : 0.0f) + 0.35f * a->slouch;   // プラス＝うつむく
+    if (tweenerSw) { headYaw = yaw; pitchH += 0.60f * twK; }   // 股抜き：体と同じ向きで、足元の球を見る
     Vector3 fF = { sinf(headYaw) * cosf(pitchH), -sinf(pitchH), cosf(headYaw) * cosf(pitchH) };   // 顔の前
     Vector3 rR = { cosf(headYaw), 0.0f, -sinf(headYaw) };                                       // 顔の右
     Vector3 uU = Vector3CrossProduct(fF, rR);                                                    // 顔の上
@@ -2140,6 +2163,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     if (a->smashT > 0.0f)            otherHand = (Vector3){ -0.32f, hipY + 0.32f, 0.12f };            // 叩きつけ：片手で
     else if (stg > 0.25f && !swinging && a->windup <= 0.0f) otherHand = Vector3Lerp(neck, (Vector3){ -0.58f, hipY + 0.42f, -0.05f }, Clamp01(stg * 1.5f));   // よろめき：左手を広げてバランスを取る
     else if (celeb) { otherHand = co.lh; otherHand.y -= co.hipDrop + 0.42f * co.kneel; }
+    else if (tweenerSw) otherHand = (Vector3){ lShoulder.x + 0.20f, lShoulder.y - 0.45f, lShoulder.z - 0.12f };   // 股抜き：左手は横に下ろしてバランスを取る
     else if (swinging && volleyPose) {
         // ボレー：構えでは左手でラケットを支え、当てるときに離してバランスを取る（フォアは前へ、バックは後ろへ）
         float r = Smooth01((a->swingT - 0.02f) / 0.06f);

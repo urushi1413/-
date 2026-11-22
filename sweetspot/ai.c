@@ -567,6 +567,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     gTimingTolMul = 1.0f;   // AI のタイミングの許容幅はそのまま（人間だけ広い）
     gReachAdd = HeightDelta(ai->persona) * REACH_PER_CM;   // 身長で届く範囲が変わる
     gHeightDelta = HeightDelta(ai->persona);              // 背が高いほど低い球がつらい
+    gRunBack = meVel.z;   // 後ろへ走って追いついた低い球は、股抜きで返す
     Contact c = EvaluateContact(me, &b, SHOT_TOP, 0.5f, moveToward, bonus);
     sAttack = false;
     bool sLapse = false;
@@ -592,6 +593,7 @@ bool AiSwing(Opponent *ai, Ball *ball, Vector3 player)
     }
     ai->anim.slice = IsSliceShot(t);
     c = EvaluateContact(me, &b, t, charge, moveToward, bonus);
+    gRunBack = 0.0f;
     if (sLapse) c.quality *= AI_LAPSE_Q;   // 打ち損じ：芯を外す
     if (c.isReturn && c.miss == MISS_NONE) {
         // 速いサーブ・体から遠いサーブは返せないことがある（反応が間に合わず、ラケットに当たらない・枠に当たる）。

@@ -279,6 +279,17 @@ extern bool gDecidingSet;   // 最終セット
 #define TOL_ANG_COMPACT  55.0f   // タイミング（向き）の許容幅。溜めなしのコンパクトなスイング
 #define TOL_ANG_FULL     40.0f   //   〃 フルスイング。大きく振るほどシビア
 #define VOLLEY_TOL_BONUS 1.30f   // ボレーはテイクバックが小さいので許容幅が広い
+// 股抜き（トゥイーナー）：後ろへ走って追いついた低い球を、股の間から打つ（shots.c）
+#define TWEENER_RUN      2.0f    // ネットから離れる向きにこれ以上の速さ（m/s）で走っている
+#define TWEENER_DZ0     -0.05f   // 球が体よりこれだけ後ろ（走る先）から
+#define TWEENER_DZ1     -1.30f   //   ここまで（m。マイナスが後ろ）
+#define TWEENER_DX       0.60f   // 体の真ん中から横にこれ以内（股の下を通せる）
+#define TWEENER_IDEAL_DZ -0.50f  // 理想：体の 50cm 先
+#define TWEENER_IDEAL_H  0.55f   //   膝の上くらいの高さ
+#define TWEENER_Q_MAX    0.70f   // 当たりの質の上限
+#define TWEENER_CHARGE   0.30f   // 振りの強さの上限
+#define TWEENER_ERR      2.6f    // ぶれの倍率
+#define TWEENER_YAW_ERR  9.0f    // 横のぶれの上乗せ（度）
 #define BEHIND_LIMIT    -75.0f   // これより後ろに入られたら振り遅れ（空振り）。それより手前なら、遅れても押し出すように当たる
 // 振っている途中でもラケットはボールに合わせにいく（人間は振りながら微調整している）。
 // 早く振っても、この時間先までなら当たる。ただし早かった分だけ質が落ち、引っ張り気味になる
@@ -487,6 +498,7 @@ typedef struct {
     float vyBall;      // 打った瞬間のボールの上下の速さ（プラス＝上がり際＝ライジング）
     float qTiming, qDist, qHeight;
     float quality;     // 0〜1。3つの積
+    bool  tweener;     // 股抜き（トゥイーナー）：後ろへ走って追いついた低い球を、背中を向けたまま股の間から打ち返した
 } Contact;
 
 // 見た目用：体とラケットの動き
@@ -839,6 +851,7 @@ extern float gSpinMul;
 extern float gSliceEdge;
 extern float gErrMul;
 extern float gRiseSkill;
+extern float gRunBack;   // 打つ人がネットから離れる向きに走っている速さ（m/s）。股抜き（トゥイーナー）の判定に使う。打つ直前に入れて、打ったら 0 に戻す
 // 自分が使う選手（0 = 自分＝癖なし）。選手の癖（足、回転、ミス、サーブ、身長、利き手、声、見た目）が自分にも効く
 extern int   gYouPersona;
 extern char  gPlayerName[16];        // 設定で入れた自分の名前（癖なしの選手のときに出す）

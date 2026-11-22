@@ -9,6 +9,7 @@ float gSpinMul = 1.0f;
 float gSliceEdge = 0.0f;
 float gErrMul = 1.0f;
 float gRiseSkill = 0.0f;
+float gRunBack = 0.0f;
 bool  gWomen = false;
 float gTimingTolMul = HUMAN_TIMING_TOL;
 float gReachAdd = 0.0f;

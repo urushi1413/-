@@ -2145,7 +2145,7 @@ int main(void)
                         //   簡単：1 秒先まで。質は落ちない
                         bool cas = style == STYLE_CASUAL;
                         float window = cas ? CASUAL_WAIT : ADAPT_EARLY;
-                        gCasual = cas; gCrouch = in.crouch;
+                        gCasual = cas; gCrouch = in.crouch; gRunBack = P.vel.z;   // 後ろ（ネットから離れる向き）へ走っている速さ：股抜きの判定
                         float nowQ = 0.0f, bestQ = 0.0f, bestAge = -1.0f;
                         for (int h = 0; h < historyCount; h++) {
                             const Ball *hb = &history[h];
@@ -2161,7 +2161,7 @@ int main(void)
                             Contact fc = EvaluateContact(P.pos, &fb, rt, rcharge, 0.0f, 0.0f);
                             if (fc.miss == MISS_NONE && fc.quality > bestQ) { bestQ = fc.quality; bestAge = fb.age; }
                         }
-                        gCasual = false; gCrouch = false;
+                        gCasual = false; gCrouch = false; gRunBack = 0.0f;
                         if (bestAge > 0.0f && bestQ > nowQ + 0.03f) {
                             P.swingQ.age = bestAge;
                             if (!cas) P.swingQ.penalty = Clamp(1.0f - (bestAge - ball.age) / ADAPT_PENALTY_T, 0.10f, 1.0f);
@@ -2179,7 +2179,7 @@ int main(void)
             Vector3 target = P.swingQ.target;
             float swingCharge = P.swingQ.charge;
             P.anim.windup = 0.0f;
-            gCasual = (style == STYLE_CASUAL); gCrouch = in.crouch;
+            gCasual = (style == STYLE_CASUAL); gCrouch = in.crouch; gRunBack = P.vel.z;
             {
                     // 直前のフレームの間で、一番いい当たりになる瞬間のボールを使う
                     Contact c = { .miss = MISS_NO_BALL };
@@ -2286,6 +2286,7 @@ int main(void)
                         ball = PlayerShot(&c, ball.pos, target, type, (HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge) * (1.0f + YOU_RAGE_POWER * gYouRage),   // 燃えていると少し強い
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
+                        if (c.tweener) { snprintf(toast, sizeof(toast), "%s", TR("TWEENER!", "股抜き！")); toastT = 1.8f; crowdExcite = fmaxf(crowdExcite, 0.9f); TraceLog(LOG_INFO, "TWEENER by YOU q=%.2f", c.quality); }
                         ms[0].shots++; ms[0].speedSum += P.lastKmh;
                         ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                         if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, SHOTS[type].name, P.lastKmh, c.quality, false, false, c.volley, c.isReturn, P.pos, c.height, ai.pos, Vector3Length(ai.vel));
@@ -2320,7 +2321,7 @@ int main(void)
                         scoredLast = false;
                     }
             }
-            gCasual = false; gCrouch = false;
+            gCasual = false; gCrouch = false; gRunBack = 0.0f;
         }
         // ---- ヒンドランス（妨害）：相手がサーブのトスを上げている間・相手の打った球が飛んでいる間に、カモン（Y）と叫ぶと相手のポイント ----
         //      あおる（E）は移動のキー（W・D）の隣で、うっかり押しやすいので対象にしない（相手のプレー中に押しても何も起きない）
@@ -2427,6 +2428,7 @@ int main(void)
                 gRallyHits = rallyHits;   // 長いラリーほど AI の集中が切れる
                 if (AiSwing(&ai, &ball, P.pos)) {
                     if (mode == MODE_MATCH && netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, ai.pos, false, &ai.anim); if (how) { netTouchWho = 1; netTouchHow = how; } }
+                    if (ai.anim.lastContact.tweener) { snprintf(toast, sizeof(toast), "%s", TR("TWEENER!", "股抜き！")); toastT = 1.8f; crowdExcite = fmaxf(crowdExcite, 0.9f); TraceLog(LOG_INFO, "TWEENER by AI q=%.2f", ai.anim.lastContact.quality); }
                     if (mode == MODE_MATCH) ms[1].shots++, ms[1].speedSum += ai.lastKmh;
                     if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, true, SHOTS[ai.lastType].name, ai.lastKmh, ai.lastQ, ai.lastAttack, ai.lastLapse, ai.anim.lastContact.volley, ai.anim.lastContact.isReturn, ai.pos, ai.anim.lastContact.height, P.pos, Vector3Length(P.vel));
                     youMinDist = 99.0f;
@@ -2449,6 +2451,7 @@ int main(void)
                 if (AiSwing(&bot, &fb, Rot180(ai.pos))) {
                     ball = FlipSides(fb);
                     if (netTouchWho < 0) { int how = NetTouchAtContact(ball.pos, Rot180(bot.pos), true, &bot.anim); if (how) { netTouchWho = 0; netTouchHow = how; } }
+                    if (bot.anim.lastContact.tweener) { snprintf(toast, sizeof(toast), "%s", TR("TWEENER!", "股抜き！")); toastT = 1.8f; crowdExcite = fmaxf(crowdExcite, 0.9f); TraceLog(LOG_INFO, "TWEENER by BOT q=%.2f", bot.anim.lastContact.quality); }
                     ms[0].shots++; ms[0].speedSum += bot.lastKmh;
                     ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
                     MLogShot(mlPoint, ++mlShot, false, SHOTS[bot.lastType].name, bot.lastKmh, bot.lastQ, bot.lastAttack, bot.lastLapse, bot.anim.lastContact.volley, bot.anim.lastContact.isReturn, P.pos, bot.anim.lastContact.height, ai.pos, Vector3Length(ai.vel));

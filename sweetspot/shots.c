@@ -54,6 +54,19 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     float qualityReach = reachBonus + (ball->isServe ? 0.5f * RETURN_REACH : 0.0f);   // 当たりの質（距離）に効く分：伸びた分の半分は合わせられる
     if (c.isReturn) reachBonus += RETURN_REACH;   // リターンは跳んで伸びて取る（遠いサーブでも届く）。届くだけで、伸びた分だけ当たりは悪い
     reachBonus += SHOTS[type].reach;   // 球種ごとのリーチ（スライスは腕を伸ばして届く）
+    // 股抜き（トゥイーナー）：ロブに抜かれて後ろへ走って追いつき、弾んだ低い球が体のすぐ後ろ（走る先）にあるとき。
+    //   背中をネットに向けたまま、股の間からラケットを後ろへ振って返す。当たりはよくて 7 割（見せ球。決まればうれしい）
+    if (!c.overhead && !c.volley && !c.isReturn && gRunBack >= TWEENER_RUN && ball->vel.z > 1.0f &&
+        dz < TWEENER_DZ0 && dz > TWEENER_DZ1 && fabsf(dx) < TWEENER_DX && bp.y > 0.20f && bp.y < 1.10f) {
+        c.tweener = true; c.forehand = true;   // ラケットを持つ手の側で振る
+        float tk = gCasual ? CASUAL_TOL : 1.0f;
+        c.qTiming = Clamp(1.0f - fabsf(dz - TWEENER_IDEAL_DZ) / (0.55f * tk), 0.10f, 1.0f);
+        c.qDist   = Clamp(1.0f - fabsf(dx) / (0.75f * tk), 0.10f, 1.0f);
+        c.qHeight = Clamp(1.0f - fabsf(bp.y - TWEENER_IDEAL_H) / (0.55f * tk), 0.10f, 1.0f);
+        c.quality = TWEENER_Q_MAX * powf(c.qTiming * c.qDist * c.qHeight, QUALITY_EXP);
+        if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
+        return c;
+    }
     if (!c.overhead && ang < (gCasual ? -80.0f : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
@@ -103,6 +116,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
 {
     // 頭上の球は J/L ならスマッシュ（フラット）、K ならスライスで合わせる
     if (c->overhead && type < SHOT_NORMAL_COUNT && type != SHOT_SLICE) type = SHOT_FLAT;
+    // 股抜き：股の間から後ろへ振るだけなので、強くは打てない。ロブを選んでいればロブ、それ以外は順回転で運ぶ。横にぶれやすい
+    if (c->tweener) { if (type < SHOT_NORMAL_COUNT) type = SHOT_TOP; charge = fminf(charge, TWEENER_CHARGE); }
     const ShotSpec *sp = &SHOTS[type];
     // 上から叩ける球（自分より高い、遅い球）は、多少当たりが悪くても威力が出て、ぶれにくい
     //   1.1m から上で効き始め、1.7m で最大。来た球が 50km/h 以下で全部、90km/h 以上で効かない
@@ -123,7 +138,8 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     float errMul = (2.0f * paceKmh + swingKmh) / fmaxf(kmh, 1.0f)
                  * (1.0f + (1.0f - q) * fmaxf(c->inKmh - TWIST_FREE_KMH, 0.0f) / TWIST_KMH)
                  * (1.0f - STEP_STABILITY * step)
-                 * (gCasual ? CASUAL_ERR : 1.0f) * gErrMul;
+                 * (gCasual ? CASUAL_ERR : 1.0f) * gErrMul
+                 * (c->tweener ? TWEENER_ERR : 1.0f);   // 股抜き：見えないまま振るので、ぶれが大きい
     if (type <= SHOT_SLICE && !c->volley && !c->overhead) {
         // フォアとバックの違い（ツアーの数字から：バックはフォアより約 7% 遅く、ウィナーはほとんどフォア。
         //   ラリーの両手バックは堅いが、走らされた・高い打点ではバックから崩れる。フォアで攻めるとミスが増える）
@@ -155,6 +171,7 @@ Ball PlayerShot(const Contact *c, Vector3 ballPos, Vector3 target, ShotType type
     float over = fmaxf(fabsf(c->timeErrMs) - TIMING_PULL_DEAD_MS, 0.0f) * (c->timeErrMs >= 0.0f ? 1.0f : -1.0f);
     float yaw = hand * over * TIMING_PULL_DEG_MS * DEG2RAD * (gCasual ? 0.5f : 1.0f)
               + RandNormal() * (ERR_YAW_BASE + (1.0f - q) * (1.0f - q) * ERR_YAW_Q) * errMul * DEG2RAD;
+    if (c->tweener) yaw += RandNormal() * TWEENER_YAW_ERR * DEG2RAD;
     yaw = Clamp(yaw, -30.0f * DEG2RAD, 30.0f * DEG2RAD);
 
     Vector3 d = { target.x - ballPos.x, 0.0f, target.z - ballPos.z };
