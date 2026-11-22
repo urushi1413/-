@@ -42,6 +42,10 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
 }
 void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c・parts_model.c から
 bool LitOutlinePass(void) { return gOutline; }
+void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol)   // スキニングのシェーダーに、同じ光と輪郭線を渡す
+{
+    *L = gLightL; *amb = gLightAmb; *diff = gLightDiff; *outlineW = OUTLINE_W; *outlineCol = OUTLINE_COL;
+}
 int  gBodyModel = 0;
 bool gModelOutline = false;
 // 太さの変わる筒（側面とふた）
@@ -1491,7 +1495,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
     // 体をモデルで描く：図形は描かずに、関節の位置だけ集める。パーツモデルは頭（顔・髪）も、スキンの試作は首から下だけ
     bool partsM = gBodyModel == 1 && PartsModelReady();
-    bool useM = partsM || (gBodyModel == 2 && BodyModelReady());
+    bool skinM = gBodyModel == 2 && BodyModelReady();   // スキニングのモデル（models/players/pNN.glb）：頭・顔・髪もモデル
+    bool useM = partsM || skinM;
     BodyPose bp = { 0 };
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
@@ -1728,8 +1733,9 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             feet[0] = Vector3Lerp(feet[0], lead, stW);
             feet[1] = Vector3Lerp(feet[1], trail, stW);
         }
-        knees[0] = TwoBone(hips[0], feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f });
-        knees[1] = TwoBone(hips[1], feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f });
+        // 膝：1 軸のヒンジ（0〜150°）。前に曲がる
+        knees[0] = ElbowIK(hips[0], &feet[0], 0.45f, 0.45f, (Vector3){ sd * 0.3f, 0.6f, 0.4f }, (Vector3){ sd, 0.0f, 0.0f });
+        knees[1] = ElbowIK(hips[1], &feet[1], 0.45f, 0.45f, (Vector3){ 0.0f, 0.2f, 1.0f }, (Vector3){ -sd, 0.0f, 0.0f });
         toes[0] = sd * 1.0f; toes[1] = sd * 0.6f;
         if (!lunging) DrawCylinderEx(W(sd * 0.80f, 0.01f, 0.05f), W(sd * 1.40f, 0.01f, 0.05f), 0.05f, 0.02f, 6, Fade(RAYWHITE, 0.5f));
     } else {
@@ -1781,7 +1787,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             }
             Vector3 hint = { sd * 0.25f * cosf(hipYaw) + sinf(hipYaw), 0.0f, -sd * 0.25f * sinf(hipYaw) + cosf(hipYaw) };
             hips[i] = hip; feet[i] = foot; toes[i] = toe;
-            knees[i] = TwoBone(hip, foot, 0.44f, 0.44f, hint);
+            knees[i] = ElbowIK(hip, &foot, 0.44f, 0.44f, hint, (Vector3){ sd, 0.0f, 0.0f });   // 膝：1 軸のヒンジ（0〜150°）。前（少し外）に曲がる
+            feet[i] = foot;
         }
     }
     Vector3 toePs[2];
@@ -1885,7 +1892,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(b0, n0, col); LitVertex(a0, n0, col); LitVertex(a1, n1, col); LitVertex(b1, n1, col); \
             LitVertex(a0, n0, col); LitVertex(b0, n0, col); LitVertex(b1, n1, col); LitVertex(a0, n0, col); LitVertex(b1, n1, col); LitVertex(a1, n1, col); \
         } rlEnd(); } while (0)
-    if (!partsM) {   // パーツモデルでは、頭・顔・髪・帽子もモデルが描く
+    if (!partsM && !skinM) {   // パーツモデル・スキニングのモデルでは、頭・顔・髪・帽子もモデルが描く
     {   // 頭：だ円の球（顔の形）
         const int RG = 10, SL = 14;
         rlCheckRenderBatchLimit(RG * SL * 6);
@@ -2266,6 +2273,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             Vector3 hdir = arm == 0 ? Vector3Normalize(Vector3Add(fa, Vector3Normalize(rdir))) : fa;
             bp.j[arm == 0 ? BJ_SH_R : BJ_SH_L] = s0; bp.j[arm == 0 ? BJ_EL_R : BJ_EL_L] = el; bp.j[arm == 0 ? BJ_HD_R : BJ_HD_L] = hd;
             bp.j[arm == 0 ? BJ_TIP_R : BJ_TIP_L] = Vector3Add(hd, Vector3Scale(hdir, 0.09f));
+            bp.ref[arm == 0 ? BREF_ARM_R : BREF_ARM_L] = Vector3Negate(Vector3Normalize(pole));   // 腕の骨のねじれ：肘が曲がる側（前腕が来る側）
         } else {
         Limb(WV(s0), WV(el), 0.050f * bAr, 0.043f * bAr, skin);                   // 上腕（ナダルは太い）
         Limb(WV(el), WV(hd), 0.042f * bAr, 0.034f * bAr, skin);
@@ -2278,7 +2286,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     if (useM) {   // 体のモデルを描く（関節はここまでに集めた）
         bp.j[BJ_PELVIS] = pelvis; bp.j[BJ_WAIST] = waist; bp.j[BJ_CHEST] = chest; bp.j[BJ_NECK] = neckB;
         bp.j[BJ_HEAD] = head; bp.j[BJ_HEADTOP] = Vector3Add(head, Vector3Scale(uU, 0.12f));
-        if (partsM) {   // パーツモデル：首を短く（首の付け根から頭の中心までの 3 割で頭のパーツ）。頭の向きは顔の上
+        if (partsM || skinM) {   // パーツモデル・スキニング：首を短く（首の付け根から頭の中心までの 3 割で頭のパーツ）。頭の向きは顔の上
             bp.j[BJ_HEADBASE] = Vector3Lerp(neckB, head, 0.30f);
             bp.j[BJ_HEADTOP] = Vector3Add(bp.j[BJ_HEADBASE], Vector3Scale(uU, 0.30f));
         }
@@ -2289,6 +2297,20 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         bp.side[0] = hipR; bp.side[1] = (Vector3){ cy, 0.0f, -sy }; bp.side[2] = rR;
         bp.side[3] = (Vector3){ cosf(toes[ri]), 0.0f, -sinf(toes[ri]) }; bp.side[4] = (Vector3){ cosf(toes[li]), 0.0f, -sinf(toes[li]) };
         bp.fwd = (Vector3){ hsy, 0.0f, hcy };
+        bp.j[BJ_SPINE] = Vector3Lerp(waist, chest, 0.5f);
+        bp.j[BJ_CLAV] = Vector3Lerp(chest, neckB, 0.75f);
+        for (int s2 = 0; s2 < 2; s2++) {   // 足の付け根（つま先の曲がる所）と、つま先の先
+            int an = s2 == 0 ? BJ_AN_R : BJ_AN_L, to = s2 == 0 ? BJ_TOE_R : BJ_TOE_L;
+            Vector3 d = Vector3Subtract(bp.j[to], bp.j[an]);
+            bp.j[s2 == 0 ? BJ_BALL_R : BJ_BALL_L] = Vector3Add(bp.j[an], Vector3Scale(d, 0.60f));
+            bp.j[s2 == 0 ? BJ_TOETIP_R : BJ_TOETIP_L] = Vector3Add(bp.j[an], Vector3Scale(d, 1.25f));
+        }
+        {
+            Vector3 hf = { hsy, 0.0f, hcy }, cf = { sy, 0.0f, cy };   // 腰の前・肩（胸）の前
+            bp.ref[BREF_HIPF] = hf; bp.ref[BREF_CHESTF] = cf;
+            bp.ref[BREF_SP1] = Vector3Normalize(Vector3Lerp(hf, cf, 0.33f)); bp.ref[BREF_SP2] = Vector3Normalize(Vector3Lerp(hf, cf, 0.66f));
+            bp.ref[BREF_FACEF] = fF; bp.ref[BREF_UP] = (Vector3){ 0, 1, 0 }; bp.ref[BREF_BACK] = Vector3Negate(hf);
+        }
         bp.col[BR_SKIN] = skin; bp.col[BR_SHIRT] = shirt; bp.col[BR_SHORTS] = shorts; bp.col[BR_SOCKS] = sock;
         bp.col[BR_SHOES] = shoe; bp.col[BR_SOLE] = sole; bp.col[BR_HAIR] = hair;
         {   // シャツの差し色：明るいシャツは濃く、暗いシャツは明るく。リストバンドはヘッドバンドの色（なければ差し色）

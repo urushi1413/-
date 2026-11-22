@@ -501,23 +501,6 @@ def make_beard_png(name, level):
             if a > 0.01: cv.put(pxl, py, col, amax * a)
     return cv.save(name)
 
-# ---- 空の場面から ----
-bpy.ops.wm.read_factory_settings(use_empty=True)
-scene = bpy.context.scene
-
-img = bpy.data.images.new("palette", 16, 16, alpha=False)
-px = [0.5] * (16 * 16 * 4)
-for i in range(16 * 16): px[4 * i + 3] = 1.0
-for name, ((col, row), rgb) in PAL.items():
-    i = ((15 - row) * 16 + col) * 4
-    for k in range(3): px[i + k] = rgb[k] / 255.0
-img.pixels = px
-img.filepath_raw = os.path.join(OUT, "palette.png"); img.file_format = "PNG"; img.save()
-img.pack()
-face_imgs = {k: make_face_png(k, v) for k, v in FACES.items()}
-make_beard_png("beard_1", 1); make_beard_png("beard_2", 2)
-face_imgs["face_01"].pack()
-
 def make_mat(name, image, blend=False):
     m = bpy.data.materials.new(name)
     m.use_nodes = True
@@ -528,59 +511,83 @@ def make_mat(name, image, blend=False):
     if blend: nt.links.new(tex.outputs["Alpha"], bsdf.inputs["Alpha"])
     bsdf.inputs["Roughness"].default_value = 0.9
     return m
-mat = make_mat("palette", img)
-mat_face = make_mat("face", face_imgs["face_01"], blend=True)
 
-C = Matrix(((1, 0, 0), (0, 0, -1), (0, 1, 0)))   # ゲーム（x 右・y 上・z 前）→ Blender（x 右・y 奥・z 上）
+def main():
+    global img, face_imgs, mat, mat_face
+    # ---- 空の場面から ----
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    scene = bpy.context.scene
 
-for name, hj, tj in PARTS:
-    R, L = frame(J[hj], J[tj])
-    b = build(name, L)
-    me = bpy.data.meshes.new(name)
-    me.from_pydata([C @ v for v in b.v], [], [f for f, _ in b.f])
-    me.materials.append(mat_face if name == "face" else mat)
-    uv = me.uv_layers.new(name="UVMap")
-    for fi, (poly, (_, cell)) in enumerate(zip(me.polygons, b.f)):
-        if fi in b.uv:
-            for k, li in enumerate(poly.loop_indices): uv.data[li].uv = b.uv[fi][k]
-        else:
-            (col, row), _ = PAL[cell]
-            u, v = (col + 0.5) / 16.0, 1.0 - (row + 0.5) / 16.0
-            for li in poly.loop_indices: uv.data[li].uv = (u, v)
-        poly.use_smooth = True
-    if b.sharp:
-        attr = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")
-        for e in me.edges:
-            if tuple(sorted(e.vertices)) in b.sharp: attr.data[e.index].value = True
-    ob = bpy.data.objects.new(name, me)
-    scene.collection.objects.link(ob)
-    ob.matrix_world = Matrix.Translation(C @ Vector(J[hj])) @ (C @ R @ C.inverted()).to_4x4()
-    ob["len"] = L
-    bm = bmesh.new(); bm.from_mesh(me)
-    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
-    bm.faces.ensure_lookup_table(); bm.faces.index_update()
-    # 法線を外向きに：つながった塊ごとに、閉じた形は「外向きにそろえる」、開いた形（ベースの髪・顔の絵・鼻）は頭の中心から外へ
-    hc = C @ Vector((0, HC_Y, 0)) if (name in HAIRS or name in ("head", "face")) else None
-    seen = set()
-    for f0 in bm.faces:
-        if f0.index in seen: continue
-        isl, stack = [], [f0]; seen.add(f0.index)
-        while stack:
-            f = stack.pop(); isl.append(f)
-            for e in f.edges:
-                for g in e.link_faces:
-                    if g.index not in seen: seen.add(g.index); stack.append(g)
-        open_ = any(len(e.link_faces) < 2 for f in isl for e in f.edges)
-        if open_ and hc is not None:
-            for f in isl:
-                if f.normal.dot(f.calc_center_median() - hc) < 0: f.normal_flip()
-        else: bmesh.ops.recalc_face_normals(bm, faces=isl)
-    bmesh.ops.triangulate(bm, faces=bm.faces)
-    bm.to_mesh(me); bm.free()
-    for poly in me.polygons: poly.use_smooth = True
+    img = bpy.data.images.new("palette", 16, 16, alpha=False)
+    px = [0.5] * (16 * 16 * 4)
+    for i in range(16 * 16): px[4 * i + 3] = 1.0
+    for name, ((col, row), rgb) in PAL.items():
+        i = ((15 - row) * 16 + col) * 4
+        for k in range(3): px[i + k] = rgb[k] / 255.0
+    img.pixels = px
+    img.filepath_raw = os.path.join(OUT, "palette.png"); img.file_format = "PNG"; img.save()
+    img.pack()
+    face_imgs = {k: make_face_png(k, v) for k, v in FACES.items()}
+    make_beard_png("beard_1", 1); make_beard_png("beard_2", 2)
+    face_imgs["face_01"].pack()
 
-bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "player.blend"))
-bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, "player.glb"), export_format="GLB", export_apply=True, export_yup=True,
-                          export_texcoords=True, export_normals=True, export_extras=True, export_animations=False,
-                          export_skins=False, export_morph=False, export_materials="EXPORT", export_image_format="AUTO")
-print("parts", len(PARTS), "tris", sum(len(o.data.polygons) for o in scene.objects if o.type == "MESH"))
+    mat = make_mat("palette", img)
+    mat_face = make_mat("face", face_imgs["face_01"], blend=True)
+
+    C = Matrix(((1, 0, 0), (0, 0, -1), (0, 1, 0)))   # ゲーム（x 右・y 上・z 前）→ Blender（x 右・y 奥・z 上）
+
+    for name, hj, tj in PARTS:
+        R, L = frame(J[hj], J[tj])
+        b = build(name, L)
+        me = bpy.data.meshes.new(name)
+        me.from_pydata([C @ v for v in b.v], [], [f for f, _ in b.f])
+        me.materials.append(mat_face if name == "face" else mat)
+        uv = me.uv_layers.new(name="UVMap")
+        for fi, (poly, (_, cell)) in enumerate(zip(me.polygons, b.f)):
+            if fi in b.uv:
+                for k, li in enumerate(poly.loop_indices): uv.data[li].uv = b.uv[fi][k]
+            else:
+                (col, row), _ = PAL[cell]
+                u, v = (col + 0.5) / 16.0, 1.0 - (row + 0.5) / 16.0
+                for li in poly.loop_indices: uv.data[li].uv = (u, v)
+            poly.use_smooth = True
+        if b.sharp:
+            attr = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")
+            for e in me.edges:
+                if tuple(sorted(e.vertices)) in b.sharp: attr.data[e.index].value = True
+        ob = bpy.data.objects.new(name, me)
+        scene.collection.objects.link(ob)
+        ob.matrix_world = Matrix.Translation(C @ Vector(J[hj])) @ (C @ R @ C.inverted()).to_4x4()
+        ob["len"] = L
+        bm = bmesh.new(); bm.from_mesh(me)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-7)
+        bm.faces.ensure_lookup_table(); bm.faces.index_update()
+        # 法線を外向きに：つながった塊ごとに、閉じた形は「外向きにそろえる」、開いた形（ベースの髪・顔の絵・鼻）は頭の中心から外へ
+        hc = C @ Vector((0, HC_Y, 0)) if (name in HAIRS or name in ("head", "face")) else None
+        seen = set()
+        for f0 in bm.faces:
+            if f0.index in seen: continue
+            isl, stack = [], [f0]; seen.add(f0.index)
+            while stack:
+                f = stack.pop(); isl.append(f)
+                for e in f.edges:
+                    for g in e.link_faces:
+                        if g.index not in seen: seen.add(g.index); stack.append(g)
+            open_ = any(len(e.link_faces) < 2 for f in isl for e in f.edges)
+            if open_ and hc is not None:
+                for f in isl:
+                    if f.normal.dot(f.calc_center_median() - hc) < 0: f.normal_flip()
+            else: bmesh.ops.recalc_face_normals(bm, faces=isl)
+        bmesh.ops.triangulate(bm, faces=bm.faces)
+        bm.to_mesh(me); bm.free()
+        for poly in me.polygons: poly.use_smooth = True
+
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, "player.blend"))
+    bpy.ops.export_scene.gltf(filepath=os.path.join(OUT, "player.glb"), export_format="GLB", export_apply=True, export_yup=True,
+                              export_texcoords=True, export_normals=True, export_extras=True, export_animations=False,
+                              export_skins=False, export_morph=False, export_materials="EXPORT", export_image_format="AUTO")
+    print("parts", len(PARTS), "tris", sum(len(o.data.polygons) for o in scene.objects if o.type == "MESH"))
+
+
+if __name__ == "__main__":
+    main()

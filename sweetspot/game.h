@@ -944,16 +944,20 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
 void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
 // 体のモデル（Blender で作った models/player.glb。試作）：コードが計算した関節の位置で曲げて描く（body_model.c）
-extern int  gBodyModel;   // 設定：選手の体の描き方。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキンの試作（models/player_skin.glb）。モデルが読めなければ図形
+extern int  gBodyModel;   // 設定：選手の体の描き方。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキニング（models/players/pNN.glb。tools/make_skinned_players.py）。モデルが読めなければ図形
 extern bool gModelOutline;   // 設定：パーツモデルに輪郭線（背面法）を付ける
 enum { BJ_PELVIS, BJ_WAIST, BJ_CHEST, BJ_NECK, BJ_HEAD, BJ_HEADTOP,
        BJ_SH_R, BJ_EL_R, BJ_HD_R, BJ_TIP_R, BJ_SH_L, BJ_EL_L, BJ_HD_L, BJ_TIP_L,
-       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_HEADBASE, BJ_COUNT };
+       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_HEADBASE,
+       BJ_SPINE, BJ_CLAV, BJ_BALL_R, BJ_BALL_L, BJ_TOETIP_R, BJ_TOETIP_L, BJ_COUNT };
+// 骨のねじれの基準の向き（スキニングのモデル）：腰の前・背骨の下と中ほどの前・胸の前・顔の前・腕（肘が曲がる側＝-pole）・上・後ろ
+enum { BREF_HIPF, BREF_SP1, BREF_SP2, BREF_CHESTF, BREF_FACEF, BREF_ARM_R, BREF_ARM_L, BREF_UP, BREF_BACK, BREF_COUNT };
 enum { BR_SKIN, BR_SHIRT, BR_SHORTS, BR_SOCKS, BR_SHOES, BR_SOLE, BR_HAIR, BR_ACCENT, BR_WRIST, BR_EYE, BR_COUNT };
 typedef struct {
     Vector3 j[BJ_COUNT];   // 関節（体の座標：x 右・y 上・z 前、身長 1 の単位。右利きで計算したもの）
     Vector3 side[5];       // 骨の横向きの基準：0 腰の線 1 肩の線 2 顔の右 3 右足のつま先の右 4 左足の
     Vector3 fwd;           // 体の前（横の基準が使えないとき）
+    Vector3 ref[BREF_COUNT];   // スキニングのモデルの骨のねじれの基準
     Color col[BR_COUNT];
     float thickArm, thickLeg, thickBody;
     Vector3 pos; bool facingNegZ; float mx, sc;   // 世界への置き方（render.c の W と同じ）
@@ -969,6 +973,10 @@ void BodyFrame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], f
 bool PartsModelReady(void);             // パーツモデル（models/player.glb）を読む。読めたか
 void DrawPartsModel(const BodyPose *bp);
 bool LitOutlinePass(void);              // 輪郭線の回か（render.c）
+void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol);
+const Color *PartsPaletteFor(const BodyPose *bp);   // 選手ごとの色の表（256 マス。parts_model.c）
+Texture2D PartsFaceTex(const BodyPose *bp);          // 選手ごとの顔の絵（瞳の色・ひげ入り）
+void PartsApplyLook(BodyPose *bp);                   // models/players.txt の色（肌・瞳・髪）を入れる
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);
 Color QualityColor(float q);

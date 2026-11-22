@@ -1446,7 +1446,7 @@ int main(void)
                     case MI_BODY:      label = TR("Player body", "選手の体");
                                        value = gBodyModel == 0 ? TR("SHAPES (code)", "図形（今まで）")
                                              : gBodyModel == 1 ? (PartsModelReady() ? TR("PARTS MODEL (Blender)", "パーツモデル（Blender）") : TR("MODEL NOT FOUND", "モデルが見つからない"))
-                                             : (BodyModelReady() ? TR("SKINNED (old test)", "スキンの試作（前のもの）") : TR("MODEL NOT FOUND", "モデルが見つからない")); break;
+                                             : (BodyModelReady() ? TR("SKINNED (Blender)", "スキニング（Blender）") : TR("MODEL NOT FOUND", "モデルが見つからない")); break;
                     case MI_OUTLINE:   label = TR("Model outline", "モデルの輪郭線"); value = gModelOutline ? TR("ON", "あり") : TR("OFF", "なし"); break;
                     case MI_SHAKE:     label = TR("Hit impact", "芯の手応え"); value = gImpact == 0 ? TR("OFF", "なし") : gImpact == 1 ? TR("PAUSE ONLY", "一瞬止まるだけ") : TR("PAUSE + SHAKE", "止まる＋画面が揺れる"); break;
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;

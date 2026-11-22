@@ -22,6 +22,12 @@ SOUND ASSETS / 効果音素材
   Boos, crowd "ooh", racket smash: synthesized by the author.
   ブーイング・「おお〜」・ラケットを叩きつける音：作者が合成。
 
+3D MODEL / 3D モデル
+  Quaternius — "Universal Animation Library" (Standard) mannequin (CC0 1.0)
+    base body of the skinned players (models/players/) / スキニングの選手の体の元
+    https://opengameart.org/content/universal-animation-library
+    License: https://creativecommons.org/publicdomain/zero/1.0/
+
 FONT / フォント
   IPA Font (IPAPGothic) — IPA Font License Agreement v1.0 (see fonts/)
 

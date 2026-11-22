@@ -437,3 +437,14 @@ void DrawPartsModel(const BodyPose *bpIn)
     #undef TON
     #undef ROT
 }
+
+// スキニングのモデル（body_model.c）からも使う
+const Color *PartsPaletteFor(const BodyPose *bp) { return PaletteFor(bp); }
+Texture2D PartsFaceTex(const BodyPose *bp) { return FaceTex(bp); }
+void PartsApplyLook(BodyPose *bp)
+{
+    const PlayerLook *L = LookOf(bp);
+    if (L->skin.a) bp->col[BR_SKIN] = L->skin;
+    if (L->eye.a) bp->eyeCol = L->eye;
+    if (L->hairCol.a) bp->col[BR_HAIR] = L->hairCol;
+}

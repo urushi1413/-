@@ -1,0 +1,9 @@
+元のモデル（p00.glb〜p16.glb の体の元）
+  作品：Quaternius "Universal Animation Library" Standard 版 — Mannequin（Godot 用の glb：AnimationLibrary_Godot_Standard.glb）
+  作者：Quaternius（https://quaternius.com）
+  入手先：https://opengameart.org/content/universal-animation-library
+  ライセンス：CC0 1.0 Universal（パブリックドメイン）  https://creativecommons.org/publicdomain/zero/1.0/
+    - 同梱の License.txt に「CC0 1.0 Universal (CC0 1.0) Public Domain Dedication」とある（2026-11-22 に確認）
+    - OpenGameArt の作品ページの License(s) も CC0（同じ日に確認）
+    - 商用利用・改変・再配布ができ、クレジットは不要（dist_files/CREDITS.txt には礼儀として書いた）
+  使い方：アニメーションは使わず、メッシュと骨だけ。骨の名前を付け替え、指の骨を消し、服の色分け・髪・顔・体型を足した

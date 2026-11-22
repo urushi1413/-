@@ -112,5 +112,5 @@ python3 tools/make_player.py      （pip で bpy を入れた Python のとき�
    - Data → Mesh：Apply Modifiers をオン
    - Include → Custom Properties をオン（`len` のため）
 
-## 前のスキンの試作
-`player_skin.glb`・`player_skin.blend`・`README_skin.md` です。ゲームでは「選手の体 → スキンの試作（前のもの）」で見られます。
+## スキニングのモデル
+`models/players/README.md` を見てください。
