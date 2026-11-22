@@ -420,6 +420,19 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
     AtmosOverlay(cam); PixelEnd();
 }
 
+// バトルの体力の満タン：試合が長いほど多い（長い試合でも、最初のセットのうちに K.O. で終わらないように）
+//   setsToWin：0 タイブレーク、4 ショートセット、1 = 1 セット、2 = 3 セットマッチ、3 = 5 セットマッチ
+static float BattleMaxHP(int sets)
+{
+    switch (sets) {
+        case 4: return 150.0f;
+        case 1: return 250.0f;
+        case 2: return 500.0f;
+        case 3: return 750.0f;
+        default: return BATTLE_HP;   // タイブレーク：100
+    }
+}
+
 // ---- タイトルの背景：AI 同士の試合を中継のカメラで流す（試合の記録・成績には何も残さない） ----
 //   奥（tO）はふつうの AI、手前（tN）は世界を 180° 回した AI（自動で打つときと同じやり方）。tools/ai_vs_ai.c と同じ流れで 1 ポイントずつ
 typedef enum { TD_START, TD_STANCE, TD_PLAY, TD_OVER, TD_FADE } TitleDemoPhase;
@@ -778,6 +791,7 @@ int main(void)
     bool  chalPrevFeed = false, chalFeedSaved = false;   // 挑戦の間は球出しを「クラブ」に固定し、終わったら戻す
     float chalPopT = 9.0f; int chalPopPts = 0; Vector3 chalPopPos = { 0 };   // 入った点の数字を浮かせる   // ラリー練習：このラリーで自分が入れた数、前のラリーの数、節目の演出の時間
     float hp[2] = { BATTLE_HP, BATTLE_HP }, hpShown[2] = { BATTLE_HP, BATTLE_HP };   // 体力（見せる値は少し遅れて減る）
+    float hpMax = BATTLE_HP;   // 体力の満タン（試合の長さで変わる）
     float koT = -1.0f;            // K.O. の文字を出している時間
     // 撮影モード（F3）：画面の文字や印を消して、カメラを映画のような位置に（宣伝の画像・動画用）。0 = なし
     int   cineMode = 0; float cineLabelT = 0.0f; Vector3 cinePos = { 0 }, cineTgt = { 0 }; bool cineFirst = true;
@@ -1752,7 +1766,7 @@ int main(void)
             chalTarget = GetRandomValue(0, N_TARGETS - 1); chalLastShot = -1; chalBallScored = true; chalPopT = 9.0f;
             if (targetChal) { if (!chalFeedSaved) { chalPrevFeed = proFeed; chalFeedSaved = true; } proFeed = false; }   // 記録を比べられるように、球出しはクラブに固定
             else if (chalFeedSaved) { proFeed = chalPrevFeed; chalFeedSaved = false; }   // 自動操作・スローのまま始めた試合も、記録に数えない
-            hp[0] = hp[1] = hpShown[0] = hpShown[1] = BATTLE_HP; koT = -1.0f;
+            hpMax = BattleMaxHP(setsToWin); hp[0] = hp[1] = hpShown[0] = hpShown[1] = hpMax; koT = -1.0f;
             if (battle && mode == MODE_MATCH) demoClean = false;   // 体験版のチャレンジはふつうの試合だけ
             memset(mst, 0, sizeof(mst)); retPending = false;
             memset(ms, 0, sizeof(ms)); setBreak = false;
@@ -3822,7 +3836,7 @@ int main(void)
                 hpShown[k] += (hp[k] - hpShown[k]) * fminf(frameDt * 3.0f, 1.0f);   // ゆっくり減って見える
                 hitFlashT[k] = fmaxf(hitFlashT[k] - frameDt, 0.0f);
                 int x = k == 0 ? cxm - 28 - bw : cxm + 28;
-                float f = hp[k] / BATTLE_HP, fs2 = hpShown[k] / BATTLE_HP;
+                float f = hp[k] / hpMax, fs2 = hpShown[k] / hpMax;
                 Color col = f > 0.5f ? (Color){ 90, 220, 110, 255 } : f > 0.25f ? (Color){ 250, 200, 60, 255 } : (Color){ 240, 70, 60, 255 };
                 DrawRectangle(x - 3, y0 - 3, bw + 6, bh + 6, Fade(BLACK, 0.7f));
                 if (k == 0) { DrawRectangle(x + (int)(bw * (1 - fs2)), y0, (int)(bw * fs2), bh, (Color){ 255, 255, 255, 200 }); DrawRectangle(x + (int)(bw * (1 - f)), y0, (int)(bw * f), bh, col); }
