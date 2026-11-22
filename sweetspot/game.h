@@ -972,6 +972,7 @@ void DrawBodyModel(const BodyPose *bp);
 void BodyFrame(Vector3 h, Vector3 t, Vector3 side, Vector3 alt, float m[3][3], float *len);   // 骨の向き（Y = 頭→しっぽ、X = 横の基準、Z = X×Y）
 bool PartsModelReady(void);             // パーツモデル（models/player.glb）を読む。読めたか
 void DrawPartsModel(const BodyPose *bp);
+void DrawPartsHead(const BodyPose *bp);   // パーツモデルの首から上だけ（スキニングの体に重ねる）
 bool LitOutlinePass(void);              // 輪郭線の回か（render.c）
 void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol);
 const Color *PartsPaletteFor(const BodyPose *bp);   // 選手ごとの色の表（256 マス。parts_model.c）

@@ -374,6 +374,8 @@ static Texture2D FaceTex(const BodyPose *bp)
     return t;
 }
 
+static bool gHeadOnly = false;   // 首から上（首・頭・顔・髪）だけ描く（スキニングの体に重ねるとき）
+void DrawPartsHead(const BodyPose *bp) { gHeadOnly = true; DrawPartsModel(bp); gHeadOnly = false; }
 void DrawPartsModel(const BodyPose *bpIn)
 {
     if (!PartsModelReady()) return;
@@ -398,6 +400,7 @@ void DrawPartsModel(const BodyPose *bpIn)
         const Part *pt = &gPt[i];
         if ((pt->kind == 1) != (pass == 1)) continue;
         if (pt->kind >= 2 && pt->kind - 2 != hair) continue;   // ほかの髪型
+        if (gHeadOnly && pt->head != BJ_NECK && pt->head != BJ_HEADBASE) continue;   // 首から上だけ
         Texture2D ftex = { 0 };
         if (pt->kind == 1) {   // 顔の絵：輪郭線の回では描かない。絵がなければ描かない
             if (outline) continue;

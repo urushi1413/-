@@ -9,7 +9,7 @@
 #     元の名前は Rigify（DEF-…）・Mixamo（mixamorig:…）・UE（upperarm_r …）などを見て探す（BONE_ALIASES）。ゲームはこの決まった名前だけを見る
 #   ・指などの細かい骨は、重みを親（手・足）に足して消す（骨の数を減らす：ブラウザ版の GPU で使える数に収める）
 #   ・服は体と一体のメッシュのまま、面ごとに UV をパレット（models/palette.png）のマスに置いて色分けする（シャツ・パンツ・靴下・靴・肌）
-#   ・髪・鼻・顔の絵を貼る面は、今のパーツモデルの作り方を流用して、元の頭の形に沿わせて作る（頭の骨に重み 100%）
+#   ・首から上（頭・顔・髪・首）は作らない（元のメッシュの首と頭は襟の線より上を消す）。ゲームがパーツモデル（models/player.glb）の頭・首を重ねて描く
 #   ・体型（肩幅・胴の厚み・腕・脚・腰回り）はゲームの選手の値（data.c の BODY）を読んで頂点を動かす。頭の倍率は HEAD_SCALE。
 #     身長はゲームが関節の位置で合わせる（モデルは元の身長のまま）
 import bpy, bmesh, os, re, math, sys
@@ -437,6 +437,24 @@ def _nose(b):
     bl, br, bc = b.add((-w1, Y(yb), zb)), b.add((w1, Y(yb), zb)), b.add((0, Y(yb) - 0.03 * R, zb + h1))
     b.face([tl, tc, bc, bl], "nose"); b.face([tc, tr, br, bc], "nose"); b.face([bl, bc, br], "nose"); b.face([tl, tr, tc], "skin")
 
+def remove_head_neck(arm, body):
+    """首から上を消す（頭・顔・髪・首はパーツモデルのものをゲームが重ねて描く）。襟の線より上の、首と頭の面を消す"""
+    W = vgroup_weights(body); mw = body.matrix_world
+    na, nb2 = bone_ws(arm, "neck"); nd = (nb2 - na).normalized(); collar = na + (nb2 - na) * COLLAR_T
+    bm = bmesh.new(); bm.from_mesh(body.data); bm.verts.ensure_lookup_table()
+    dead = []
+    for f in bm.faces:
+        acc = {}
+        for v in f.verts:
+            for n, wt in W[v.index].items(): acc[n] = acc.get(n, 0.0) + wt
+        dom = max(acc, key=acc.get) if acc else ""
+        c = mw @ f.calc_center_median()
+        above = (c - collar).dot(nd) > 0.0
+        near = math.hypot(c.x - na.x, c.y - na.y) < 0.09
+        if dom in ("head", "neck") or (above and near and dom in ("spine3", "clavicle.R", "clavicle.L")): dead.append(f)
+    bmesh.ops.delete(bm, geom=dead, context="FACES")
+    bm.to_mesh(body.data); bm.free()
+
 def scalp_hair_color(body, arm, hair_style):
     """頭の皮膚の生え際から上を髪の色に（ベースの髪の下。すき間から肌が見えないように）"""
     if not hair_style: return
@@ -487,8 +505,7 @@ if __name__ == "__main__":
         paint(arm, body)
         body.data.materials.clear(); body.data.materials.append(MAT_PAL)
         for p in body.data.polygons: p.material_index = 0
-        scalp_hair_color(body, arm, hs)
-        build_head_extras(arm, body, hs)
+        remove_head_neck(arm, body)   # 首から上はパーツモデル（models/player.glb）の頭・顔・髪・首をゲームが重ねる
         out = os.path.join(ROOT, "models", "players", "p%02d.glb" % i)
         export(arm, out)
         print("wrote", out, "hair", hs, "verts", len(body.data.vertices))
