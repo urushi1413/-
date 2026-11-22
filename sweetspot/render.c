@@ -9,7 +9,7 @@ static float   gLightAmb = 0.55f, gLightDiff = 0.50f;   // 当たらない面の
 // 見た目（メニューの「見た目」）：0 = ふつう、1 = アニメ調（陰を 3 段に分け、人に輪郭線）、2 = ドット風（アニメ調を低い解像度で描いて拡大）
 int gLook = 0;
 static bool gOutline = false;          // 輪郭線を描く回：形を少し太らせて暗い色で、裏側の面だけ描く
-#define OUTLINE_W (gLook == 2 ? 0.030f : 0.014f)   // 輪郭線の太さ（m）。ドット風は粗いので太く
+#define OUTLINE_W (gLook == 2 ? 0.030f : gLook == 1 ? 0.014f : 0.007f)   // 輪郭線の太さ（m）。ドット風は粗いので太く。ふつうの見た目でパーツモデルに付ける輪郭線は細く
 static const Color OUTLINE_COL = { 28, 24, 32, 255 };
 static Color Shade(Color c, Vector3 n)
 {
@@ -43,7 +43,7 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
 void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c・parts_model.c から
 bool LitOutlinePass(void) { return gOutline; }
 int  gBodyModel = 0;
-bool gModelOutline = true;
+bool gModelOutline = false;
 // 太さの変わる筒（側面とふた）
 void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
 {
@@ -2272,7 +2272,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             bp.col[BR_WRIST] = a->headband.a ? a->headband : bp.col[BR_ACCENT];
             bp.col[BR_EYE] = (Color){ 30, 25, 25, 255 };
         }
-        bp.lookId = a->lookId;
+        bp.lookId = a->lookId; bp.hairStyle = a->hairStyle; bp.female = a->female;
         bp.thickArm = bAr; bp.thickLeg = bLg; bp.thickBody = bBu;
         bp.pos = pos; bp.facingNegZ = facingNegZ; bp.mx = MX; bp.sc = sc;
         if (partsM) DrawPartsModel(&bp); else DrawBodyModel(&bp);

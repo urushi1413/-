@@ -15,7 +15,9 @@ foreach ($f in Get-ChildItem "sounds" -File | Where-Object { $_.Extension -in ".
     Copy-Item $f.FullName "$out\sounds\$dest"
 }
 Copy-Item "fonts\*" "$out\fonts\"
-Copy-Item "models\player.glb", "models\palette.png", "models\player_skin.glb" "$out\models\"
+Copy-Item "models\player.glb", "models\palette.png", "models\player_skin.glb", "models\players.txt" "$out\models\"
+New-Item -ItemType Directory -Force -Path "$out\models\faces" | Out-Null
+Copy-Item "models\faces\*.png" "$out\models\faces\"
 Copy-Item "dist_files\CREDITS.txt", "dist_files\README_JA.txt", "dist_files\README_EN.txt" "$out\"
 Compress-Archive -Path $out -DestinationPath "dist\SweetSpot_Windows.zip" -Force
 Write-Host "dist\SweetSpot_Windows.zip"

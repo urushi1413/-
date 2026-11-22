@@ -958,6 +958,8 @@ typedef struct {
     float thickArm, thickLeg, thickBody;
     Vector3 pos; bool facingNegZ; float mx, sc;   // 世界への置き方（render.c の W と同じ）
     int lookId;            // 選手（色の表のファイルを選ぶ。-1 = 自分＝癖なし）
+    int hairStyle;         // 髪型（HS_*。パーツモデルの髪型の候補を選ぶ）
+    bool female;
 } BodyPose;
 bool BodyModelReady(void);              // モデルを読む（初めの 1 回だけ）。読めたか
 void DrawBodyModel(const BodyPose *bp);

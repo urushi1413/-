@@ -212,7 +212,7 @@ static void SaveSettingsFile(const Settings *s)
     fprintf(f, "tempo=%d\n", s->tempo);
     fprintf(f, "hit_shake=%d\n", s->shake);
     fprintf(f, "body_model=%d\n", s->bodyModel);
-    fprintf(f, "model_outline=%d\n", s->modelOutline);
+    fprintf(f, "model_outline2=%d\n", s->modelOutline);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -252,7 +252,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
-        else if (!strcmp(key, "model_outline")) s->modelOutline = iv;
+        else if (!strcmp(key, "model_outline2")) s->modelOutline = iv;
         else if (!strcmp(key, "body_model")) s->bodyModel = iv;
         else if (!strcmp(key, "hit_shake")) s->shake = iv;
         else if (!strcmp(key, "tempo")) s->tempo = iv;

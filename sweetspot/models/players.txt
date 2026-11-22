@@ -1,0 +1,21 @@
+# 選手ごとの髪型と顔の絵（パーツモデル）
+#   番号  hair=short|wave|tied|buzz  face=01〜（models/faces/face_XX.png）
+#   書いていない選手は、ゲームの髪型から選ぶ（巻き毛→wave、ポニーテール・まとめ髪→tied、刈り上げ→buzz、ほか→short）。
+#   顔の絵は、男子は 01、女子は 03。髪の色は選手の髪の色（コードの値）
+#   番号はゲームの選手の番号（ai.c の PERSONAS の順。1〜8・15・16 が男子、9〜14 が女子）
+1   hair=short  face=04
+2   hair=short  face=02
+3   hair=wave   face=01
+4   hair=wave   face=02
+5   hair=wave   face=01
+6   hair=wave   face=04
+7   hair=short  face=04
+8   hair=buzz   face=01
+9   hair=tied   face=03
+10  hair=tied   face=03
+11  hair=tied   face=03
+12  hair=tied   face=03
+13  hair=tied   face=03
+14  hair=tied   face=03
+15  hair=short  face=01
+16  hair=short  face=02

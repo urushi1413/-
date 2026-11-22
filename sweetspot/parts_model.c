@@ -85,9 +85,11 @@ typedef struct {
     char name[24];
     int head, tail, side, thick;   // ピボットの関節・向きの子の関節・横の基準（BodyPose.side の番号）・太さの倍率の種類（0 なし 1 腕 2 脚 3 胴）
     bool stretch;                  // 関節の間の長さに合わせて縦に伸び縮みする（頭・手・靴は形を保つ）
+    int kind;                      // 0 = ふつう、1 = 顔の絵（face）、2〜5 = 髪型の候補（hair_short / wave / tied / buzz）
     float len;                     // 元の骨の長さ（glb の extras.len）
     int tris;
-    Vector3 *p, *nf, *ns;          // 三角の角ごとの位置（パーツの座標）、面の法線、頂点の法線（輪郭線用）
+    Vector3 *p, *nc, *ns;          // 三角の角ごとの位置（パーツの座標）、法線（glb の。スムーズ・シャープエッジ込み）、輪郭線用の法線（同じ位置でならす）
+    Vector2 *uv;                   // 角ごとの UV（顔の絵のときだけ）
     unsigned char *cell;           // 三角ごとのパレットのマス（0〜255）
 } Part;
 static Part gPt[PT_MAX];
@@ -95,10 +97,13 @@ static int gPtN = 0;
 static bool gPtTried = false, gPtOk = false;
 static Color gPal[256];            // 初めの色（models/palette.png）
 
-typedef struct { const char *name; int head, tail, side, thick; bool stretch; } PartMap;
+typedef struct { const char *name; int head, tail, side, thick; bool stretch; int kind; } PartMap;
 static const PartMap PMAP[] = {
     { "pelvis", BJ_PELVIS, BJ_WAIST, 0, 3, true }, { "torso", BJ_WAIST, BJ_NECK, 1, 3, true },
     { "neck", BJ_NECK, BJ_HEADBASE, 1, 0, true }, { "head", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false },
+    { "hair_short", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false, 2 }, { "hair_wave", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false, 3 },
+    { "hair_tied", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false, 4 }, { "hair_buzz", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false, 5 },
+    { "face", BJ_HEADBASE, BJ_HEADTOP, 2, 0, false, 1 },   // 顔の絵は最後に描く（髪の後。透けるところがあるので）
     { "upperarm.R", BJ_SH_R, BJ_EL_R, 1, 1, true }, { "forearm.R", BJ_EL_R, BJ_HD_R, 1, 1, true }, { "hand.R", BJ_HD_R, BJ_TIP_R, 1, 0, false },
     { "upperarm.L", BJ_SH_L, BJ_EL_L, 1, 1, true }, { "forearm.L", BJ_EL_L, BJ_HD_L, 1, 1, true }, { "hand.L", BJ_HD_L, BJ_TIP_L, 1, 0, false },
     { "thigh.R", BJ_HIP_R, BJ_KN_R, 0, 2, true }, { "shin.R", BJ_KN_R, BJ_AN_R, 0, 2, true }, { "shoe.R", BJ_AN_R, BJ_TOE_R, 3, 0, false },
@@ -172,12 +177,14 @@ bool PartsModelReady(void)
         Part *pt = &gPt[gPtN];
         memset(pt, 0, sizeof(*pt));
         snprintf(pt->name, sizeof(pt->name), "%s", nm);
-        pt->head = PMAP[map].head; pt->tail = PMAP[map].tail; pt->side = PMAP[map].side; pt->thick = PMAP[map].thick; pt->stretch = PMAP[map].stretch;
+        pt->head = PMAP[map].head; pt->tail = PMAP[map].tail; pt->side = PMAP[map].side; pt->thick = PMAP[map].thick; pt->stretch = PMAP[map].stretch; pt->kind = PMAP[map].kind;
         pt->len = JNum(JGet(JGet(nd, "extras"), "len"), 0.0f);
         int tris = 0; for (int q = 0; q < nprim; q++) tris += mdl.meshes[mi + q].triangleCount;
         pt->tris = tris;
-        pt->p = malloc(sizeof(Vector3) * tris * 3); pt->nf = malloc(sizeof(Vector3) * tris); pt->ns = malloc(sizeof(Vector3) * tris * 3);
+        pt->p = malloc(sizeof(Vector3) * tris * 3); pt->nc = malloc(sizeof(Vector3) * tris * 3); pt->ns = malloc(sizeof(Vector3) * tris * 3);
+        pt->uv = pt->kind == 1 ? malloc(sizeof(Vector2) * tris * 3) : NULL;
         pt->cell = malloc(tris);
+        Vector3 *nfTmp = malloc(sizeof(Vector3) * tris);
         int t = 0;
         for (int q = 0; q < nprim; q++, mi++) {
             Mesh *m = &mdl.meshes[mi];
@@ -191,9 +198,14 @@ bool PartsModelReady(void)
                     l.x /= S.x != 0.0f ? S.x : 1.0f; l.y /= S.y != 0.0f ? S.y : 1.0f; l.z /= S.z != 0.0f ? S.z : 1.0f;
                     pt->p[3 * t + c] = l;
                     if (m->texcoords) { u += m->texcoords[2 * vi] / 3.0f; v += m->texcoords[2 * vi + 1] / 3.0f; }
+                    if (pt->uv) pt->uv[3 * t + c] = m->texcoords ? (Vector2){ m->texcoords[2 * vi], m->texcoords[2 * vi + 1] } : (Vector2){ 0 };
+                    // 法線：焼き込まれた向きを戻す（大きさは 1 のはず）
+                    Vector3 n = m->normals ? (Vector3){ m->normals[3 * vi], m->normals[3 * vi + 1], m->normals[3 * vi + 2] } : (Vector3){ 0, 0, 0 };
+                    pt->nc[3 * t + c] = Vector3Normalize((Vector3){ R[0][0] * n.x + R[1][0] * n.y + R[2][0] * n.z, R[0][1] * n.x + R[1][1] * n.y + R[2][1] * n.z, R[0][2] * n.x + R[1][2] * n.y + R[2][2] * n.z });
                 }
                 Vector3 a = pt->p[3 * t], b = pt->p[3 * t + 1], cc = pt->p[3 * t + 2];
-                pt->nf[t] = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(cc, a)));
+                nfTmp[t] = Vector3Normalize(Vector3CrossProduct(Vector3Subtract(b, a), Vector3Subtract(cc, a)));
+                if (!m->normals) for (int c = 0; c < 3; c++) pt->nc[3 * t + c] = nfTmp[t];
                 int col = Clamp((int)(u * 16.0f), 0, 15), row = Clamp((int)(v * 16.0f), 0, 15);
                 pt->cell[t] = (unsigned char)(row * 16 + col);
             }
@@ -201,9 +213,10 @@ bool PartsModelReady(void)
         // 輪郭線用の頂点の法線：同じ位置の角の面の法線をならす
         for (int i = 0; i < tris * 3; i++) {
             Vector3 s = { 0 };
-            for (int j = 0; j < tris * 3; j++) if (Vector3DistanceSqr(pt->p[i], pt->p[j]) < 1e-10f) s = Vector3Add(s, pt->nf[j / 3]);
+            for (int j = 0; j < tris * 3; j++) if (Vector3DistanceSqr(pt->p[i], pt->p[j]) < 1e-10f) s = Vector3Add(s, nfTmp[j / 3]);
             pt->ns[i] = Vector3Normalize(s);
         }
+        free(nfTmp);
         if (pt->len <= 0.0f) pt->len = 0.3f;
         gPtN++;
     }
@@ -245,17 +258,76 @@ static const Color *PaletteFor(const BodyPose *bp)
     return pal;
 }
 
+// ---- 選手ごとの髪型と顔の絵：models/players.txt（「番号 hair=short|wave|tied|buzz face=01」）。なければ選手の髪型から選ぶ ----
+typedef struct { signed char hair, face; } PlayerLook;
+static PlayerLook gLookCfg[PERSONA_COUNT];
+static bool gLookLoaded = false;
+static void LoadLookConfig(void)
+{
+    gLookLoaded = true;
+    for (int i = 0; i < PERSONA_COUNT; i++) gLookCfg[i] = (PlayerLook){ -1, -1 };
+    const char *f = FindFile("models/players.txt");
+    if (!f) return;
+    char *txt = LoadFileText(f);
+    if (!txt) return;
+    for (char *line = strtok(txt, "\n"); line; line = strtok(NULL, "\n")) {
+        char *hash = strchr(line, '#'); if (hash) *hash = 0;
+        int id = -1; if (sscanf(line, " %d", &id) != 1 || id < 0 || id >= PERSONA_COUNT) continue;
+        char *h = strstr(line, "hair="), *fc = strstr(line, "face=");
+        if (h) { h += 5; gLookCfg[id].hair = !strncmp(h, "short", 5) ? 0 : !strncmp(h, "wave", 4) ? 1 : !strncmp(h, "tied", 4) ? 2 : !strncmp(h, "buzz", 4) ? 3 : -1; }
+        if (fc) gLookCfg[id].face = (signed char)Clamp(atoi(fc + 5), 1, 99);
+    }
+    UnloadFileText(txt);
+}
+static int HairFor(const BodyPose *bp)   // 0 短髪 1 ウェーブ 2 束ねる 3 坊主寄り
+{
+    if (!gLookLoaded) LoadLookConfig();
+    if (bp->lookId >= 0 && bp->lookId < PERSONA_COUNT && gLookCfg[bp->lookId].hair >= 0) return gLookCfg[bp->lookId].hair;
+    switch (bp->hairStyle) {
+        case HS_CURLY: case HS_CURLY_SHORT: case HS_NADAL: return 1;
+        case HS_PONY: case HS_BUN: return 2;
+        case HS_FADE: return 3;
+        default: return 0;
+    }
+}
+static Texture2D FaceTex(const BodyPose *bp)
+{
+    static Texture2D tex[100]; static signed char state[100];
+    if (!gLookLoaded) LoadLookConfig();
+    int id = bp->female ? 3 : 1;
+    if (bp->lookId >= 0 && bp->lookId < PERSONA_COUNT && gLookCfg[bp->lookId].face > 0) id = gLookCfg[bp->lookId].face;
+    if (state[id] == 0) {
+        state[id] = 1;
+        const char *f = FindFile(TextFormat("models/faces/face_%02d.png", id));
+        if (f) { tex[id] = LoadTexture(f); if (tex[id].id) { SetTextureFilter(tex[id], TEXTURE_FILTER_BILINEAR); state[id] = 2; } }
+    }
+    if (state[id] != 2 && id != 1) return FaceTex(&(BodyPose){ .lookId = -1, .female = false });   // なければ 01
+    return state[id] == 2 ? tex[id] : (Texture2D){ 0 };
+}
+
 void DrawPartsModel(const BodyPose *bp)
 {
     if (!PartsModelReady()) return;
     const Color *pal = PaletteFor(bp);
     bool outline = LitOutlinePass();
+    int hair = HairFor(bp);
     float sx = bp->facingNegZ ? 1.0f : -1.0f;
     #define TOW(v) ((Vector3){ bp->pos.x + sx * bp->mx * (v).x * bp->sc, bp->pos.y + (v).y * bp->sc, bp->pos.z - sx * (v).z * bp->sc })
     #define TON(v) ((Vector3){ sx * bp->mx * (v).x, (v).y, -sx * (v).z })
+    #define ROT(v) ((Vector3){ m[0][0] * (v).x + m[0][1] * (v).y + m[0][2] * (v).z, m[1][0] * (v).x + m[1][1] * (v).y + m[1][2] * (v).z, m[2][0] * (v).x + m[2][1] * (v).y + m[2][2] * (v).z })
     bool flip = bp->mx > 0.0f;   // 体の座標 → 世界が鏡（行列式が負）なら三角の回りを逆に
+    for (int pass = 0; pass < 2; pass++)   // 顔の絵（透けるところがある）は、ほかを全部描いてから
     for (int i = 0; i < gPtN; i++) {
         const Part *pt = &gPt[i];
+        if ((pt->kind == 1) != (pass == 1)) continue;
+        if (pt->kind >= 2 && pt->kind - 2 != hair) continue;   // ほかの髪型
+        Texture2D ftex = { 0 };
+        if (pt->kind == 1) {   // 顔の絵：輪郭線の回では描かない。絵がなければ描かない
+            if (outline) continue;
+            ftex = FaceTex(bp);
+            if (!ftex.id) continue;
+            rlDrawRenderBatchActive(); rlDisableDepthMask();
+        }
         Vector3 h = bp->j[pt->head], tl = bp->j[pt->tail];
         float m[3][3], len;
         BodyFrame(h, tl, bp->side[pt->side], bp->fwd, m, &len);
@@ -265,30 +337,26 @@ void DrawPartsModel(const BodyPose *bp)
             int t1 = t0 + 200 < pt->tris ? t0 + 200 : pt->tris;
             rlCheckRenderBatchLimit((t1 - t0) * 3);
             rlBegin(RL_TRIANGLES);
+            if (ftex.id) rlSetTexture(ftex.id);   // rlBegin は形の種類が変わると絵を既定に戻すので、その後で
             for (int t = t0; t < t1; t++) {
-                Color col = pal[pt->cell[t]];
-                Vector3 nf = pt->nf[t];
-                Vector3 nfB = { m[0][0] * nf.x + m[0][1] * nf.y + m[0][2] * nf.z, m[1][0] * nf.x + m[1][1] * nf.y + m[1][2] * nf.z, m[2][0] * nf.x + m[2][1] * nf.y + m[2][2] * nf.z };
-                Vector3 nfW = Vector3Normalize(TON(nfB));
+                Color col = pt->kind == 1 ? WHITE : pal[pt->cell[t]];
                 for (int c0 = 0; c0 < 3; c0++) {
                     int c = flip ? (c0 == 0 ? 0 : 3 - c0) : c0;
                     Vector3 l = pt->p[3 * t + c];
                     l.x *= k; l.z *= k; l.y *= sy;
-                    Vector3 b = { h.x + m[0][0] * l.x + m[0][1] * l.y + m[0][2] * l.z,
-                                  h.y + m[1][0] * l.x + m[1][1] * l.y + m[1][2] * l.z,
-                                  h.z + m[2][0] * l.x + m[2][1] * l.y + m[2][2] * l.z };
-                    Vector3 n = nfW;
-                    if (outline) {
-                        Vector3 ns = pt->ns[3 * t + c];
-                        Vector3 nsB = { m[0][0] * ns.x + m[0][1] * ns.y + m[0][2] * ns.z, m[1][0] * ns.x + m[1][1] * ns.y + m[1][2] * ns.z, m[2][0] * ns.x + m[2][1] * ns.y + m[2][2] * ns.z };
-                        n = Vector3Normalize(TON(nsB));
-                    }
+                    Vector3 b = ROT(l); b = Vector3Add(b, h);
+                    Vector3 nl = outline ? pt->ns[3 * t + c] : pt->nc[3 * t + c];
+                    Vector3 nb = ROT(nl);
+                    Vector3 n = Vector3Normalize(TON(nb));
+                    if (pt->uv) rlTexCoord2f(pt->uv[3 * t + c].x, pt->uv[3 * t + c].y);
                     LitVertexExt(TOW(b), n, col);
                 }
             }
             rlEnd();
         }
+        if (pt->kind == 1) { rlDrawRenderBatchActive(); rlSetTexture(0); rlEnableDepthMask(); }
     }
     #undef TOW
     #undef TON
+    #undef ROT
 }
