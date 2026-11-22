@@ -201,7 +201,7 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo, shake; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo, shake, bodyModel; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
@@ -211,6 +211,7 @@ static void SaveSettingsFile(const Settings *s)
     fprintf(f, "feedback=%d\n", s->feedback);
     fprintf(f, "tempo=%d\n", s->tempo);
     fprintf(f, "hit_shake=%d\n", s->shake);
+    fprintf(f, "body_model=%d\n", s->bodyModel);
     fprintf(f, "look=%d\nslide=%d\nbounce_ritual=%d\nrule_net_touch=%d\nrule_body_shot=%d\n", s->look, s->slide, s->bounce, s->ruleNet, s->ruleBody);
     fprintf(f, "sets=%d\nwomen=%d\nplay_as=%d\nopponent=%d\nai_level=%d\nstyle=%d\ncourt=%d\nassist=%d\npro_feed=%d\naim_lanes=%d\ncamera=%d\nscreen_info=%d\nguides=%d\nsensitivity=%.2f\nvolume=%.2f\nlanguage=%d\ntime_of_day=%d\nweather=%d\nname=%s\n",
             s->sets, s->women, s->you, s->opp, s->level, s->style, s->court, s->assist, s->feed, s->lanes, s->cam, s->hud, s->guides, s->sens, s->vol, s->lang, s->tod, s->wx, gPlayerName);
@@ -250,6 +251,7 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "look")) s->look = iv;
         else if (!strcmp(key, "slide")) s->slide = iv;
         else if (!strcmp(key, "bounce_ritual")) s->bounce = iv;
+        else if (!strcmp(key, "body_model")) s->bodyModel = iv;
         else if (!strcmp(key, "hit_shake")) s->shake = iv;
         else if (!strcmp(key, "tempo")) s->tempo = iv;
         else if (!strcmp(key, "feedback")) s->feedback = iv;
@@ -717,10 +719,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
@@ -738,6 +740,7 @@ int main(void)
             gSlideOn = s.slide != 0;
             gBounceRit = s.bounce != 0;
             gRuleNetTouch = s.ruleNet != 0; gRuleBodyShot = s.ruleBody != 0;
+            gBodyModel = s.bodyModel != 0;
             gImpact = Clamp(s.shake, 0, 2);   // 前に保存した 1（あり）は「止まるだけ」として読む
             gTempo = Clamp(s.tempo, 0, 2);
             feedbackLevel = Clamp(s.feedback, 0, 1);
@@ -848,7 +851,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -867,7 +870,7 @@ int main(void)
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
-                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_BODY; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
             } else if (menuPage == 7) {   // ルール
@@ -896,7 +899,7 @@ int main(void)
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
                 items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_TEMPO; items[n++] = MI_FEED; items[n++] = MI_SOUND;
-                items[n++] = MI_LOOK; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
+                items[n++] = MI_LOOK; items[n++] = MI_BODY; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (selWant >= 0) { for (int q = 0; q < n; q++) if (items[q] == selWant) menuSel = q; selWant = -1; }   // 前のページへ戻ったとき、開いた項目を選ぶ
             if (menuSel >= n) menuSel = 0;
@@ -1015,6 +1018,7 @@ int main(void)
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
                     case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
+                    case MI_BODY:   gBodyModel = !gBodyModel; break;
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
                     case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
@@ -1272,6 +1276,7 @@ int main(void)
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
                     case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
+                    case MI_BODY:      label = TR("Player body", "選手の体"); value = !gBodyModel ? TR("SHAPES (code)", "図形（今まで）") : BodyModelReady() ? TR("BLENDER MODEL (test)", "Blender のモデル（試作）") : TR("MODEL NOT FOUND", "モデルが見つからない"); break;
                     case MI_SHAKE:     label = TR("Hit impact", "芯の手応え"); value = gImpact == 0 ? TR("OFF", "なし") : gImpact == 1 ? TR("PAUSE ONLY", "一瞬止まるだけ") : TR("PAUSE + SHAKE", "止まる＋画面が揺れる"); break;
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
                     case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;

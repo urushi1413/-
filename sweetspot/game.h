@@ -929,6 +929,22 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
 // 選手の見た目（髪、ショーツ、ヘッドバンド、優雅さ）を anim に入れる。persona < 0 は人間
 void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
+// 体のモデル（Blender で作った models/player.glb。試作）：コードが計算した関節の位置で曲げて描く（body_model.c）
+extern bool gBodyModel;   // 設定：体をモデルで描く（モデルが読めなければ今までの図形）
+enum { BJ_PELVIS, BJ_WAIST, BJ_CHEST, BJ_NECK, BJ_HEAD, BJ_HEADTOP,
+       BJ_SH_R, BJ_EL_R, BJ_HD_R, BJ_TIP_R, BJ_SH_L, BJ_EL_L, BJ_HD_L, BJ_TIP_L,
+       BJ_HIP_R, BJ_KN_R, BJ_AN_R, BJ_TOE_R, BJ_HIP_L, BJ_KN_L, BJ_AN_L, BJ_TOE_L, BJ_COUNT };
+enum { BR_SKIN, BR_SHIRT, BR_SHORTS, BR_SOCKS, BR_SHOES, BR_SOLE, BR_HAIR, BR_COUNT };
+typedef struct {
+    Vector3 j[BJ_COUNT];   // 関節（体の座標：x 右・y 上・z 前、身長 1 の単位。右利きで計算したもの）
+    Vector3 side[5];       // 骨の横向きの基準：0 腰の線 1 肩の線 2 顔の右 3 右足のつま先の右 4 左足の
+    Vector3 fwd;           // 体の前（横の基準が使えないとき）
+    Color col[BR_COUNT];
+    float thickArm, thickLeg, thickBody;
+    Vector3 pos; bool facingNegZ; float mx, sc;   // 世界への置き方（render.c の W と同じ）
+} BodyPose;
+bool BodyModelReady(void);              // モデルを読む（初めの 1 回だけ）。読めたか
+void DrawBodyModel(const BodyPose *bp);
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);
 Color QualityColor(float q);

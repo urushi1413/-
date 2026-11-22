@@ -40,6 +40,8 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
     }
     Color s = Shade(c, n); rlColor4ub(s.r, s.g, s.b, s.a); rlVertex3f(p.x, p.y, p.z);
 }
+void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c から
+bool gBodyModel = false;
 // 太さの変わる筒（側面とふた）
 void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
 {
@@ -1444,6 +1446,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
     Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
+    bool useM = gBodyModel && BodyModelReady();   // 体をモデル（models/player.glb）で描く：首から下の図形は描かずに、関節の位置だけ集める
+    BodyPose bp = { 0 };
     // 左利き：右利きの動きで計算して、最後に左右を反転して描く（体の左右の値も反転しておく）
     SwingAnim mir;
     if (a->lefty) {
@@ -1730,10 +1734,12 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
             knees[i] = TwoBone(hip, foot, 0.44f, 0.44f, hint);
         }
     }
+    Vector3 toePs[2];
     for (int i = 0; i < 2; i++) {
         Vector3 hp = hips[i], kn = knees[i], ft = feet[i];
         Vector3 mid = Vector3Lerp(hp, kn, 0.55f);                                // ショーツの裾
         Vector3 sockTop = Vector3Lerp(kn, ft, 0.78f);
+        if (useM) { float tx = sinf(toes[i]), tz = cosf(toes[i]); toePs[i] = (Vector3){ ft.x + tx * 0.16f, ft.y - 0.045f, ft.z + tz * 0.16f }; continue; }
         Limb(WV(kn), WV(ft), 0.050f * bLg, 0.040f * bLg, skin);                    // すね
         Limb(WV(hp), WV(kn), 0.068f * bLg, 0.052f * bLg, skin);                    // 太もも
         // ショーツの脚の部分：股関節より少し下から始める（太ももが前に傾くと、上の端がシャツの裾から飛び出すので）
@@ -1758,7 +1764,8 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     {
         Vector3 hl = { pelvis.x - 0.085f * hcy, pelvis.y, pelvis.z + 0.085f * hsy };
         Vector3 hr = { pelvis.x + 0.085f * hcy, pelvis.y, pelvis.z - 0.085f * hsy };
-        if (a->female) {
+        if (useM && !a->female) { }   // モデルのショーツ
+        else if (a->female) {
             // スカート：腰から広がる（走ると裾が揺れる）
             float fl = 0.27f + 0.03f * move * fabsf(sinf(ph * 2.0f));
             DrawCylinderEx(W(pelvis.x, pelvis.y + 0.13f, pelvis.z), W(pelvis.x * 1.2f, pelvis.y - 0.20f, pelvis.z * 1.2f), 0.15f, fl, 14, shorts);
@@ -1772,7 +1779,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         }
     }
     // シャツ：1 つの胴。横に広く前後に薄い楕円の断面で、腰 → 胸 → 肩となめらかにつなぐ。腰と肩の向きの違いでねじれる
-    {
+    if (!useM) {
         float fs = a->female ? 0.90f : 1.0f;
         Vector3 hipSide = Vector3Subtract(W(hcy, 0, -hsy), W(0, 0, 0)), shSide = Vector3Subtract(W(cy, 0, -sy), W(0, 0, 0));
         // シャツは出して着る（ショーツに入れない）：裾は腰より下まで垂れ、ショーツより少し大きい
@@ -1786,7 +1793,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         LitEllipseTube(WV(c1), WV(c2), hipSide, shSide, 0.150f * fs * bWa, 0.100f * bBu, 0.190f * fs * bSh, 0.118f * bBu, 14, shirt, false, false);
         LitEllipseTube(WV(c2), WV(c3), shSide, shSide, 0.190f * fs * bSh, 0.118f * bBu, 0.120f * fs * bSh, 0.075f * bBu, 14, shirt, true, false);
     }
-    Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
+    if (!useM) Limb(WV(lShoulder), WV(rShoulder), 0.062f * bBu, 0.062f * bBu, shirt);
     // 首と頭。髪（後ろと上を覆う）、選手によってはヘッドバンド
     Vector3 neckB = { chest.x * 1.05f, hipY + 0.58f, chest.z * 1.05f };
     Vector3 head  = { chest.x * 1.12f, hipY + 0.79f, chest.z * 1.12f + 0.01f };
@@ -1795,7 +1802,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         head.x += 0.03f * sinf(co.e * 12.0f) * co.headShake;                   // 首を振る
         head.z -= 0.03f * co.headUp; head.y += 0.02f * co.headUp;              // 天を仰ぐ
     }
-    DrawCylinderEx(WV(neckB), WV(head), 0.050f * bBu, 0.045f * bBu, 8, skin);
+    if (!useM) DrawCylinderEx(WV(neckB), WV(head), 0.050f * bBu, 0.045f * bBu, 8, skin);
     // 顔の向き：肩の向きの 3 割（構え・サーブでもネットの方を見る）。体ごと回るしぐさ（後ろを向く）ではそのまま回る。天を仰ぐ・うつむく
     float turnC = celeb ? co.turn : 0.0f;
     float headYaw = (yaw - turnC) * 0.30f + turnC;
@@ -2196,12 +2203,35 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
         if (idle && move >= 0.3f && arm == 1) hint = (Vector3){ -0.15f, -0.5f, -1.0f };   // 走り：肘は後ろへ   // 構え：肘は体の前に軽く曲げる（横に張ると腰に手を当てたように見える）
         Vector3 el = TwoBone(s0, hd, 0.31f, 0.30f, hint);
         Vector3 sleeve = Vector3Lerp(s0, el, 0.45f);
+        if (useM) {   // モデル：腕の関節。手の先は、前腕の向きとラケットの向きの間（打つ方の手）
+            Vector3 fa = Vector3Normalize(Vector3Subtract(hd, el));
+            Vector3 hdir = arm == 0 ? Vector3Normalize(Vector3Add(fa, Vector3Normalize(rdir))) : fa;
+            bp.j[arm == 0 ? BJ_SH_R : BJ_SH_L] = s0; bp.j[arm == 0 ? BJ_EL_R : BJ_EL_L] = el; bp.j[arm == 0 ? BJ_HD_R : BJ_HD_L] = hd;
+            bp.j[arm == 0 ? BJ_TIP_R : BJ_TIP_L] = Vector3Add(hd, Vector3Scale(hdir, 0.09f));
+        } else {
         Limb(WV(s0), WV(el), 0.050f * bAr, 0.043f * bAr, skin);                   // 上腕（ナダルは太い）
         Limb(WV(el), WV(hd), 0.042f * bAr, 0.034f * bAr, skin);
         DrawCylinderEx(WV(s0), WV(sleeve), 0.072f * fmaxf(bAr, 1.0f), 0.066f * fmaxf(bAr, 1.0f), 8, shirt);   // 袖
         DrawSphere(WV(hd), 0.042f, skin);
+        }
         if (a->headband.a && arm == 0)   // ヘッドバンドの選手はリストバンドも
             DrawCylinderEx(WV(Vector3Lerp(el, hd, 0.78f)), WV(Vector3Lerp(el, hd, 0.92f)), 0.046f, 0.044f, 8, a->headband);
+    }
+    if (useM) {   // 体のモデルを描く（関節はここまでに集めた）
+        bp.j[BJ_PELVIS] = pelvis; bp.j[BJ_WAIST] = waist; bp.j[BJ_CHEST] = chest; bp.j[BJ_NECK] = neckB;
+        bp.j[BJ_HEAD] = head; bp.j[BJ_HEADTOP] = Vector3Add(head, Vector3Scale(uU, 0.12f));
+        Vector3 hipR = { hcy, 0.0f, -hsy };
+        int ri = Vector3DotProduct(Vector3Subtract(hips[0], hips[1]), hipR) >= 0.0f ? 0 : 1, li = 1 - ri;   // どちらが右脚か（滑り込みは逆のことがある）
+        bp.j[BJ_HIP_R] = hips[ri]; bp.j[BJ_KN_R] = knees[ri]; bp.j[BJ_AN_R] = feet[ri]; bp.j[BJ_TOE_R] = toePs[ri];
+        bp.j[BJ_HIP_L] = hips[li]; bp.j[BJ_KN_L] = knees[li]; bp.j[BJ_AN_L] = feet[li]; bp.j[BJ_TOE_L] = toePs[li];
+        bp.side[0] = hipR; bp.side[1] = (Vector3){ cy, 0.0f, -sy }; bp.side[2] = rR;
+        bp.side[3] = (Vector3){ cosf(toes[ri]), 0.0f, -sinf(toes[ri]) }; bp.side[4] = (Vector3){ cosf(toes[li]), 0.0f, -sinf(toes[li]) };
+        bp.fwd = (Vector3){ hsy, 0.0f, hcy };
+        bp.col[BR_SKIN] = skin; bp.col[BR_SHIRT] = shirt; bp.col[BR_SHORTS] = shorts; bp.col[BR_SOCKS] = sock;
+        bp.col[BR_SHOES] = shoe; bp.col[BR_SOLE] = sole; bp.col[BR_HAIR] = hair;
+        bp.thickArm = bAr; bp.thickLeg = bLg; bp.thickBody = bBu;
+        bp.pos = pos; bp.facingNegZ = facingNegZ; bp.mx = MX; bp.sc = sc;
+        DrawBodyModel(&bp);
     }
     Vector3 nW = Vector3Subtract(W(nrm.x, nrm.y, nrm.z), W(0, 0, 0));
     Vector3 dW = Vector3Subtract(WV(rdir), W(0, 0, 0));
