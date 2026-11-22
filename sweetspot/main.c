@@ -420,6 +420,142 @@ static void DrawShowcase(int youP, int oppP, Color youShirt, float t, float look
     AtmosOverlay(cam); PixelEnd();
 }
 
+// ---- タイトルの背景：AI 同士の試合を中継のカメラで流す（試合の記録・成績には何も残さない） ----
+//   奥（tO）はふつうの AI、手前（tN）は世界を 180° 回した AI（自動で打つときと同じやり方）。tools/ai_vs_ai.c と同じ流れで 1 ポイントずつ
+typedef enum { TD_START, TD_STANCE, TD_PLAY, TD_OVER, TD_FADE } TitleDemoPhase;
+static struct {
+    bool init; TitleDemoPhase ph; float t, acc, fade;
+    Opponent o, n; Ball ball; int server, serveNo, shots, points; bool deuce, judged;
+    Vector3 trail[48]; int trailN; float trailTimer;
+} TD;
+static void TitleDemoPick(void)
+{
+    int cnt = TourPersonaCount(gWomen);
+    int a = TourPersonaAt(gWomen, GetRandomValue(0, cnt - 1)), b;
+    do b = TourPersonaAt(gWomen, GetRandomValue(0, cnt - 1)); while (b == a && cnt > 1);
+    TD.o = (Opponent){ 0 }; TD.n = (Opponent){ 0 };
+    TD.o.persona = a; TD.n.persona = b; TD.o.level = TD.n.level = 2;   // プロ同士（ラリーが続く）
+    TD.o.anim.swingT = TD.n.anim.swingT = -1.0f;
+    TD.server = GetRandomValue(0, 1); TD.points = 0;
+}
+static void TitleDemoNewPoint(void)
+{
+    Opponent *O = &TD.o, *N = &TD.n;
+    O->planned = N->planned = false; O->staggerT = N->staggerT = 0; O->netRush = N->netRush = false; O->swung = N->swung = false;
+    O->leaving = N->leaving = false; O->watching = N->watching = HITTER_NONE; O->vel = N->vel = (Vector3){ 0 }; O->sliding = N->sliding = false;
+    O->downTimer = N->downTimer = 0.0f;
+    O->anim.swingT = N->anim.swingT = -1.0f; O->anim.lungeT = N->anim.lungeT = 0.0f; O->anim.downT = N->anim.downT = 0.0f;
+    O->anim.celebT = N->anim.celebT = 0.0f; O->anim.windup = N->anim.windup = 0.0f;
+    Vector3 sv = { TD.deuce ? 0.6f : -0.6f, 0.0f, HALF_LEN + 0.15f };   // サーバーの立ち位置（自分の座標）
+    if (TD.server == 1) { O->pos = Rot180(sv); N->pos = Rot180(ReturnPos(TD.deuce, TD.serveNo == 2)); }
+    else                { N->pos = Rot180(sv); O->pos = Rot180(ReturnPos(TD.deuce, TD.serveNo == 2)); }
+    Opponent *S = TD.server == 1 ? O : N;
+    S->anim.serveStance = S->anim.holdBall = true;
+    TD.ball = (Ball){ 0 }; TD.shots = 0; TD.judged = false; TD.trailN = 0;
+    TD.ph = TD_STANCE; TD.t = 0.0f;
+}
+static void TitleDemoEnd(void) { TD.ph = TD_OVER; TD.t = 0.0f; TD.points++; }
+static void TitleDemoStep(float dt)
+{
+    Opponent *O = &TD.o, *N = &TD.n;
+    if (!TD.init) { TD.init = true; TitleDemoPick(); TD.deuce = true; TD.serveNo = 1; TitleDemoNewPoint(); TD.fade = 1.0f; }
+    TD.t += dt;
+    if (TD.fade > 0.0f && TD.ph != TD_FADE) TD.fade = fmaxf(TD.fade - dt * 3.0f, 0.0f);   // 黒から明ける
+    if (TD.ph == TD_STANCE) {   // 構えて少し待ってからサーブ
+        Ball bp = FlipSides(TD.ball);
+        AiUpdate(O, &TD.ball, dt); AiUpdate(N, &bp, dt);
+        Opponent *S = TD.server == 1 ? O : N;
+        S->anim.serveStance = S->anim.holdBall = true;
+        if (TD.t > 1.1f) {
+            S->anim.serveStance = S->anim.holdBall = false;
+            if (TD.server == 1) TD.ball = AiServe(O, TD.deuce, TD.serveNo == 1);
+            else TD.ball = FlipSides(AiServe(N, TD.deuce, TD.serveNo == 1));
+            TD.shots = 1; TD.ph = TD_PLAY; TD.t = 0.0f;
+        }
+        return;
+    }
+    if (TD.ph == TD_OVER) {   // 少し見せてから暗くして、次のポイント
+        Ball bp = FlipSides(TD.ball);
+        AiUpdate(O, &TD.ball, dt); AiUpdate(N, &bp, dt);
+        for (int k = 0; k < 4 && TD.ball.active; k++) StepBall(&TD.ball, PHYS_DT);
+        if (TD.t > 1.6f) { TD.ph = TD_FADE; TD.t = 0.0f; }
+        return;
+    }
+    if (TD.ph == TD_FADE) {
+        TD.fade = fminf(TD.fade + dt * 4.0f, 1.0f);
+        if (TD.fade >= 1.0f) {
+            if (TD.serveNo == 1) TD.deuce = !TD.deuce;
+            if (TD.points % 4 == 0) TD.server = 1 - TD.server;   // 4 ポイントごとにサーバーを替える
+            if (TD.points >= 12) TitleDemoPick();                 // しばらくしたら別の 2 人に
+            TitleDemoNewPoint();
+        }
+        return;
+    }
+    // ---- ラリー ----
+    Ball bp = FlipSides(TD.ball);
+    AiUpdate(O, &TD.ball, dt); AiUpdate(N, &bp, dt);
+    for (int k = 0; k < 4; k++) {
+        StepBall(&TD.ball, PHYS_DT);
+        gRallyHits = TD.shots;
+        if (O->planned && TD.ball.age >= O->swingAge) { O->planned = false; if (AiSwing(O, &TD.ball, Rot180(N->pos))) { TD.shots++; TD.trailN = 0; } }
+        bp = FlipSides(TD.ball);
+        if (N->planned && bp.age >= N->swingAge) { N->planned = false; if (AiSwing(N, &bp, Rot180(O->pos))) { TD.ball = FlipSides(bp); TD.shots++; TD.trailN = 0; } }
+    }
+    TD.trailTimer += dt;
+    if (TD.ball.active && TD.trailTimer >= 1.0f / 60.0f) {   // 残像
+        TD.trailTimer = 0.0f;
+        if (TD.trailN == 48) { memmove(TD.trail, TD.trail + 1, sizeof(Vector3) * 47); TD.trailN = 47; }
+        TD.trail[TD.trailN++] = TD.ball.pos;
+    }
+    int hitter = TD.ball.lastHitter == HITTER_OPP ? 1 : 0;
+    if (TD.ball.isServe && TD.ball.bounces >= 1 && !TD.judged) {
+        if (TD.ball.result == RESULT_IN) TD.judged = true;
+        else if (TD.serveNo == 1) { TD.serveNo = 2; TD.ph = TD_OVER; TD.t = 0.9f; return; }   // フォルト：少しだけ見せてセカンド
+        else { TD.serveNo = 1; TitleDemoEnd(); return; }
+    }
+    if (!TD.ball.isServe || TD.judged) {
+        if (TD.ball.bounces >= 1 && TD.ball.result != RESULT_IN && TD.ball.result != RESULT_NONE) { TD.serveNo = 1; TitleDemoEnd(); return; }
+        if (TD.ball.bounces >= 2) { TD.serveNo = 1; TitleDemoEnd(); return; }
+    }
+    (void)hitter;
+    if (TD.t > 40.0f) { TD.serveNo = 1; TitleDemoEnd(); }   // 念のため
+}
+static void DrawTitleMatch(float frameDt, float lookX)
+{
+    float dt = fminf(frameDt, 1.0f / 20.0f);
+    TD.acc += dt;
+    while (TD.acc >= 1.0f / 60.0f) { TitleDemoStep(1.0f / 60.0f); TD.acc -= 1.0f / 60.0f; }
+    // 中継のカメラ：手前のベースラインの後ろの高い所から。少しだけ左右にゆっくり動く。コートは画面の右寄り（左はメニュー）
+    float tm = (float)GetTime();
+    Camera3D cam = { 0 };
+    cam.up = (Vector3){ 0, 1, 0 }; cam.fovy = 42.0f; cam.projection = CAMERA_PERSPECTIVE;
+    cam.position = (Vector3){ lookX + 1.2f * sinf(tm * 0.07f), 7.2f, HALF_LEN + 10.5f };
+    cam.target   = (Vector3){ lookX * 0.30f, 0.0f, -1.0f };
+    PixelBegin(); DrawSky(cam);
+    double nearK = rlGetCullDistanceNear(), farK = rlGetCullDistanceFar();
+    rlSetClipPlanes(0.5, farK);   // 遠くから見下ろすので、手前の切り口を離して奥行きの精度を上げる（コートと地面が 1mm しか離れていない）
+    BeginMode3D(cam);
+    DrawCourt();
+    DrawStadium(cam.position, TD.ball.pos, 0.3f + 0.04f * TD.shots, tm, (Vector3){ 0 }, 0.0f);
+    DrawFigure(TD.o.pos, false, PersonaShirt(TD.o.persona), &TD.o.anim, Vector3Length(TD.o.vel));
+    DrawFigure(Rot180(TD.n.pos), true, PersonaShirt(TD.n.persona), &TD.n.anim, Vector3Length(TD.n.vel));
+    if (TD.ball.active || TD.ball.bounces > 0) {
+        float vr = fmaxf(BALL_R * 1.4f, Vector3Distance(cam.position, TD.ball.pos) * 0.0050f);
+        vr = Lerp(BALL_R, vr, Smooth01((TD.ball.pos.y - BALL_R - 0.05f) / 0.6f));
+        DrawBallShadow(TD.ball.pos, vr);
+        if (TD.trailN >= 2) DrawBallAfterimage(TD.trail + (TD.trailN > 12 ? TD.trailN - 12 : 0), TD.trailN > 12 ? 12 : TD.trailN, cam.position, vr, 0.6f, (Color){ 220, 255, 60, 255 });
+        DrawSphere(TD.ball.pos, vr, (Color){ 220, 255, 60, 255 });
+    }
+    EndMode3D();
+    rlSetClipPlanes(nearK, farK);
+    AtmosOverlay(cam); PixelEnd();
+    if (TD.fade > 0.0f) DrawRectangle(0, 0, GetScreenWidth(), GetScreenHeight(), Fade(BLACK, TD.fade));
+    // 右下に、いま流れている 2 人の名前
+    const char *nm = TextFormat("%s  vs  %s", PERSONAS[TD.n.persona].shortName, PERSONAS[TD.o.persona].shortName);
+    int fs = 18, w = MeasureText(nm, fs);
+    DrawText(nm, GetScreenWidth() - w - 24, GetScreenHeight() - 70, fs, Fade(RAYWHITE, 0.75f * (1.0f - TD.fade)));
+}
+
 // 優勝の表彰：コートの真ん中で、自分の選手がその大会のトロフィーを頭の上に掲げる。カメラはまわりをゆっくり回る
 static void DrawCeremony(const Tournament *t, int youP, Color youShirt, float tm)
 {
@@ -1128,7 +1264,8 @@ int main(void)
             if (titleMain || menuPage == 1 || menuPage == 3) {
                 SurfaceType keepSurf = gSurface;
                 if (menuPage == 3) gSurface = (SurfaceType)TourSlamSurface(slamSel == SLAM_COUNT ? 0 : slamSel);   // その大会のコートを見せる
-                DrawShowcase(gYouPersona, menuPage == 3 ? -1 : ai.persona, youShirtM, (float)GetTime(), titleMain ? 1.55f : 1.35f, &youScr, &oppScr, titleMain ? 0.0f : 1.0f);   // カメラを左へずらして、2 人を画面の右に
+                if (titleMain) DrawTitleMatch(GetFrameTime(), -6.0f);   // タイトル：AI 同士の試合を流す（コートは右寄り）
+                else DrawShowcase(gYouPersona, menuPage == 3 ? -1 : ai.persona, youShirtM, (float)GetTime(), 1.35f, &youScr, &oppScr, 1.0f);   // カメラを左へずらして、2 人を画面の右に
                 gSurface = keepSurf;
                 // 左側を暗くして文字を読みやすく
                 DrawRectangleGradientH(0, 0, W * 6 / 10, H, Fade(BLACK, 0.80f), Fade(BLACK, 0.0f));
