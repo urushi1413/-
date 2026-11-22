@@ -21,17 +21,20 @@ ROOT = os.path.abspath(os.path.join(HERE, ".."))
 sys.path.insert(0, HERE)
 
 # ======================= 調整用の数値 =======================
-HEAD_SCALE   = 1.10   # 頭の大きさ（元のモデルの頭に対する倍率）
+HEAD_SCALE   = 0.856  # 頭の大きさ（元のモデルの頭に対する倍率）。実測から：頭の高さ＝身長の 1/7.5 になる値
 BODY_DIFF_K  = 0.6    # 選手ごとの体型の差（data.c の値の差に掛ける。1.6 だと筋肉が付きすぎた）
 # 元のマネキンは胸・肩・僧帽筋が大きく、首と顔が太い。テニス選手らしく全体を細くする
 SLIM_TORSO_W = 0.86   # 胴の横幅
 SLIM_TORSO_D = 0.86   # 胴の厚み
 SLIM_ARM     = 0.80   # 腕の太さ
 SLIM_LEG     = 0.92   # 脚の太さ
-TRAP_K       = 0.45   # 僧帽筋（首から肩への盛り上がり）の高さの倍率
-NECK_SLIM    = 0.78   # 首の太さ
+TRAP_K       = 0.20   # 僧帽筋：首の付け根より上に出た胸・鎖骨の部分の高さの倍率（首の付け根より下に収める）。首かどうかは首の軸からの距離で決める
+NECK_TOP_K   = 0.56   # 首の左右の幅：上端（あごの下）＝頭の幅のこの倍（一番細い）
+NECK_BASE_K  = 0.625  # 首の左右の幅：付け根＝頭の幅のこの倍（真ん中で約 0.6 倍）
+NECK_DEPTH_K = 0.85   # 首の前後の厚み（左右の幅に対する倍率。楕円柱）
 HEAD_W       = 0.86   # 頭（顔）の横幅
 JAW_NARROW   = 0.80   # あごのあたりの横幅（頬から下を細く）
+FACE_LOWER_K = 0.82   # 顔の下半分（頭の中心から下）の縦の長さの倍率（元のマネキンはあごが長く、首が長く見えた）
 CHEEK_FLAT   = 0.92   # 頬の前後の厚み
 SHOULDER_DX  = 0.20   # 肩幅の倍率 1 につき、腕を横へ動かす量の基準（m）
 SLEEVE_LEN   = 0.42   # 袖の長さ（上腕の長さに対する割合）
@@ -174,7 +177,8 @@ def apply_body(arm, body, prm):
     B = {n: bone_ws(arm, n) for n in BONE_ALIASES}
     side = lambda n: 1.0 if n.endswith(".L") else (-1.0 if n.endswith(".R") else 0.0)
     sh_z = (B["upperarm.L"][0].z + B["upperarm.R"][0].z) * 0.5   # 肩の高さ
-    neck_r = 0.06
+    neck_r = 0.050   # 首の付け根の半分の幅（頭を小さくした後の首の太さ）より少し外から低くする
+    nb_z, nb_x, nb_y = B["neck"][0].z, B["neck"][0].x, B["neck"][0].y   # 首の付け根
     for v, w in zip(body.data.vertices, W):
         p = mw @ v.co
         d = Vector((0, 0, 0))
@@ -189,7 +193,6 @@ def apply_body(arm, body, prm):
             elif n in ("spine3",) or n.startswith("clavicle"): k = (sh * SLIM_TORSO_W, bulk * SLIM_TORSO_D, 1.0)
             elif n in ("spine1", "spine2"): k = (lerp(waist, sh, 0.5) * SLIM_TORSO_W, bulk * SLIM_TORSO_D, 1.0)
             elif n == "hips": k = (waist * 0.94, bulk * 0.94, 1.0)
-            elif n == "neck": k = (NECK_SLIM, NECK_SLIM, 1.0)
             else: k = (1.0, 1.0, 1.0)
             d += wt * Vector((r.x * (k[0] - 1), r.y * (k[1] - 1), r.z * (k[2] - 1)))
             # 肩幅：腕と鎖骨の外側を横へ
@@ -200,9 +203,11 @@ def apply_body(arm, body, prm):
         p = p + d
         # 僧帽筋：肩の高さより上の、首のまわり（胸の上・鎖骨）の盛り上がりを低く
         tw = sum(w.get(n2, 0.0) for n2 in ("spine3", "clavicle.R", "clavicle.L", "neck"))
-        if tw > 0.2 and p.z > sh_z and abs(p.x) > neck_r:
-            k2 = smooth((abs(p.x) - neck_r) / 0.05) * min(tw, 1.0)
-            p.z = sh_z + (p.z - sh_z) * lerp(1.0, TRAP_K, k2)
+        dax = math.hypot(p.x - nb_x, (p.y - nb_y) * 1.2)   # 首の軸からの水平の距離（前後は少し長めに数える）
+        if tw > 0.3 and w.get("head", 0.0) < 0.5 and p.z > nb_z - 0.012 and dax > neck_r:   # 首の付け根より上に出た胸・鎖骨（僧帽筋）を付け根の下へ。首の円柱は動かさない
+            k2 = smooth((dax - neck_r) / 0.03)
+            z0 = nb_z - 0.012
+            p.z = z0 + (p.z - z0) * lerp(1.0, TRAP_K, k2)
         v.co = mi @ p
     # 骨も同じだけ動かす（腕を横へ）
     bpy.context.view_layer.objects.active = arm
@@ -234,8 +239,46 @@ def apply_head_scale(arm, body, k):
         xk = HEAD_W * (lerp(1.0, JAW_NARROW, smooth((-u - 0.05) / 0.75)) if u < -0.05 else 1.0)
         yk = CHEEK_FLAT if (u < 0.2 and (p.y - c.y) < 0) else 1.0   # 前（-Y）の下半分
         cc = c + (c - hb) * (k - 1.0)
-        q = Vector((cc.x + (q.x - cc.x) * xk, cc.y + (q.y - cc.y) * yk, q.z))
+        qz = cc.z + (q.z - cc.z) * FACE_LOWER_K if q.z < cc.z else q.z   # 顔の下半分を縦に短く
+        q = Vector((cc.x + (q.x - cc.x) * xk, cc.y + (q.y - cc.y) * yk, qz))
         v.co = mi @ (p + (q - p) * wt)
+
+# ---- 首：首の骨の軸に中心をそろえた楕円柱にする（上端が一番細く、付け根へ少し広がる。太さは頭の幅に対する比）----
+def reshape_neck(arm, body):
+    W = vgroup_weights(body)
+    mw = body.matrix_world; mi = mw.inverted()
+    hx = [ (mw @ v.co).x for v, w in zip(body.data.vertices, W) if w and max(w, key=w.get) == "head" ]
+    head_w = max(hx) - min(hx)                 # 頭の幅（小さくした後）
+    A, Bt = bone_ws(arm, "neck")
+    ax = (Bt - A); L = ax.length; ax.normalize()
+    side = Vector((1, 0, 0)); side = (side - ax * side.dot(ax)).normalized()
+    dep = ax.cross(side).normalized()
+    items = []
+    for i, (v, w) in enumerate(zip(body.data.vertices, W)):
+        wn = w.get("neck", 0.0)
+        if wn <= 0.0: continue
+        p = mw @ v.co
+        t = max(0.0, min(1.0, (p - A).dot(ax) / L))
+        c = A + ax * (t * L)
+        r = p - c
+        items.append((i, wn, t, r.dot(side), r.dot(dep), c))
+    bins = 6
+    mx = [1e-3] * bins; md = [1e-3] * bins
+    for i, wn, t, rx, rd, c in items:
+        if max(W[i], key=W[i].get) != "neck": continue
+        k = min(int(t * bins), bins - 1)
+        mx[k] = max(mx[k], abs(rx)); md[k] = max(md[k], abs(rd))
+    for k in range(1, bins):
+        if mx[k] <= 1e-3: mx[k] = mx[k - 1]; md[k] = md[k - 1]
+    for i, wn, t, rx, rd, c in items:
+        k = min(int(t * bins), bins - 1)
+        if abs(rx) > mx[k] * 1.15 or abs(rd) > md[k] * 1.15: continue   # 首の外（肩・胸）は動かさない
+        hw = lerp(NECK_BASE_K, NECK_TOP_K, t) * head_w * 0.5
+        sx = min(hw / mx[k], 1.0); sd = min(hw * NECK_DEPTH_K / md[k], 1.0)   # 細くするだけ
+        tgt = c + side * (rx * sx) + dep * (rd * sd)
+        p = mw @ body.data.vertices[i].co
+        body.data.vertices[i].co = mi @ (p + (tgt - p) * min(wn * 1.6, 1.0))
+    print("neck: head width %.3f -> neck top %.3f base %.3f" % (head_w, NECK_TOP_K * head_w, NECK_BASE_K * head_w))
 
 # ---- 服の境目に、まっすぐな切れ目を入れる（袖口・パンツの裾・靴下・リストバンド・腰）----
 #   元のメッシュは境目の所に辺がないので、そのまま面ごとに塗るとギザギザになる。骨に直角な面で、その骨の部分だけを切る
@@ -441,6 +484,7 @@ if __name__ == "__main__":
         hs = HAIR_NAME.get(hair_tab.get(i, ""), hair_default(i))
         apply_body(arm, body, body_tab[i])
         apply_head_scale(arm, body, HEAD_SCALE)
+        reshape_neck(arm, body)
         cut_lines(arm, body)
         paint(arm, body)
         body.data.materials.clear(); body.data.materials.append(MAT_PAL)

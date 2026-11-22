@@ -317,12 +317,12 @@ def build_hair(b, style):
         for az in (-34, 0, 34): tuft(b, style, th, CROWN, dir_from(40, az), 0.36, 0.09, bulge=0.02)   # 前髪：先を立てる
         for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(16, sx * 98), 0.32, 0.01, bulge=0.012)
         for az in (160, 200):   tuft(b, style, th, CROWN, dir_from(-20, az), 0.32, 0.01, bulge=0.012)
-    elif style == "hair_wave":  # ウェーブ：厚く大きくふくらみ、耳と襟足にかぶる。うねる 8 束
-        th = HAIR_THICK * 2.0
+    elif style == "hair_wave":  # ウェーブ：少し厚く、うねる 8 束（ふくらませすぎない：頭の高さ＝身長の 1/7.5 に収める）
+        th = HAIR_THICK * 1.3
         build_shell(b, style, th)
-        for az in (-42, 0, 42): tuft(b, style, th, CROWN, dir_from(22, az), 0.62, 0.16, bulge=0.13, curl=0.55)
-        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(-22, sx * 100), 0.58, 0.10, bulge=0.12, curl=0.55)   # 耳にかぶる
-        for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-48, az), 0.56, 0.08, bulge=0.11, curl=0.55)   # 襟足にかぶる
+        for az in (-42, 0, 42): tuft(b, style, th, CROWN, dir_from(22, az), 0.60, 0.08, bulge=0.07, curl=0.55)
+        for sx in (-1, 1):      tuft(b, style, th, CROWN, dir_from(-22, sx * 100), 0.56, 0.05, bulge=0.06, curl=0.55)   # 耳にかぶる
+        for az in (150, 180, 210): tuft(b, style, th, CROWN, dir_from(-48, az), 0.54, 0.04, bulge=0.06, curl=0.55)   # 襟足にかぶる
     elif style == "hair_tied":  # 長めを後ろで束ねる：薄くなでつけて、結び目に集まる 7 束と、長いポニーテール
         th = HAIR_THICK * 0.55
         build_shell(b, style, th)
