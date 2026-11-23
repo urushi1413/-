@@ -65,7 +65,7 @@ SHORTS_LEN   = 0.50   # パンツの裾（腿の長さに対する割合）
 SOCK_LEN     = 0.24   # 靴下の高さ（すねの長さに対する割合）
 WRIST_BAND   = (0.74, 0.90)   # リストバンド（前腕の長さに対する割合の範囲）
 WAIST_K      = 0.55   # シャツとパンツの境（腰の骨の長さに対する割合）
-COLLAR_T     = 0.30   # 襟：首の骨の付け根からこの割合まではシャツ（肩の面より少し上。首の付け根に襟の帯が見える高さ）
+COLLAR_T     = 0.45   # 襟：首の骨の付け根からこの割合まではシャツ（首の付け根より少し上まで。首の肌の見える所を少なめに）
 COLLAR_BAND  = 0.012  # 襟の差し色の幅（m）
 HAIR_THICK   = 0.055  # ベースの髪の厚み（頭の半径に対する割合）
 # ============================================================
@@ -145,6 +145,9 @@ def load_base():
     bm = bmesh.new(); bm.from_mesh(body.data)
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-6)
     bm.to_mesh(body.data); bm.free()
+    # 元のモデルの法線（読み込んだときの決まった法線）を消す。残すと、形を変えても元の筋肉の凹凸の明暗（首の縦の筋など）が出る。法線は形から計算し直す
+    bpy.context.view_layer.objects.active = body
+    if body.data.has_custom_normals: bpy.ops.mesh.customdata_custom_splitnormals_clear()
     # 骨の名前を決まった名前に
     names = {b.name.lower(): b.name for b in arm.data.bones}
     found = {}
@@ -461,6 +464,68 @@ def fix_trap_apex(arm, body, L):
         for g, val in ((gH, 0.0), (gN, 0.35), (gS, 0.65)): g.add([i], val, "REPLACE")
     bm.to_mesh(body.data); bm.free()
     print("trap apex: corner z %.3f, lowered %d neck verts" % (corner_z, n))
+
+# ---- 首の表面をなめらかな楕円柱に：元の首の縦の筋（筋肉の出っ張り）を取る ----
+#   首の骨に重みのある頂点（頭が主のものは除く）を、その高さの目標の楕円（幅・厚み・先細り）の上へ、向きは変えずに移す
+NECK_UP_T = 1.5   # 首の楕円柱を、頭の付け根より上（耳の下・あごの角の後ろ）へも、首の骨の長さのこの倍まで延ばして形と法線をそろえる
+
+def _neck_ellipse(w, p, A, ax, Ln, side, dep, mid):
+    """首の楕円柱の上の点・外向きの法線・合わせる強さ（1 = 全部）。首の外・あごの前の面は None"""
+    wn, wh = w.get("neck", 0.0), w.get("head", 0.0)
+    t = (p - A).dot(ax) / Ln
+    if t < -0.15 or t > NECK_UP_T: return None
+    if t <= 1.0 and (wn < 0.2 or (_dom(w) == "head" and wh > 0.8)): return None
+    if t > 1.0 and wh <= 0: return None
+    tc = max(0.0, min(1.0, t))
+    taper = lerp(NECK_TAPER[1], 1.0, smooth(tc / 0.5)) if tc < 0.5 else lerp(1.0, NECK_TAPER[0], smooth((tc - 0.5) / 0.5))
+    hw = mid * taper * 0.5; hd = hw * NECK_DEPTH_K
+    c = A + ax * (t * Ln)
+    r = p - c; rx, rd = r.dot(side), r.dot(dep)
+    e = math.hypot(rx / hw, rd / hd)
+    lim = 1.4 if t <= 1.0 else 1.25
+    if e > lim or e < 0.5: return None
+    if t > 1.0 and rd < -0.35 * hd: return None    # あごの下・前の面は動かさない（あごの線を残す）
+    th = math.atan2(rd / hd, rx / hw)
+    q = c + side * (hw * math.cos(th)) + dep * (hd * math.sin(th))
+    nr = (side * (math.cos(th) / hw) + dep * (math.sin(th) / hd)).normalized()
+    k = 1.0 if t <= 1.0 else smooth((NECK_UP_T - t) / (NECK_UP_T - 1.0)) * smooth((lim - e) / 0.15)
+    return q, nr, k
+
+def smooth_neck(arm, body, L):
+    W = vgroup_weights(body); mw = body.matrix_world; mi = mw.inverted()
+    mid = NECK_W * HEAD_WH * L["h"]
+    A, Bt = bone_ws(arm, "neck")
+    ax = (Bt - A); Ln = ax.length; ax.normalize()
+    side = Vector((1, 0, 0)); side = (side - ax * side.dot(ax)).normalized()
+    dep = ax.cross(side).normalized()
+    n = 0
+    for i, (v, w) in enumerate(zip(body.data.vertices, W)):
+        g = _neck_ellipse(w, mw @ v.co, A, ax, Ln, side, dep, mid)
+        if g is None: continue
+        q, nr, k = g
+        p = mw @ v.co
+        body.data.vertices[i].co = mi @ (p + (q - p) * k); n += 1
+    print("neck smooth: %d verts onto ellipse" % n)
+
+def neck_normals(arm, body, L):
+    """首の楕円柱の頂点の法線を、楕円の外向き（高さ方向の成分なし）にそろえる。ほかの頂点は形から計算したなめらかな法線。
+       首の三角は細長く不ぞろいなので、形から計算した法線のままだと、くさび形の明暗が出る"""
+    W = vgroup_weights(body); mw = body.matrix_world
+    mid = NECK_W * HEAD_WH * L["h"]
+    A, Bt = bone_ws(arm, "neck")
+    ax = (Bt - A); Ln = ax.length; ax.normalize()
+    side = Vector((1, 0, 0)); side = (side - ax * side.dot(ax)).normalized()
+    dep = ax.cross(side).normalized()
+    me = body.data
+    nrm = [v.normal.copy() for v in me.vertices]
+    n = 0
+    for i, (v, w) in enumerate(zip(me.vertices, W)):
+        g = _neck_ellipse(w, mw @ v.co, A, ax, Ln, side, dep, mid)
+        if g is None: continue
+        q, nr, k = g
+        nrm[i] = (nr * k + nrm[i] * (1 - k)).normalized(); n += 1
+    me.normals_split_custom_set_from_vertices(nrm)
+    print("neck normals: %d verts" % n)
 
 # ---- 肩線：首の付け根から肩先へ SHOULDER_DEG で下がる線（僧帽筋の斜面）。上の面だけを高さ方向に合わせる ----
 def shape_shoulders(arm, body, L):
@@ -885,6 +950,7 @@ if __name__ == "__main__":
         fix_neck_weights(arm, body, L)
         fix_trap_apex(arm, body, L)
         shape_shoulders(arm, body, L)
+        smooth_neck(arm, body, L)
         cut_lines(arm, body)
         paint(arm, body, L)
         body.data.materials.clear(); body.data.materials.append(MAT_PAL)
@@ -892,6 +958,7 @@ if __name__ == "__main__":
         head_prep(arm, body, L, hs)
         scalp_hair_color(body, arm, hs)
         build_head_extras(arm, body, hs, L)
+        neck_normals(arm, body, L)
         out = os.path.join(ROOT, "models", "players", "p%02d.glb" % i)
         export(arm, out)
         print("wrote", out, "hair", hs, "verts", len(body.data.vertices))
