@@ -74,11 +74,11 @@ web: $(SRC) game.h ja_glyphs.h web/shell.html web/demo_secret.txt
 	    --shell-file web/shell.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 # スマホ版（ブラウザ）：make mobile。タイブレークの試合だけ、画面を触る操作、売る版の名前。web/mobile/ にできる
-#   メモリは始めから 288MB（読み込みで約 265MB まで使う）。途中で増やすと、iPhone の Safari では増やす瞬間に落ちることがある
+#   メモリは始めから 160MB（128MB だと読み込みの途中で 154MB に増やしていた。途中で増やさない。前は効果音を 3 回ずつ丸ごと読んで 265MB まで増え、iPhone の Safari で落ちていたらしい）
 mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
 	mkdir -p web/mobile
 	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DMOBILE_BUILD -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile/index.html \
-	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=301989888 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
 	    --shell-file web/shell_mobile.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 .PHONY: dist clean sim web mobile

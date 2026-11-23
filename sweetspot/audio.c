@@ -4,7 +4,7 @@
 //   形式は .wav / .ogg / .mp3 / .flac
 #include "game.h"
 
-#define POOL      3          // 同じ音が重なっても鳴るように、同じ音を何個か読み込む
+#define POOL      3          // 同じ音が重なっても鳴るように、同じ音を何個か用意する（2 個目からは音のデータを共有する別名。前は丸ごと 3 回読んでいて、音だけで約 160MB 使っていた）
 #define VARIANTS  6          // 1 つの音につき、録音の種類（_2〜_6）
 
 typedef struct { Sound s[VARIANTS][POOL]; int nVar; int next; } SfxSlot;
@@ -110,7 +110,7 @@ void SfxInit(void)
                         if (strcmp(GetFileNameWithoutExt(files.paths[f]), want) != 0) continue;
                         Wave wv = LoadWave(files.paths[f]);
                         if (wv.frameCount == 0) continue;
-                        for (int k = 0; k < POOL; k++) sl->s[sl->nVar][k] = LoadSoundFromWave(wv);
+                        sl->s[sl->nVar][0] = LoadSoundFromWave(wv); for (int k = 1; k < POOL; k++) sl->s[sl->nVar][k] = LoadSoundAlias(sl->s[sl->nVar][0]);
                         UnloadWave(wv);
                         sl->nVar++;
                         break;
@@ -125,7 +125,7 @@ void SfxInit(void)
                     if (strcmp(GetFileNameWithoutExt(files.paths[f]), want) != 0) continue;
                     Wave w = LoadWave(files.paths[f]);
                     if (w.frameCount == 0) continue;
-                    for (int k = 0; k < POOL; k++) gCallP[a][b].s[0][k] = LoadSoundFromWave(w);
+                    gCallP[a][b].s[0][0] = LoadSoundFromWave(w); for (int k = 1; k < POOL; k++) gCallP[a][b].s[0][k] = LoadSoundAlias(gCallP[a][b].s[0][0]);
                     UnloadWave(w);
                     gCallP[a][b].nVar = 1;
                     break;
@@ -142,7 +142,7 @@ void SfxInit(void)
                     if (strcmp(nm, want) != 0) continue;
                     Wave w = LoadWave(files.paths[f]);
                     if (w.frameCount == 0) continue;
-                    for (int k = 0; k < POOL; k++) gSlot[i].s[gSlot[i].nVar][k] = LoadSoundFromWave(w);
+                    gSlot[i].s[gSlot[i].nVar][0] = LoadSoundFromWave(w); for (int k = 1; k < POOL; k++) gSlot[i].s[gSlot[i].nVar][k] = LoadSoundAlias(gSlot[i].s[gSlot[i].nVar][0]);
                     UnloadWave(w);
                     gSlot[i].nVar++;
                     break;
@@ -173,13 +173,13 @@ void SfxClose(void)
     if (!gAudioOk) return;
     for (int i = 0; i < S_COUNT; i++)
         for (int v = 0; v < gSlot[i].nVar; v++)
-            for (int k = 0; k < POOL; k++) UnloadSound(gSlot[i].s[v][k]);
+            { for (int k = 1; k < POOL; k++) UnloadSoundAlias(gSlot[i].s[v][k]); UnloadSound(gSlot[i].s[v][0]); }
     for (int w = 0; w <= PERSONA_COUNT; w++)
         for (int vi = 0; vi < V_COUNT; vi++)
             for (int v = 0; v < gPV[w][vi].nVar; v++)
-                for (int k = 0; k < POOL; k++) UnloadSound(gPV[w][vi].s[v][k]);
+                { for (int k = 1; k < POOL; k++) UnloadSoundAlias(gPV[w][vi].s[v][k]); UnloadSound(gPV[w][vi].s[v][0]); }
     for (int a = 0; a < 4; a++) for (int b = 0; b < 4; b++)
-        if (gCallP[a][b].nVar) for (int k = 0; k < POOL; k++) UnloadSound(gCallP[a][b].s[0][k]);
+        if (gCallP[a][b].nVar) { for (int k = 1; k < POOL; k++) UnloadSoundAlias(gCallP[a][b].s[0][k]); UnloadSound(gCallP[a][b].s[0][0]); }
     if (gBeepOk) UnloadSound(gBeep);
     CloseAudioDevice();
     gAudioOk = false;
