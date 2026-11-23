@@ -1577,7 +1577,7 @@ int main(void)
                 DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
             }
             if ((titleMain || menuPage == 0) && MOBILE_ONLY) {
-                DrawText(TR("Tap to choose. In a match you run to the ball automatically: press a button to swing, slide your finger to aim.", "タップで選ぶ。試合では球の所へ自動で走る。ボタンを押して離すと打つ、押したまま指を動かすと狙い"),
+                DrawText(MOBILE_AUTORUN ? TR("Tap to choose. In a match you run to the ball automatically: press a button to swing, slide your finger to aim.", "タップで選ぶ。試合では球の所へ自動で走る。ボタンを押して離すと打つ、押したまま指を動かすと狙い") : TR("Tap to choose. Left half of the screen: move. Press a button to swing, slide your finger to aim.", "タップで選ぶ。画面の左半分で動く。ボタンを押して離すと打つ、押したまま指を動かすと狙い"),
                          titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.85f));
             } else if (titleMain || menuPage == 0) {
                 DrawText(TextFormat(TR("In game: %s move, mouse aim + click to hit (keys only: %s/%s/%s)   Change keys: SETTINGS > Keys", "試合中：%s 移動、マウスで狙ってクリックで打つ（キーだけなら %s/%s/%s）   キーは 設定 → キー設定 で変えられる"),
@@ -1909,8 +1909,9 @@ int main(void)
         if (MOBILE_ONLY) {
             ReadTouch(&in, aimSens);   // 右手のボタン・狙い、左手のスティック
             if (TouchPauseTapped()) { app = APP_PAUSE; menuSel = 0; P.chargingShot = -1; P.chargingServe = -1; }
-            // 自動で走る：スティックを使っていなければ、来る球を打つ場所へ（球がなければ真ん中の後ろへ戻る）
-            if (!botControls && Vector2Length(in.move) < 0.01f && P.downT <= 0.0f && (phase == PH_PLAY || mode != MODE_MATCH)) {
+            // 自動で走る：スティックを使っていなければ、来る球を打つ場所へ（球がなければ真ん中の後ろへ戻る）。
+            //   今は切っている（MOBILE_AUTORUN 0）：左手のスティックで自分で動く方が遊びやすかった
+            if (MOBILE_AUTORUN && !botControls && Vector2Length(in.move) < 0.01f && P.downT <= 0.0f && (phase == PH_PLAY || mode != MODE_MATCH)) {
                 static AssistPlan mp; static float mpAge = 1e9f;
                 Vector3 tgt = { 0.0f, 0.0f, HALF_LEN + 0.6f };
                 bool incoming = ball.active && ball.lastHitter == HITTER_OPP && ball.pos.z < HALF_LEN + 3.0f;

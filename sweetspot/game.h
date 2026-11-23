@@ -1096,8 +1096,10 @@ void DrawTouchControls(bool serving, bool pauseOnly);
 void TouchButtonRect(int b, Vector2 *c, float *r);
 #ifdef MOBILE_BUILD
 #define MOBILE_ONLY 1
+#define MOBILE_AUTORUN 0   // スマホ版：スティックを触っていないとき、球の所へ自動で走るか（0 = 走らない。左手のスティックで動く）
 #else
 #define MOBILE_ONLY 0
+#define MOBILE_AUTORUN 0
 #endif
 // 体験版（make web）：勝利の証明コード（demo.c）
 void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);
