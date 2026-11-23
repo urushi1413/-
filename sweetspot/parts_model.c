@@ -112,7 +112,7 @@ static const PartMap PMAP[] = {
 #define PMAP_N ((int)(sizeof(PMAP) / sizeof(PMAP[0])))
 
 // パレットのマス（tools/make_player.py の PAL と同じ）
-enum { PC_SKIN = 0, PC_SHIRT, PC_ACCENT, PC_PANTS, PC_SHOES, PC_SOCKS, PC_HAIR, PC_WRIST, PC_EYE, PC_SOLE, PC_NOSE };
+enum { PC_SKIN = 0, PC_SHIRT, PC_ACCENT, PC_PANTS, PC_SHOES, PC_SOCKS, PC_HAIR, PC_WRIST, PC_EYE, PC_SOLE, PC_NOSE, PC_EAR };
 
 static const char *FindFile(const char *rel)
 {
@@ -260,6 +260,7 @@ static const Color *PaletteFor(const BodyPose *bp)
         hsv.z = Clamp(hsv.z * 1.02f, 0.0f, 1.0f);
         Color w = ColorFromHSV(hsv.x, hsv.y, hsv.z);
         pal[PC_SKIN] = w;
+        pal[PC_EAR] = w;   // 耳（スキニングのモデル）：肌と同じ色。マスを分けてあるのは、測るときに色で見分けるため
         pal[PC_NOSE] = (Color){ (unsigned char)(w.r + (220 - w.r) * 0.07f), (unsigned char)(w.g + (80 - w.g) * 0.07f), (unsigned char)(w.b + (70 - w.b) * 0.07f), 255 };
     }
  pal[PC_SHIRT] = bp->col[BR_SHIRT]; pal[PC_ACCENT] = bp->col[BR_ACCENT];
@@ -317,9 +318,10 @@ static int HairFor(const BodyPose *bp)   // 0 短髪 1 ウェーブ 2 束ねる 
     }
 }
 // 顔の絵を選手ごとに組み立てる：ひげ（髪の色を混ぜる）の上に顔の絵、瞳の色を入れる。同じ組み合わせは使い回す
-typedef struct { int face, beard; Color eye, hair; Texture2D tex; } FaceEntry;
+//   dir：顔の絵のフォルダ（スキニングのモデルは models/players/faces。なければ models/faces）
+typedef struct { int face, beard; Color eye, hair; const char *dir; Texture2D tex; } FaceEntry;
 static FaceEntry gFaces[48]; static int gFaceN = 0;
-static Texture2D FaceTex(const BodyPose *bp)
+static Texture2D FaceTexIn(const BodyPose *bp, const char *dir)
 {
     const PlayerLook *L = LookOf(bp);
     int face = L->face > 0 ? L->face : (bp->female ? 3 : 1);
@@ -327,10 +329,11 @@ static Texture2D FaceTex(const BodyPose *bp)
     Color eye = bp->eyeCol, hair = bp->col[BR_HAIR];
     for (int i = 0; i < gFaceN; i++) {
         FaceEntry *e = &gFaces[i];
-        if (e->face == face && e->beard == beard && ColorToInt(e->eye) == ColorToInt(eye) && ColorToInt(e->hair) == ColorToInt(hair)) return e->tex;
+        if (e->face == face && e->beard == beard && !strcmp(e->dir, dir) && ColorToInt(e->eye) == ColorToInt(eye) && ColorToInt(e->hair) == ColorToInt(hair)) return e->tex;
     }
-    const char *f = FindFile(TextFormat("models/faces/face_%02d.png", face));
-    if (!f) f = FindFile("models/faces/face_01.png");
+    const char *f = FindFile(TextFormat("%s/face_%02d.png", dir, face));
+    if (!f) f = FindFile(TextFormat("%s/face_01.png", dir));
+    if (!f && strcmp(dir, "models/faces") != 0) return FaceTexIn(bp, "models/faces");
     if (!f || gFaceN >= 48) return (Texture2D){ 0 };
     Image im = LoadImage(f);
     ImageFormat(&im, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
@@ -345,7 +348,7 @@ static Texture2D FaceTex(const BodyPose *bp)
     }
     Image out = im;
     if (beard > 0) {   // 剃り跡（絵の青灰色のまま）・ひげ（髪の色を暗くした色）を、顔の絵の下に
-        const char *bf = FindFile(TextFormat("models/faces/beard_%d.png", beard));
+        const char *bf = FindFile(TextFormat("%s/beard_%d.png", dir, beard));
         if (bf) {
             Image bi = LoadImage(bf);
             ImageFormat(&bi, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
@@ -370,7 +373,7 @@ static Texture2D FaceTex(const BodyPose *bp)
     Texture2D t = LoadTextureFromImage(out);
     UnloadImage(out);
     SetTextureFilter(t, TEXTURE_FILTER_BILINEAR);
-    gFaces[gFaceN++] = (FaceEntry){ face, beard, eye, hair, t };
+    gFaces[gFaceN++] = (FaceEntry){ face, beard, eye, hair, dir, t };
     return t;
 }
 
@@ -401,7 +404,7 @@ void DrawPartsModel(const BodyPose *bpIn)
         Texture2D ftex = { 0 };
         if (pt->kind == 1) {   // 顔の絵：輪郭線の回では描かない。絵がなければ描かない
             if (outline) continue;
-            ftex = FaceTex(bp);
+            ftex = FaceTexIn(bp, "models/faces");
             if (!ftex.id) continue;
             rlDrawRenderBatchActive(); rlDisableDepthMask();
         }
@@ -440,7 +443,8 @@ void DrawPartsModel(const BodyPose *bpIn)
 
 // スキニングのモデル（body_model.c）からも使う
 const Color *PartsPaletteFor(const BodyPose *bp) { return PaletteFor(bp); }
-Texture2D PartsFaceTex(const BodyPose *bp) { return FaceTex(bp); }
+Texture2D PartsFaceTex(const BodyPose *bp) { return FaceTexIn(bp, "models/faces"); }
+Texture2D PartsFaceTexIn(const BodyPose *bp, const char *dir) { return FaceTexIn(bp, dir); }
 void PartsApplyLook(BodyPose *bp)
 {
     const PlayerLook *L = LookOf(bp);

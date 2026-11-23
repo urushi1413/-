@@ -342,7 +342,7 @@ void DrawBodyModel(const BodyPose *bpIn)
     float sx = bp->facingNegZ ? 1.0f : -1.0f;
     bool flip = bp->mx > 0.0f;   // 体の座標 → 世界が鏡なら、表と裏が入れ替わる
     if (gShState > 0) {
-        Texture2D palT = PaletteTex(bp), faceT = PartsFaceTex(bp);
+        Texture2D palT = PaletteTex(bp), faceT = PartsFaceTexIn(bp, "models/players/faces");
         // 体の座標 → 世界：x は sx*mx*sc、y は sc、z は -sx*sc、それに足元の位置
         Matrix model = { sx * bp->mx * bp->sc, 0, 0, bp->pos.x,
                          0, bp->sc, 0, bp->pos.y,

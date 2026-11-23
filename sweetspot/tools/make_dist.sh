@@ -20,6 +20,6 @@ for f in sounds/*.wav sounds/*.ogg; do
 done
 cp fonts/* "$OUT/fonts/"
 cp models/player.glb models/palette.png models/players.txt "$OUT/models/"
-mkdir -p "$OUT/models/faces" "$OUT/models/players" && cp models/faces/*.png "$OUT/models/faces/" && cp models/players/*.glb "$OUT/models/players/"
+mkdir -p "$OUT/models/faces" "$OUT/models/players/faces" && cp models/faces/*.png "$OUT/models/faces/" && cp models/players/*.glb "$OUT/models/players/" && cp models/players/faces/*.png "$OUT/models/players/faces/"
 cp dist_files/CREDITS.txt dist_files/README_JA.txt dist_files/README_EN.txt "$OUT/"
 (cd dist && if command -v zip >/dev/null; then zip -qr "SweetSpot_${OS_NAME}.zip" SweetSpot; echo "dist/SweetSpot_${OS_NAME}.zip"; else tar czf "SweetSpot_${OS_NAME}.tar.gz" SweetSpot; echo "dist/SweetSpot_${OS_NAME}.tar.gz"; fi)

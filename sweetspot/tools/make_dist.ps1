@@ -20,6 +20,8 @@ New-Item -ItemType Directory -Force -Path "$out\models\faces" | Out-Null
 Copy-Item "models\faces\*.png" "$out\models\faces\"
 New-Item -ItemType Directory -Force -Path "$out\models\players" | Out-Null
 Copy-Item "models\players\*.glb" "$out\models\players\"
+New-Item -ItemType Directory -Force -Path "$out\models\players\faces" | Out-Null
+Copy-Item "models\players\faces\*.png" "$out\models\players\faces\"
 Copy-Item "dist_files\CREDITS.txt", "dist_files\README_JA.txt", "dist_files\README_EN.txt" "$out\"
 Compress-Archive -Path $out -DestinationPath "dist\SweetSpot_Windows.zip" -Force
 Write-Host "dist\SweetSpot_Windows.zip"

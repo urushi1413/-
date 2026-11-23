@@ -976,6 +976,7 @@ bool LitOutlinePass(void);              // 輪郭線の回か（render.c）
 void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol);
 const Color *PartsPaletteFor(const BodyPose *bp);   // 選手ごとの色の表（256 マス。parts_model.c）
 Texture2D PartsFaceTex(const BodyPose *bp);          // 選手ごとの顔の絵（瞳の色・ひげ入り）
+Texture2D PartsFaceTexIn(const BodyPose *bp, const char *dir);   // 同じ。顔の絵のフォルダを指定（なければ models/faces）
 void PartsApplyLook(BodyPose *bp);                   // models/players.txt の色（肌・瞳・髪）を入れる
 const char *ResultText(ShotResult r);
 const char *MissText(MissReason m);
