@@ -172,7 +172,7 @@ extern int gRallyHits;   // 今のラリーの打数（サーブも 1）。AI �
 //   GAME_VERSION は手で上げる。BUILD_ID はビルドのときに Makefile が git から入れる（コミット・その日時・ブランチ。手元の変更があれば +）
 //   リリースのときは SHOW_VERSION を 0 にする
 #define GAME_VERSION "0.9.0"
-#define SHOW_VERSION 1
+#define SHOW_VERSION 0
 #ifndef BUILD_ID
 #define BUILD_ID "unknown"
 #endif

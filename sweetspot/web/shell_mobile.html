@@ -22,7 +22,7 @@
   #rotate .phone { width: 60px; height: 100px; border: 4px solid #eee; border-radius: 10px; margin-bottom: 18px; animation: turn 1.6s ease-in-out infinite; }
   @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
   @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
-  /* 全画面のボタン（左上）。ブラウザが全画面を許すときだけ出す（iPad の Safari など。iPhone の Safari・アプリの中の表示では出ない） */
+  /* 全画面のボタン（左上）。ページを直接開いていて、ブラウザが全画面を許すときだけ出す（iPad の Safari など） */
   #fs { display: none; position: fixed; left: calc(10px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top)); z-index: 5;
         width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.45); color: #fff;
         font-size: 22px; line-height: 42px; text-align: center; padding: 0; touch-action: manipulation; }
@@ -62,7 +62,9 @@
   // 全画面：ページの上に残るブラウザやサイトの帯を消す。全画面にできるときだけボタンを出し、全画面の間は隠す
   var fsBtn = document.getElementById('fs'), root = document.documentElement;
   var fsReq = root.requestFullscreen || root.webkitRequestFullscreen;
-  var fsOk = !!fsReq && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  var embedded = true; try { embedded = window.self !== window.top; } catch (e) {}
+  // 別のページの中（itch.io など）では出さない：そのページが自分の全画面ボタンを持っていて、こちらのボタンはタイトルの文字に重なる
+  var fsOk = !embedded && !!fsReq && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
   function fsNow() { return document.fullscreenElement || document.webkitFullscreenElement; }
   function fsShow() { fsBtn.style.display = fsOk && !fsNow() ? 'block' : 'none'; }
   fsBtn.addEventListener('click', function (e) {
