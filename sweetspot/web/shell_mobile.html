@@ -22,10 +22,15 @@
   #rotate .phone { width: 60px; height: 100px; border: 4px solid #eee; border-radius: 10px; margin-bottom: 18px; animation: turn 1.6s ease-in-out infinite; }
   @keyframes turn { 0%, 30% { transform: rotate(0deg); } 60%, 100% { transform: rotate(-90deg); } }
   @media (orientation: portrait) and (pointer: coarse) { #rotate { display: flex; } }
+  /* 全画面のボタン（左上）。ブラウザが全画面を許すときだけ出す（iPad の Safari など。iPhone の Safari・アプリの中の表示では出ない） */
+  #fs { display: none; position: fixed; left: calc(10px + env(safe-area-inset-left)); top: calc(10px + env(safe-area-inset-top)); z-index: 5;
+        width: 44px; height: 44px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.5); background: rgba(0,0,0,0.45); color: #fff;
+        font-size: 22px; line-height: 42px; text-align: center; padding: 0; touch-action: manipulation; }
 </style>
 </head>
 <body>
 <div id="wrap"><canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas></div>
+<button id="fs" aria-label="全画面 / Fullscreen">⛶</button>
 <div id="status">読み込み中… / Loading…</div>
 <div id="rotate"><div class="phone"></div>スマホを横向きにしてください<br><small>Please turn your phone sideways</small></div>
 <script>
@@ -54,6 +59,18 @@
   }, { passive: false });
   canvas.addEventListener('touchcancel', function () { first = null; }, { passive: false });
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });   // 2 本指の拡大を止める（iPhone）
+  // 全画面：ページの上に残るブラウザやサイトの帯を消す。全画面にできるときだけボタンを出し、全画面の間は隠す
+  var fsBtn = document.getElementById('fs'), root = document.documentElement;
+  var fsReq = root.requestFullscreen || root.webkitRequestFullscreen;
+  var fsOk = !!fsReq && (document.fullscreenEnabled || document.webkitFullscreenEnabled);
+  function fsNow() { return document.fullscreenElement || document.webkitFullscreenElement; }
+  function fsShow() { fsBtn.style.display = fsOk && !fsNow() ? 'block' : 'none'; }
+  fsBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    try { var r = fsReq.call(root); if (r && r.catch) r.catch(function () {}); } catch (err) {}
+  });
+  document.addEventListener('fullscreenchange', fsShow); document.addEventListener('webkitfullscreenchange', fsShow);
+  fsShow();
   // 音：iPhone は、画面に触れた時でないと音（AudioContext）を始められない。音のライブラリ（miniaudio）は最初の 1 回しか
   //   試さず、そのとき失敗すると（読み込み中に触った・ほかのアプリに音を取られた後など）ずっと鳴らなかった。触るたびに、止まっていれば動かし直す
   var silentBuf = null;
