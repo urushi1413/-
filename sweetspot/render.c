@@ -278,6 +278,10 @@ void LineAlongZ(float x, float z0, float z1)
 void DrawCourt(void)
 {
     const Surface *sf = &SURFACES[gSurface];
+    // 地面・コート・芝の縞・ラインは 1〜2mm しか離れていないので、奥行きの精度が低い GPU（スマホなど）では
+    //   遠くのコートに地面の色（緑）が透けて出ていた。この平らな層は奥行きを使わず、描く順（地面 → コート → 縞 → ライン）で重ねる。
+    //   DrawCourt は 3D の一番初めに呼ぶので、後から描く物（選手・スタンド・ネット）の隠れ方は変わらない
+    rlDrawRenderBatchActive(); rlDisableDepthTest();
     DrawPlane((Vector3){ 0, -0.001f, 0 }, (Vector2){ 40.0f, 60.0f }, sf->outside);
     DrawPlane((Vector3){ 0, 0.0f, 0 }, (Vector2){ DOUBLES_W, COURT_LEN }, sf->court);
     if (gSurface == SURF_GRASS) {
@@ -308,6 +312,7 @@ void DrawCourt(void)
     LineAlongZ(0.0f, -SERVICE_Z, SERVICE_Z);
     LineAlongZ(0.0f,  HALF_LEN - 0.10f,  HALF_LEN);   // センターマーク
     LineAlongZ(0.0f, -HALF_LEN, -HALF_LEN + 0.10f);
+    rlDrawRenderBatchActive(); rlEnableDepthTest();
 
     // ネット（たるみを再現するため細かく分けて描く）
     const int segs = 24;
