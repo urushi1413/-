@@ -11,9 +11,10 @@
                touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overscroll-behavior: none; }
   /* ゲームの画面は 1280×720 のまま、ページいっぱいに（縦横の比を保って）縮めて出す。
      縮めるのは transform で。CSS の width/height で縮めると、窓を作るときに GLFW がその見た目の大きさを
-     キャンバスの中身の大きさにしてしまい（1280×720 で描いた左下だけが映る）、画面が切れていた */
+     キャンバスの中身の大きさにしてしまい（1280×720 で描いた左下だけが映る）、画面が切れていた。
+     横幅はゲームがページの縦横の比に合わせて変える（高さ 720 のまま 1280〜1720）。見た目の横幅（--cw）もそれに合わせる */
   #wrap { position: fixed; inset: 0; overflow: hidden; }
-  canvas { display: block; position: absolute; left: 50%; top: 50%; width: 1280px; height: 720px;
+  canvas { display: block; position: absolute; left: 50%; top: 50%; width: var(--cw, 1280px) !important; height: 720px !important;
            transform: translate(-50%, -50%) scale(var(--fit, 1)); outline: none; touch-action: none; }
   #status { position: fixed; left: 0; right: 0; top: 45%; text-align: center; font-size: 18px; pointer-events: none; }
   #rotate { display: none; position: fixed; inset: 0; background: #0d1f1a; z-index: 10; align-items: center; justify-content: center;
@@ -29,8 +30,13 @@
 <div id="rotate"><div class="phone"></div>スマホを横向きにしてください<br><small>Please turn your phone sideways</small></div>
 <script>
   var canvas = document.getElementById('canvas');
-  function fit() { canvas.style.setProperty('--fit', Math.min(window.innerWidth / 1280, window.innerHeight / 720)); }
+  function fit() {
+    var cw = canvas.width || 1280;
+    canvas.style.setProperty('--cw', cw + 'px');
+    canvas.style.setProperty('--fit', Math.min(window.innerWidth / cw, window.innerHeight / 720));
+  }
   fit(); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit);
+  (function loop() { fit(); requestAnimationFrame(loop); })();   // ゲームが横幅を変えたら、すぐ見た目も合わせる
   var statusEl = document.getElementById('status');
   // メニューはタップをクリックとしてゲームに渡す（試合中の打つボタンは、ゲームが指の位置を直接読む）
   function sendMouse(type, t) {

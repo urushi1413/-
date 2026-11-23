@@ -932,6 +932,10 @@ int main(void)
         {   // ブラウザ版：ページの大きさが変わったら、ゲームの画面も合わせる
             int iw = EM_ASM_INT({ return window.innerWidth; }), ih = EM_ASM_INT({ return window.innerHeight; });
             if (!MOBILE_ONLY && iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
+            if (MOBILE_ONLY && iw > 0 && ih > 0) {   // スマホ版：高さは 720 のまま、横幅をページの縦横の比に合わせる（横長のスマホで左右に帯が出ないように）
+                int mw = (int)fminf(fmaxf(roundf(720.0f * (float)iw / (float)ih), 1280.0f), 1720.0f);
+                if (mw != GetScreenWidth() || GetScreenHeight() != 720) SetWindowSize(mw, 720);
+            }
         }
 #endif
         float frameDt = fminf(GetFrameTime(), 0.1f);
