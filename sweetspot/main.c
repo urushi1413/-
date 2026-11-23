@@ -1679,12 +1679,18 @@ int main(void)
             if (matchLock) MATCH_LOCKED_TOAST();
             else { ai.level = k; restart = true; }
         }
+        // スマホ版：試合の結果の表が出ている間は、画面のタップを Enter の代わりにする（キーがないので次の試合へ進めなかった）。一時停止のボタンは除く
+        bool overNext = IsKeyPressed(KEY_ENTER);
+        if (MOBILE_ONLY && mode == MODE_MATCH && score.over && phaseTimer <= 0.0f && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            Vector2 pc; float pr; TouchButtonRect(TB_PAUSE, &pc, &pr);
+            if (Vector2Distance(GetMousePosition(), pc) > pr * 1.15f) overNext = true;
+        }
         bool suggested = false;   // 試合の後の提案のページを開いた（このフレームは次の試合にしない。continue は入力の更新を飛ばすので使わない）
-        if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle && sugPending) {   // スタッツを見終わった：さっきの提案をもう一度
+        if (mode == MODE_MATCH && score.over && overNext && !tour.active && !battle && sugPending) {   // スタッツを見終わった：さっきの提案をもう一度
             suggestKind = sugPending; sugPending = 0; suggested = true;
             app = APP_PAUSE; menuPageReq = 6; menuSel = 0; mouseLocked = false; EnableCursor();
         }
-        else if (mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER) && !tour.active && !battle) {
+        else if (mode == MODE_MATCH && score.over && overNext && !tour.active && !battle) {
             // 提案：補助ありで（補助を使わずに）勝ったら、リアルを 1 回だけ勧める
             if (!hintRealDone && style == STYLE_CASUAL && score.sets[0] > score.sets[1] && !matchAssisted) {
                 hintRealDone = true; SaveSettings();
@@ -1697,7 +1703,7 @@ int main(void)
             }
             if (suggested) { app = APP_PAUSE; menuPageReq = 6; menuSel = 0; mouseLocked = false; EnableCursor(); }
         }
-        if (!suggested && mode == MODE_MATCH && score.over && IsKeyPressed(KEY_ENTER)) {
+        if (!suggested && mode == MODE_MATCH && score.over && overNext) {
             if (tour.active) {   // 大会：結果を記録して組み合わせ表へ
                 { int r0 = tour.round; TourRecordPlayerMatch(&tour, score.sets[0] > score.sets[1], &score); TourBeginReveal(&tour, r0); }
                 if (tour.champion && !autopilot && !matchAssisted) { gCareer.titles[tour.slam % SLAM_COUNT]++; CareerSave(); }   // 記録：優勝   // 結果を 1 試合ずつ見せる
@@ -4209,7 +4215,8 @@ int main(void)
                     snprintf(subBuf, sizeof(subBuf), "%s%s%s", close, nTips > 0 ? "   " : "", nTips > 0 ? tips[0] : "");
                     sub = subBuf;
                 } else if (nTips > 0) sub = tips[0];
-                const char *next = tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト")
+                const char *next = MOBILE_ONLY ? ((lost && !oppRandom) ? TR("Tap: rematch (same opponent)", "タップ：もう一度（同じ相手）") : TR("Tap: new match", "タップ：次の試合"))
+                                 : tour.active ? TR("Enter: back to the draw    R: highlights", "Enter：組み合わせ表へ    R：ハイライト")
                                  : (lost && !oppRandom) ? TR("Enter: rematch (same opponent)   R: highlights   Esc: menu", "Enter：もう一度（同じ相手）   R：ハイライト   Esc：メニュー")
                                  : TR("Enter: new match    R: highlights", "Enter：次の試合    R：ハイライト");
                 DrawMatchSummary(!lost ? TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), YouName()) : TextFormat(TR("MATCH SUMMARY - %s WINS", "試合の結果 - %s の勝ち"), OPP_SHORT), sub,
