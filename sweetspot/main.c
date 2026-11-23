@@ -903,7 +903,10 @@ int main(void)
         AtmosNewMatch();
     }
     CareerLoad();   // 記録（通算成績・自己ベスト）
-    if (MOBILE_ONLY) { setsToWin = 0; mode = MODE_MATCH; style = STYLE_CASUAL; hudLevel = 1; }   // スマホ版：タイブレークの試合、かんたん、説明の行なし
+    if (MOBILE_ONLY) {   // スマホ版：タイブレークの試合、説明の行なし。難しさは初めての起動だけかんたん（前は毎回かんたんに戻していて、選んだリアルが次の起動で消えていた）
+        setsToWin = 0; mode = MODE_MATCH; hudLevel = 1;
+        if (firstRun) style = STYLE_CASUAL;
+    }
 
     // 直前のフレームの物理ステップごとのボールの状態。
     // キー入力はフレーム単位（1/60 秒）でしか取れないので、「離したのはこのフレームの間のどこか」として
