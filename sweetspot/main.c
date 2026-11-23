@@ -913,6 +913,7 @@ int main(void)
     // ボディショット：振ろうとしていた（押している・振る瞬間を待っている）自分の体に球が来たら、その場で振らせて 1 フレーム待つ
     //   （自分の振りは前のフレームの球の動きから打点を選ぶ）。打てたら打った方、空振りなら体に当たった。待つ間、球は体に触れた所で止めておく
     bool bodyPend = false; Ball bodyPendBall = { 0 };
+    bool svVolleyPend = false;   // レシーバー（自分）が、バウンド前のサーブをラケットで打った：次の判定でサーバーのポイント（ネットに触れたサーブならレット）
     int netTouchWho = -1, netTouchHow = 0;   // このポイントで、打った瞬間にネットに触れた選手（0=自分 1=AI）と、触れ方（1 ラケット 2 体）
 
     // バウンドの目印
@@ -1789,7 +1790,7 @@ int main(void)
             needSetup = false;
             if (hlPending) { RecSaveHighlight(pointStart, hlCap, hlScore); hlPending = false; }   // 前のポイント（喜ぶところまで）
             mlPoint++; mlShot = 0; mlBefore = score; youMinDist = 99.0f;
-            netTouchWho = -1; netTouchHow = 0;
+            netTouchWho = -1; netTouchHow = 0; svVolleyPend = false;
             pointStart = RecTotal();
             ai.anim.smashT = 0.0f; ai.anim.broken = 0.0f;   // 新しいラケットに替える
             ai.anim.celebT = 0.0f;
@@ -2374,6 +2375,21 @@ int main(void)
                                       (hc.miss != MISS_NONE && c.miss != MISS_NONE);
                         if (better) { c = hc; bestIdx = h; }
                     }
+                    // バウンド前のサーブを打った（ノーバウンドで取った）：現実のルールでサーバーのポイント。
+                    //   バウンド後の球で打てなかったときだけ調べる（試合とリターン練習だけ。ほかの練習は今まで通り振っても当たらない）
+                    if (c.miss != MISS_NONE && ((mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE))) {
+                        for (int h = 0; h < historyCount; h++) {
+                            const Ball *hb = &history[h];
+                            if (!(hb->active && hb->lastHitter == HITTER_OPP && hb->isServe && hb->bounces == 0 && hb->pos.z > 0.0f && !hb->hitNet)) continue;
+                            Contact vc = EvaluateContact(P.pos, hb, type, swingCharge, 0.0f, P.sliding ? SLIDE_REACH : 0.0f);
+                            if (vc.miss != MISS_NONE) continue;
+                            ball = *hb; bestIdx = h;
+                            c = vc; c.miss = MISS_NO_BALL;   // 打球にはしない（下の打つ処理・記録を通らない）
+                            svVolleyPend = true;
+                            SfxHit(0.3f, 60.0f, false, false, false, Vector3Distance(cam.position, hb->pos));
+                            break;
+                        }
+                    }
                     if (bestIdx >= 0 && c.miss == MISS_NONE) ball = history[bestIdx];
                     c.stepIn = -P.vel.z;
                     // 早く振ってラケットが合わせにいった分：タイミングの質を落とし、引っ張り気味にする
@@ -2537,6 +2553,8 @@ int main(void)
 
         // ---- 物理（固定ステップ）----
         int bodyVictim = -1;   // このフレームで、打った球が体に当たった選手（0=自分 1=AI）。ボディショット
+        bool svVolley = false; // このフレームで、自分がバウンド前のサーブを打った（ボディショットと同じ扱いで、サーバーのポイント）
+        if (svVolleyPend) { svVolleyPend = false; bodyPend = false; bodyVictim = 0; svVolley = true; }
         if (bodyPend) {        // 前のフレームで自分の体に当たりかけた：今のフレームの振りで打てていなければ、体に当たった
             bodyPend = false;
             bool live = (mode == MODE_MATCH && phase == PH_PLAY) || (mode == MODE_RETURN && retPhase == RET_LIVE);
@@ -2769,16 +2787,20 @@ int main(void)
                     phase = PH_BETWEEN;
                     phaseTimer = fmaxf(0.8f, 1.5f * TempoK());
                 } else {
-                    winner = hitter; endKind = 5;
+                    winner = hitter; endKind = svVolley ? 1 : 5;   // ノーバウンドで取ったサーブは「返されなかったサーブ」として数える
                     if (ball.isServe) {   // サーブが体に当たった：返されなかったサーブ。バウンド前ならサーブは入った扱いで数える
                         if (svPre) { mst[hitter][serveNo == 1 ? 0 : 2]++; mst[hitter][serveNo == 1 ? 1 : 3]++; serveJudged = true; }
                         mst[hitter][4]++;
                     }
                     retPending = false;
-                    if (battle) pointMsg = hitter == 0 ? TL("Your BODY SHOT!", "自分のボディショット！") : TL("AI BODY SHOT!", "相手のボディショット！");
+                    if (svVolley) pointMsg = TL("Return before the bounce: point to the server", "ノーバウンドでリターン：サーバーのポイント");
+                    else if (battle) pointMsg = hitter == 0 ? TL("Your BODY SHOT!", "自分のボディショット！") : TL("AI BODY SHOT!", "相手のボディショット！");
                     else if (ball.isServe) pointMsg = hitter == 0 ? TL("Your serve hits the receiver", "自分のサーブがレシーバーに当たった") : TL("AI serve hits the receiver", "相手のサーブがレシーバーに当たった");
                     else pointMsg = hitter == 0 ? TL("Your body shot", "自分のボディショット") : TL("AI body shot", "相手のボディショット");
-                    if (battle) {   // バトル：当たった方は倒れる
+                    if (svVolley) {   // ノーバウンドで取った：体には当たっていないので、倒れない・謝らない
+                        SfxCallFault();
+                        TraceLog(LOG_INFO, "SERVE VOLLEYED by the receiver -> point to %s", hitter == 0 ? "YOU" : "AI");
+                    } else if (battle) {   // バトル：当たった方は倒れる
                         if (v == 1) { ai.downTimer = DIVE_DOWN_TIME * 1.5f; ai.anim.downT = DIVE_DOWN_TIME * 1.5f; ai.vel = (Vector3){ 0 }; }
                         else if (botControls) { bot.downTimer = DIVE_DOWN_TIME * 1.5f; bot.anim.downT = DIVE_DOWN_TIME * 1.5f; bot.vel = (Vector3){ 0 }; }
                         else { P.downT = DIVE_DOWN_TIME * 1.5f; P.vel = (Vector3){ 0 }; }
@@ -3302,7 +3324,7 @@ int main(void)
                     bool letBody = srv && ball.bounces == 0 && ball.netCord;   // ネットに触れたサーブがバウンド前に当たった：レット
                     BodyDeflect(&ball, false); trailCount = 0;
                     res = letBody ? 2 : bodyVictim == 0 ? 3 : 4;
-                    if (!letBody) { SfxHit(0.15f, 50.0f, false, false, false, 4.0f); SfxOoh(0.4f); }
+                    if (!letBody && !svVolley) { SfxHit(0.15f, 50.0f, false, false, false, 4.0f); SfxOoh(0.4f); }
                 } else if (srv) {
                     if (ball.hitNet || (ball.bounces >= 1 && ball.result != RESULT_IN)) res = 1;
                     else if (ball.bounces >= 1 && ball.netCord) res = 2;
@@ -3327,6 +3349,7 @@ int main(void)
                     int winner = (res == 4 || res == 1) ? 0 : 1;   // リターンが入った・ダブルフォールトは自分、入らない・返せないはサーバー
                     if (res == 1) { pointMsg = TL("Double fault", "ダブルフォールト"); SfxCallFault(); }
                     else if (retBody && res == 4) { snprintf(retMsg, sizeof(retMsg), TL("%s body shot", "%s のボディショット"), YouName()); pointMsg = retMsg; }
+                    else if (svVolley) { pointMsg = TL("Return before the bounce: point to the server", "ノーバウンドでリターン：サーバーのポイント"); SfxCallFault(); TraceLog(LOG_INFO, "SERVE VOLLEYED by the receiver (return practice)"); }
                     else if (retBody) { snprintf(retMsg, sizeof(retMsg), TL("%s serve hits the receiver", "%s のサーブがレシーバーに当たった"), gOppName); pointMsg = retMsg; }
                     else if (res == 4) { snprintf(retMsg, sizeof(retMsg), TL("%s return IN", "%s リターンが入った"), YouName()); pointMsg = retMsg; }
                     else if (srv) { snprintf(retMsg, sizeof(retMsg), TL("%s ace / unreturned serve", "%sのサービスエース"), gOppName); pointMsg = retMsg; }
