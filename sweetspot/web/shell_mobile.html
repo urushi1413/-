@@ -12,7 +12,7 @@
   /* ゲームの画面は 1280×720 のまま、ページいっぱいに（縦横の比を保って）縮めて出す。
      縮めるのは transform で。CSS の width/height で縮めると、窓を作るときに GLFW がその見た目の大きさを
      キャンバスの中身の大きさにしてしまい（1280×720 で描いた左下だけが映る）、画面が切れていた。
-     横幅はゲームがページの縦横の比に合わせて変える（高さ 720 のまま 1280〜1720）。見た目の横幅（--cw）もそれに合わせる */
+     横幅はゲームがページの縦横の比に合わせて変える（高さ 720 のまま 1280〜2560）。見た目の横幅（--cw）もそれに合わせる */
   #wrap { position: fixed; inset: 0; overflow: hidden; }
   canvas { display: block; position: absolute; left: 50%; top: 50%; width: var(--cw, 1280px) !important; height: 720px !important;
            transform: translate(-50%, -50%) scale(var(--fit, 1)); outline: none; touch-action: none; }
@@ -54,6 +54,22 @@
   }, { passive: false });
   canvas.addEventListener('touchcancel', function () { first = null; }, { passive: false });
   document.addEventListener('gesturestart', function (e) { e.preventDefault(); });   // 2 本指の拡大を止める（iPhone）
+  // 音：iPhone は、画面に触れた時でないと音（AudioContext）を始められない。音のライブラリ（miniaudio）は最初の 1 回しか
+  //   試さず、そのとき失敗すると（読み込み中に触った・ほかのアプリに音を取られた後など）ずっと鳴らなかった。触るたびに、止まっていれば動かし直す
+  var silentBuf = null;
+  function unlockAudio() {
+    var m = window.miniaudio; if (!m || !m.devices) return;
+    for (var i = 0; i < m.devices.length; i++) {
+      var d = m.devices[i]; if (!d || !d.webaudio) continue;
+      var ctx = d.webaudio;
+      if (ctx.state !== 'running') { try { ctx.resume(); } catch (e) {} }
+      try {   // 無音を一瞬鳴らす（iPhone で音の出口を開ける）
+        if (!silentBuf) silentBuf = ctx.createBuffer(1, 1, 22050);
+        var src = ctx.createBufferSource(); src.buffer = silentBuf; src.connect(ctx.destination); src.start(0);
+      } catch (e) {}
+    }
+  }
+  ['touchstart', 'touchend', 'mousedown', 'click', 'keydown'].forEach(function (t) { document.addEventListener(t, unlockAudio, true); });
   var Module = {
     canvas: canvas,
     setStatus: function (t) { statusEl.textContent = t ? t.replace(/Downloading data\.\.\./, '読み込み中… / Loading… ') : ''; },
