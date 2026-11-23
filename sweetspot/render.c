@@ -42,7 +42,7 @@ static void LitVertex(Vector3 p, Vector3 n, Color c)
 }
 void LitVertexExt(Vector3 p, Vector3 n, Color c) { LitVertex(p, n, c); }   // body_model.c・parts_model.c から
 bool LitOutlinePass(void) { return gOutline; }
-#define SKIN_NECK_K 0.46f    // スキニングのモデル：頭の付け根の位置（首の付け根 → 頭の中心の割合）。襟を上げた分と合わせて、あご先〜襟ぐり（正面の真ん中）が頭の高さの約 0.35 倍になる値
+#define SKIN_NECK_K 0.58f    // スキニングのモデル：頭の付け根の位置（首の付け根 → 頭の中心の割合）。あご先〜襟ぐり（正面の真ん中）が頭の高さの約 0.40 倍になる値（実測：0.46 で 0.33、0.56 で 0.39）
 void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *outlineCol)   // スキニングのシェーダーに、同じ光と輪郭線を渡す
 {
     *L = gLightL; *amb = gLightAmb; *diff = gLightDiff; *outlineW = OUTLINE_W; *outlineCol = OUTLINE_COL;
