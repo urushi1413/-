@@ -290,7 +290,15 @@ extern bool gDecidingSet;   // 最終セット
 #define TWEENER_CHARGE   0.30f   // 振りの強さの上限
 #define TWEENER_ERR      2.6f    // ぶれの倍率
 #define TWEENER_YAW_ERR  9.0f    // 横のぶれの上乗せ（度）
-#define BEHIND_LIMIT    -75.0f   // これより後ろに入られたら振り遅れ（空振り）。それより手前なら、遅れても押し出すように当たる
+#define BEHIND_LIMIT    -35.0f   // これより後ろに入られたら振り遅れ（空振り）。それより手前なら、遅れても押し出すように当たる（前は -75°：ほぼ真後ろの球まで取れていた）
+#define BEHIND_LIMIT_CASUAL -50.0f   //   カジュアル（前は -80°）
+// ハーフバウンドのリターン（SABR：サービスラインまで詰めて、弾んだ直後の低い球を打つ）：速いサーブほど面を合わせにくい。
+//   低く上がり際（0.75m より下で上向き）で、来た球が 60km/h より速いほど当たりの質が落ちる（0.25m 以下・120km/h 以上で最大）
+#define HALFVOL_H0       0.75f
+#define HALFVOL_H1       0.25f
+#define HALFVOL_KMH0     60.0f
+#define HALFVOL_KMH1    120.0f
+#define HALFVOL_Q_LOSS   0.65f   // 最大でこれだけ質が落ちる
 // 振っている途中でもラケットはボールに合わせにいく（人間は振りながら微調整している）。
 // 早く振っても、この時間先までなら当たる。ただし早かった分だけ質が落ち、引っ張り気味になる
 #define ADAPT_EARLY      0.20f   // 秒

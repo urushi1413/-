@@ -67,7 +67,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
         return c;
     }
-    if (!c.overhead && ang < (gCasual ? -80.0f : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
+    if (!c.overhead && ang < (gCasual ? BEHIND_LIMIT_CASUAL : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
         bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE + reachBonus && moveToward >= DIVE_MIN_SPEED;
@@ -105,6 +105,11 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
     if (c.dive) c.quality *= DIVE_QUALITY;
     if (c.stretch) c.quality *= Lerp(STRETCH_Q_NEAR, STRETCH_Q_FAR, c.stretchK);   // 伸びるほど、面を合わせるだけになる
     if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
+    if (c.isReturn && !c.volley && ball->vel.y > 0.0f) {   // ハーフバウンドのリターン（SABR）：カジュアルの底上げの後で掛ける（かんたんでも楽にはしない）
+        float low = Clamp01((HALFVOL_H0 - bp.y) / (HALFVOL_H0 - HALFVOL_H1));
+        float fast = Clamp01((c.inKmh - HALFVOL_KMH0) / (HALFVOL_KMH1 - HALFVOL_KMH0));
+        c.quality *= 1.0f - HALFVOL_Q_LOSS * low * fast;
+    }
     return c;
 }
 
