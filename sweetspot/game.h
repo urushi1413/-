@@ -957,7 +957,7 @@ Vector3 RacketPose(const SwingAnim *a, int *strokeOut, Vector3 *normal, Vector3 
 void ApplyLook(SwingAnim *a, int persona);
 void DrawFigure(Vector3 pos, bool facingNegZ, Color shirt, const SwingAnim *a, float speed);
 // 体のモデル（Blender で作った models/player.glb。試作）：コードが計算した関節の位置で曲げて描く（body_model.c）
-extern int  gBodyModel;   // 設定：選手の体の描き方。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキニング（models/players/pNN.glb。tools/make_skinned_players.py）。モデルが読めなければ図形
+extern int  gBodyModel;   // 設定：選手の体の描き方（初めは 2）。0 = 図形（今まで）、1 = パーツモデル（models/player.glb）、2 = スキニング（models/players/pNN.glb。tools/make_skinned_players.py）。モデルが読めなければ図形
 extern bool gModelOutline;   // 設定：パーツモデルに輪郭線（背面法）を付ける
 enum { BJ_PELVIS, BJ_WAIST, BJ_CHEST, BJ_NECK, BJ_HEAD, BJ_HEADTOP,
        BJ_SH_R, BJ_EL_R, BJ_HD_R, BJ_TIP_R, BJ_SH_L, BJ_EL_L, BJ_HD_L, BJ_TIP_L,

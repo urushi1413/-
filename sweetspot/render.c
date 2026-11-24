@@ -47,7 +47,7 @@ void LitGetParams(Vector3 *L, float *amb, float *diff, float *outlineW, Color *o
 {
     *L = gLightL; *amb = gLightAmb; *diff = gLightDiff; *outlineW = OUTLINE_W; *outlineCol = OUTLINE_COL;
 }
-int  gBodyModel = 0;
+int  gBodyModel = 2;   // 初めはスキニング（Blender のモデル）。読めなければ図形で描く。前は 0（図形）で、配った版を初めて起動すると古い見た目で、しかも重かった（図形は細かい形を毎フレーム 1 つずつ送るので遅い）
 bool gModelOutline = false;
 // 太さの変わる筒（側面とふた）
 void LitCylinderEx(Vector3 a, Vector3 b, float ra, float rb, int sl, Color col)
