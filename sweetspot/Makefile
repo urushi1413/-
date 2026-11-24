@@ -42,7 +42,7 @@ $(TARGET): $(SRC) game.h ja_glyphs.h
 
 clean:
 	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
-	rm -rf web/out web/mobile build
+	rm -rf web/out web/mobile web/mobile_demo build
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
@@ -83,4 +83,13 @@ mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
 	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
 
-.PHONY: dist clean sim web mobile
+# スマホ版の体験版（ブラウザ）：make mobile-demo。スマホ版に体験版の制限（タイブレークの試合 DEMO_MATCHES 回）と勝利の証明コードを入れる。web/mobile_demo/ にできる
+#   勝利の証明コードの鍵は make web と同じ web/demo_secret.txt（なくすとコードを確かめられないので保管する）
+mobile-demo: $(SRC) game.h ja_glyphs.h web/shell_mobile.html web/demo_secret.txt
+	mkdir -p web/mobile_demo
+	sh tools/stage_web_sounds.sh
+	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DMOBILE_BUILD -DDEMO_BUILD -DDEMO_SECRET=\"$(shell cat web/demo_secret.txt 2>/dev/null)\" -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile_demo/index.html \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
+	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
+
+.PHONY: dist clean sim web mobile mobile-demo

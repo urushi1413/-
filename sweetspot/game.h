@@ -1119,6 +1119,8 @@ void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int g
 #define DEMO_MATCHES 2   // 体験版で遊べる試合（1 セット）の数
 int  DemoMatchesUsed(void);
 void DemoCountMatch(void);
+void DemoSaveCode(const char *code);   // 取った勝利の証明コードを残す（ブラウザの保存場所）
+const char *DemoLastCode(void);         // 残してあるコード（なければ ""）
 #ifdef DEMO_BUILD
 #define DEMO_ONLY 1
 #else

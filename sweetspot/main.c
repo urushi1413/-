@@ -1322,10 +1322,14 @@ int main(void)
                                         CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, ty0 + (firstRun ? 26 : 0), 18, (Color){ 200, 220, 255, 255 });
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
-                    DrawText(left > 0 ? TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left)
-                                      : TR("DEMO  -  No matches left. Practice is unlimited. Get the full game for more!", "体験版  -  試合はここまで。練習は何度でも。続きは製品版で"),
+                    DrawText(left > 0 ? (MOBILE_ONLY ? TextFormat(TR("DEMO  -  Tiebreak matches: %d left.", "体験版  -  タイブレークの試合はあと %d 回"), left)
+                                                     : TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left))
+                                      : (MOBILE_ONLY ? TR("DEMO  -  No matches left. Get the full game for more!", "体験版  -  試合はここまで。続きは製品版で")
+                                                     : TR("DEMO  -  No matches left. Practice is unlimited. Get the full game for more!", "体験版  -  試合はここまで。練習は何度でも。続きは製品版で")),
                              px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
-                    DrawText(TR("CHALLENGE: beat AI NORMAL or PRO on REAL and get the full game free", "チャレンジ：AI「ふつう」か「プロ」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
+                    const char *dc = DemoLastCode();
+                    if (dc[0]) DrawText(TextFormat(TR("CHALLENGE CLEARED!  Your code: %s", "チャレンジ達成！ あなたのコード：%s"), dc), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
+                    else DrawText(TR("CHALLENGE: beat AI NORMAL or PRO on REAL and get the full game free", "チャレンジ：AI「ふつう」か「プロ」に「リアル」で勝つと、製品版が無料"), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
                 }
             } else {
                 bool leftPanel = menuPage == 1 || menuPage == 3;
@@ -1736,8 +1740,8 @@ int main(void)
         bot.level = ai.level;
         if (restart && DEMO_ONLY) {
             demoCounted = false;
-            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。練習はできる
-                mode = MODE_RALLY; battle = false; app = APP_TITLE; menuSel = 0;
+            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。練習はできる（スマホ版は練習がないので、タイトルに戻るだけ）
+                mode = MOBILE_ONLY ? MODE_MATCH : MODE_RALLY; battle = false; app = APP_TITLE; menuSel = 0;
                 mouseLocked = false; EnableCursor();
             }
         }
@@ -3106,6 +3110,7 @@ int main(void)
                         DemoMakeCode(demoCode, sizeof(demoCode), ai.level, (int)style, ai.persona,
                                      score.nSetsDone ? score.setScore[0][0] : score.games[0], score.nSetsDone ? score.setScore[0][1] : score.games[1], ms[0].points, ms[1].points);
                     else demoTried = true;
+                    if (demoCode[0]) DemoSaveCode(demoCode);
                 }
                 if (score.over && mode == MODE_MATCH && !battle && !autopilot && !slowMo && !matchAssisted) {   // 記録：勝敗・相手ごと・連敗（補助を使った試合は数えない）
                     int lv = Clamp(ai.level, 0, 2), st = style == STYLE_CASUAL ? 1 : 0, pe = ai.persona % PERSONA_COUNT;
@@ -4236,7 +4241,8 @@ int main(void)
                     const char *l1 = TextFormat(TR("CHALLENGE CLEARED!  %s", "チャレンジ達成！  %s"), demoCode);
                     int f1 = 26; while (f1 > 16 && MeasureText(l1, f1) > bw - 24) f1--;
                     DrawText(l1, W / 2 - MeasureText(l1, f1) / 2, by + 5, f1, (Color){ 255, 215, 70, 255 });
-                    const char *h2 = TR("Write it down (C: copy). Send it as the store page says to get the full game free.", "書き留めておく（C：コピー）。ストアページの案内のとおり送ると、製品版が無料でもらえる");
+                    const char *h2 = MOBILE_ONLY ? TR("Take a screenshot or write it down (it also stays on the title). Send it as the store page says.", "スクショか書き留めて（タイトルにも残る）。ストアページの案内のとおり送ると製品版が無料")
+                                                 : TR("Write it down (C: copy). Send it as the store page says to get the full game free.", "書き留めておく（C：コピー）。ストアページの案内のとおり送ると、製品版が無料でもらえる");
                     int f2 = 16; while (f2 > 12 && MeasureText(h2, f2) > bw - 30) f2--;
                     DrawText(h2, W / 2 - MeasureText(h2, f2) / 2, by + 34, f2, LIGHTGRAY);
                 } else {

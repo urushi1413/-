@@ -4,6 +4,7 @@
 //   コードを確かめるのは tools/check_code.py（同じ鍵を使う）
 #include "game.h"
 #include <time.h>
+#include <stdlib.h>
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 #endif
@@ -71,4 +72,24 @@ void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int g
     if (bits > 0) s[n++] = B32[(acc << (5 - bits)) & 31];
     s[n] = 0;   // 21 文字
     snprintf(out, outSize, "SS-%.5s-%.5s-%.5s-%.6s", s, s + 5, s + 10, s + 15);
+}
+
+// 取ったコードを残す（ブラウザの保存場所）。結果の画面でうっかり次へ進んでも、タイトルに出し続ける（スマホはコピーできないので書き留める間がいる）
+static char gDemoLast[40] = "";
+void DemoSaveCode(const char *code)
+{
+    snprintf(gDemoLast, sizeof(gDemoLast), "%s", code);
+#ifdef __EMSCRIPTEN__
+    EM_ASM({ try { localStorage.setItem("sweetspot_demo_code", UTF8ToString($0)); } catch (e) {} }, code);
+#endif
+}
+const char *DemoLastCode(void)
+{
+#ifdef __EMSCRIPTEN__
+    if (!gDemoLast[0]) {
+        char *p = (char *)EM_ASM_PTR({ try { var v = localStorage.getItem("sweetspot_demo_code") || ""; return stringToNewUTF8(v); } catch (e) { return stringToNewUTF8(""); } });
+        if (p) { snprintf(gDemoLast, sizeof(gDemoLast), "%s", p); free(p); }
+    }
+#endif
+    return gDemoLast;
 }
