@@ -67,7 +67,7 @@ Contact EvaluateContact(Vector3 player, const Ball *ball, ShotType type, float c
         if (gCasual) c.quality = CASUAL_QFLOOR + (1.0f - CASUAL_QFLOOR) * c.quality;
         return c;
     }
-    if (!c.overhead && ang < (gCasual ? BEHIND_LIMIT_CASUAL : BEHIND_LIMIT)) { c.miss = MISS_LATE; return c; }
+    if (!c.overhead && ang < (gCasual ? BEHIND_LIMIT_CASUAL : BEHIND_LIMIT) && dz < -(gCasual ? BEHIND_DIST_CASUAL : BEHIND_DIST)) { c.miss = MISS_LATE; return c; }
     float reach = c.overhead ? 1.6f + (gCasual ? CASUAL_REACH : 0.0f) : REACH_SIDE + reachBonus;
     if (r > reach) {
         bool canDive = !c.overhead && bp.y < 1.6f && r <= REACH_DIVE + reachBonus && moveToward >= DIVE_MIN_SPEED;
