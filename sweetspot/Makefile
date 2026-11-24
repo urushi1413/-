@@ -42,7 +42,7 @@ $(TARGET): $(SRC) game.h ja_glyphs.h
 
 clean:
 	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
-	rm -rf web/out web/mobile
+	rm -rf web/out web/mobile build
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
@@ -69,16 +69,18 @@ web/demo_secret.txt:
 	python3 -c "import secrets; print(secrets.token_hex(16))" > web/demo_secret.txt
 web: $(SRC) game.h ja_glyphs.h web/shell.html web/demo_secret.txt
 	mkdir -p web/out
+	sh tools/stage_web_sounds.sh
 	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DDEMO_BUILD -DDEMO_SECRET=\"$(shell cat web/demo_secret.txt 2>/dev/null)\" -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/out/index.html \
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=134217728 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
-	    --shell-file web/shell.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
+	    --shell-file web/shell.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 # スマホ版（ブラウザ）：make mobile。タイブレークの試合だけ、画面を触る操作、売る版の名前。web/mobile/ にできる
 #   メモリは始めから 160MB（128MB だと読み込みの途中で 154MB に増やしていた。途中で増やさない。前は効果音を 3 回ずつ丸ごと読んで 265MB まで増え、iPhone の Safari で落ちていたらしい）
 mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
 	mkdir -p web/mobile
+	sh tools/stage_web_sounds.sh
 	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DMOBILE_BUILD -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/mobile/index.html \
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
-	    --shell-file web/shell_mobile.html --preload-file sounds --preload-file fonts --preload-file models --exclude-file models/players
+	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
 
 .PHONY: dist clean sim web mobile
