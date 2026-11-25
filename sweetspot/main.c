@@ -6,6 +6,18 @@
 #include <emscripten.h>   // ブラウザ版：窓の大きさ、マウスの固定
 #endif
 
+// 製品版のページ（itch.io）。体験版のタイトルの「製品版を見る」から開く
+#define FULL_GAME_URL "https://yuweringo.itch.io/sweetspot"
+static void OpenFullGamePage(void)
+{
+#ifdef __EMSCRIPTEN__
+    // ブラウザは、クリック・タップの直後でないと新しいタブを開かせない。ここ（次の描画のとき）で開ければ開き、
+    //   止められたときは、指・マウスを離した瞬間（まだクリックの続きとして扱われる）にもう一度開く（shell_mobile.html の openPending）
+    EM_ASM({ var u = UTF8ToString($0); var w = null; try { w = window.open(u, '_blank'); if (w) w.opener = null; } catch (e) {} if (!w) window.openPending = u; }, FULL_GAME_URL);
+#else
+    OpenURL(FULL_GAME_URL);
+#endif
+}
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };   // 記録用（英語のまま）
 static const char *ModeName(int m)   // 表示用
 {
@@ -1025,7 +1037,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -1039,6 +1051,7 @@ int main(void)
             if (menuPage == 0 && MOBILE_ONLY) {   // スマホ版：タイブレークの試合だけ。キーボードを使う項目はなし
                 items[n++] = MI_PLAY; if (app == APP_PAUSE) items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
                 if (app == APP_TITLE) items[n++] = MI_LANG;   // 言語はタイトルでも変えられる（設定の奥まで行かなくても）
+                if (app == APP_TITLE && DEMO_ONLY) items[n++] = MI_FULLGAME;   // 体験版：製品版のページ（itch.io）を開く
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
             } else if (menuPage == 1 && MOBILE_ONLY) {
@@ -1058,6 +1071,7 @@ int main(void)
                 if (app == APP_PAUSE) items[n++] = MI_PG_MATCH;   // タイトルでは「プレイ」から選手と試合へ
                 items[n++] = MI_PG_SETTINGS;
                 if (app == APP_TITLE) items[n++] = MI_LANG;   // 言語はタイトルでも変えられる（設定の奥まで行かなくても）
+                if (app == APP_TITLE && DEMO_ONLY) items[n++] = MI_FULLGAME;   // 体験版：製品版のページ（itch.io）を開く
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
 #ifndef __EMSCRIPTEN__
@@ -1167,14 +1181,14 @@ int main(void)
                 menuPage = 2; selWant = MI_PG_RULES; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
-                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE && DEMO_ONLY) m0[k0++] = MI_FULLGAME; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it == MI_SUG_STATS || it >= MI_KEY0;
+            bool action = it == MI_PLAY || it == MI_FULLGAME || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it == MI_SUG_STATS || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
@@ -1297,8 +1311,10 @@ int main(void)
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
                 else if (it == MI_BACK) {
                     int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
-                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE && DEMO_ONLY) m0[k0++] = MI_FULLGAME; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
+                } else if (it == MI_FULLGAME) {
+                    OpenFullGamePage();
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
                     tut = -1;              // 練習の途中なら、やめる
@@ -1434,6 +1450,7 @@ int main(void)
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
                     case MI_SLAM_GO:    label = TR("START TOURNAMENT", "大会を始める"); break;
                     case MI_CREDITS:    label = TR("CREDITS", "クレジット"); break;
+                    case MI_FULLGAME:   label = TR("GET THE FULL GAME (itch.io)", "製品版を見る（itch.io）"); break;
                     case MI_PG_MATCH:    label = TR("PLAYERS & MATCH", "選手と試合"); break;
                     case MI_PG_SETTINGS: label = TR("SETTINGS", "設定"); break;
                     case MI_BACK:    label = TR("BACK", "戻る"); break;

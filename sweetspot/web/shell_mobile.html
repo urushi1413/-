@@ -48,6 +48,10 @@
   window.addEventListener('keydown', function (e) {
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1', 'F2'].indexOf(e.key) >= 0) e.preventDefault();
   });
+  // ゲームが「製品版を見る」で開けなかったページは、指・マウス・キーを離した瞬間（クリックの続き）に開く
+  ['mouseup', 'touchend', 'keyup'].forEach(function (t) {
+    document.addEventListener(t, function () { if (window.openPending) { var u = window.openPending; window.openPending = null; try { var w = window.open(u, '_blank'); if (w) w.opener = null; } catch (e) {} } }, true);
+  });
   var statusEl = document.getElementById('status');
   // メニューはタップをクリックとしてゲームに渡す（試合中の打つボタンは、ゲームが指の位置を直接読む）
   function sendMouse(type, t) {
