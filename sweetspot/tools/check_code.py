@@ -41,6 +41,17 @@ def decode(code):
     return v.to_bytes(13, "big")
 
 
+def canon(code):
+    """同じ中身のコードを 1 つの書き方にそろえる（最後の 1 文字は 4 ビットしか使わないので、G と H のように違う字でも同じコードになる。
+    文字のまま比べると、同じコードを書き方を変えて 2 回使えてしまう）"""
+    b = decode(code)
+    if b is None:
+        return code.strip().upper()
+    v = int.from_bytes(b, "big") << 1
+    s = "".join(B32[(v >> (5 * (20 - i))) & 31] for i in range(21))
+    return f"SS-{s[:5]}-{s[5:10]}-{s[10:15]}-{s[15:]}"
+
+
 def check(code, key):
     b = decode(code)
     if b is None:
@@ -66,10 +77,10 @@ def main():
     key = open(SECRET).read().strip().encode()
     used = set()
     if os.path.exists(USED):
-        used = {ln.split()[0] for ln in open(USED) if ln.strip()}
+        used = {canon(ln.split()[0]) for ln in open(USED) if ln.strip()}
     for code in sys.argv[1:]:
         ok, info = check(code, key)
-        norm = code.strip().upper()
+        norm = canon(code)
         if ok and norm in used:
             print(f"使用済み  {norm}  {info}")
         elif ok:
