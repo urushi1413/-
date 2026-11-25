@@ -36,7 +36,9 @@
 <script>
   var canvas = document.getElementById('canvas');
   function fit() {
-    var cw = canvas.width || 1280;
+    // ゲームの横幅は 1280〜2560。ゲームが動き出す前のキャンバスは初めの値（横 300）なので、1280 より小さければ 1280 とみなす
+    //   （300 のまま見た目に入れると、窓を作るとき GLFW がそれを描く大きさにしてしまい、16:9 ちょうどの枠（itch.io など）で細い帯になっていた）
+    var cw = Math.max(canvas.width || 0, 1280);
     canvas.style.setProperty('--cw', cw + 'px');
     canvas.style.setProperty('--fit', Math.min(window.innerWidth / cw, window.innerHeight / 720));
   }
