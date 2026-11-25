@@ -6,6 +6,8 @@
 #include <emscripten.h>   // ブラウザ版：窓の大きさ、マウスの固定
 #endif
 
+// タイトルの右上の言語のボタン（クリック・タップで日本語と英語を切り替える）。英語の表示は日本語の字を持たないフォントなので、字は英字だけ
+static Rectangle LangButtonRect(void) { return (Rectangle){ (float)GetScreenWidth() - 176.0f, 14.0f, 160.0f, 40.0f }; }
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };   // 記録用（英語のまま）
 static const char *ModeName(int m)   // 表示用
 {
@@ -886,7 +888,7 @@ int main(void)
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
         if (loaded) {
-            setsToWin = DEMO_ONLY ? 1 : Clamp(s.sets, 0, 4); gWomen = s.women != 0;   // 体験版は 1 セットだけ
+            setsToWin = DEMO_ONLY ? 0 : Clamp(s.sets, 0, 4); gWomen = s.women != 0;   // 体験版はタイブレークだけ
             gYouPersona = (s.you > 0 && s.you < PERSONA_COUNT && PERSONAS[s.you].female == gWomen) ? s.you : 0;
             ai.persona = (s.opp > 0 && s.opp < PERSONA_COUNT && PERSONAS[s.opp].female == gWomen) ? s.opp : TourPersonaAt(gWomen, 0);
             ai.level = Clamp(s.level, 0, 2); style = (PlayStyle)Clamp(s.style, 0, STYLE_COUNT - 1); gSurface = (SurfaceType)Clamp(s.court, 0, SURF_COUNT - 1);
@@ -1062,8 +1064,9 @@ int main(void)
                 items[n++] = MI_QUIT;   // ブラウザ版は終わる項目なし（ページを閉じる）
 #endif
             } else if (menuPage == 1) {
-                items[n++] = MI_MODE; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
-                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; if (mode == MODE_MATCH) items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;   // 練習では試合の長さは出さない
+                if (!DEMO_ONLY) items[n++] = MI_MODE;   // 体験版は試合だけ（モード・試合の長さは選べない）
+                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
+                items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; if (mode == MODE_MATCH && !DEMO_ONLY) items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;   // 練習では試合の長さは出さない
             } else if (menuPage == 4) {
                 items[n++] = MI_BACK;
             } else if (menuPage == 5) {
@@ -1152,6 +1155,10 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
+            if (app == APP_TITLE && menuPage == 0 && !keyWaiting && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mp, LangButtonRect())) {
+                gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; SaveSettings();   // タイトルの言語のボタン（設定の奥まで行かなくても変えられる）
+                activate = false; change = 0;
+            }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; selWant = MI_KEYS; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_TAB) && menuPage == 6 && suggestKind != 3) {   // 提案：Tab で試合のスタッツへ
@@ -1175,7 +1182,7 @@ int main(void)
             if (activate && !action) { change = +1; activate = false; }
             if (change != 0 && n > 0) {
                 switch (it) {
-                    case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。Enter で選手と試合へ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
+                    case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY || DEMO_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。Enter で選手と試合へ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
                     /* fall through */
                     case MI_MODE: {   // 並び：試合 → バトル → ラリー練習 → …（バトルは「試合＋体力」）
                         int idx = targetChal ? MODE_COUNT + 1 : battle ? 1 : (mode == MODE_MATCH ? 0 : (int)mode + 1);   // 最後に「的あて（60 秒）」
@@ -1240,7 +1247,7 @@ int main(void)
             }
             if (activate && n > 0) {
                 if (it == MI_PLAY && app == APP_TITLE) {   // タイトルの「プレイ」：選手と試合を決めて、「試合を始める」で始める
-                    menuPage = 1; menuSel = MOBILE_ONLY ? 8 : (mode == MODE_MATCH ? 10 : 9);   // 「試合を始める」を選んだ状態で開く
+                    menuPage = 1; menuSel = (MOBILE_ONLY || DEMO_ONLY) ? 8 : (mode == MODE_MATCH ? 10 : 9);   // 「試合を始める」を選んだ状態で開く
                 } else if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
                     tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
                     mode = MODE_RALLY; battle = false; targetChal = false; assistLevel = 2;
@@ -1334,10 +1341,8 @@ int main(void)
                                         CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, ty0 + (firstRun ? 26 : 0), 18, (Color){ 200, 220, 255, 255 });
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
-                    DrawText(left > 0 ? (MOBILE_ONLY ? TextFormat(TR("DEMO  -  Tiebreak matches: %d left.", "体験版  -  タイブレークの試合はあと %d 回"), left)
-                                                     : TextFormat(TR("DEMO  -  1-set matches: %d left. Practice is unlimited.", "体験版  -  1 セットの試合はあと %d 回。練習は何度でも"), left))
-                                      : (MOBILE_ONLY ? TR("DEMO  -  No matches left. Get the full game for more!", "体験版  -  試合はここまで。続きは製品版で")
-                                                     : TR("DEMO  -  No matches left. Practice is unlimited. Get the full game for more!", "体験版  -  試合はここまで。練習は何度でも。続きは製品版で")),
+                    DrawText(left > 0 ? TextFormat(TR("DEMO  -  Tiebreak matches: %d left.", "体験版  -  タイブレークの試合はあと %d 回"), left)
+                                      : TR("DEMO  -  No matches left. Get the full game for more!", "体験版  -  試合はここまで。続きは製品版で"),
                              px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
                     const char *dc = DemoLastCode();
                     if (dc[0]) DrawText(TextFormat(TR("CHALLENGE CLEARED!  Your code: %s", "チャレンジ達成！ あなたのコード：%s"), dc), px + 4, 258, 20, (Color){ 255, 215, 70, 255 });
@@ -1427,7 +1432,7 @@ int main(void)
                 }
                 switch (items[i]) {
                     case MI_PLAY:    label = app == APP_TITLE ? TR("PLAY", "プレイ") : TR("RESUME", "続ける");
-                                     if (app == APP_TITLE && !MOBILE_ONLY) value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode);
+                                     if (app == APP_TITLE && !MOBILE_ONLY && !DEMO_ONLY) value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode);
 
                                      break;
                     case MI_TOURNAMENT: label = menuPage == 3 ? TR("Tournament", "大会") : TR("GRAND SLAM", "グランドスラム"); value = slamSel == SLAM_COUNT ? TR("SEASON: ALL 4", "シーズン：4 大会") : TourName(slamSel); break;
@@ -1595,6 +1600,16 @@ int main(void)
                 int mw = MeasureText(keyMsg, 20);
                 DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
             }
+            if (app == APP_TITLE && menuPage == 0) {   // 言語のボタン（右上）：今の言語を明るく
+                Rectangle lb = LangButtonRect();
+                bool hov = CheckCollisionPointRec(GetMousePosition(), lb);
+                DrawRectangleRec(lb, Fade(BLACK, hov ? 0.70f : 0.50f));
+                DrawRectangleLinesEx(lb, 2, Fade(RAYWHITE, hov ? 0.9f : 0.5f));
+                int lx = (int)lb.x + 22, ly = (int)lb.y + 9;
+                DrawText("EN", lx, ly, 22, gLang == LANG_EN ? YELLOW : Fade(LIGHTGRAY, 0.7f));
+                DrawText("|", lx + 46, ly, 22, Fade(LIGHTGRAY, 0.6f));
+                DrawText("JP", lx + 70, ly, 22, gLang == LANG_JA ? YELLOW : Fade(LIGHTGRAY, 0.7f));
+            }
             if ((titleMain || menuPage == 0) && MOBILE_ONLY) {
                 DrawText(MOBILE_AUTORUN ? TR("Tap to choose. In a match you run to the ball automatically: press a button to swing, slide your finger to aim.", "タップで選ぶ。試合では球の所へ自動で走る。ボタンを押して離すと打つ、押したまま指を動かすと狙い") : TR("Tap to choose. Left half of the screen: move. Press a button to swing, slide your finger to aim.", "タップで選ぶ。画面の左半分で動く。ボタンを押して離すと打つ、押したまま指を動かすと狙い"),
                          titleMain ? px : px + 30, H - 58, 16, Fade(LIGHTGRAY, 0.85f));
@@ -1690,7 +1705,7 @@ int main(void)
         if (mode == MODE_RALLY && targetChal && chalOver && IsKeyPressed(KEY_ENTER)) forceRestart = true;   // 的あて：もう一度
         bool restart = forceRestart;
         forceRestart = false;
-        if (IsKeyPressed(KEY_G)) {
+        if (IsKeyPressed(KEY_G) && !DEMO_ONLY) {   // 体験版は試合だけ
             if (matchLock) MATCH_LOCKED_TOAST();
             else { mode = (PracticeMode)((mode + 1) % MODE_COUNT); targetChal = false; restart = true; }
         }
@@ -1752,8 +1767,8 @@ int main(void)
         bot.level = ai.level;
         if (restart && DEMO_ONLY) {
             demoCounted = false;
-            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。練習はできる（スマホ版は練習がないので、タイトルに戻るだけ）
-                mode = MOBILE_ONLY ? MODE_MATCH : MODE_RALLY; battle = false; app = APP_TITLE; menuSel = 0;
+            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。タイトルに戻るだけ（体験版は試合だけ）
+                mode = MODE_MATCH; battle = false; app = APP_TITLE; menuSel = 0;
                 mouseLocked = false; EnableCursor();
             }
         }
@@ -1790,7 +1805,7 @@ int main(void)
             AtmosNewMatch();   // 時間帯と天気（おまかせなら試合ごとに変わる）
             gUmpSide = -1; changePending = changeActive = false;   // 審判台は自分から見て左から
             SfxSetLineJudges(false);   // アウトのコールはどのコートでも同じ声に（クレーだけ線審の叫び声だったのをそろえた）
-            if (MOBILE_ONLY) setsToWin = 0;   // スマホ版はいつもタイブレーク
+            if (MOBILE_ONLY || DEMO_ONLY) setsToWin = 0;   // スマホ版・体験版はいつもタイブレーク
             score.setsToWin = LenSets(setsToWin); score.setGames = LenGames(setsToWin);
             if (setsToWin == 0) { score.tbOnly = true; score.tiebreak = true; }   // タイブレークだけの試合：最初からタイブレーク
             ai.tilt = 0.0f;
