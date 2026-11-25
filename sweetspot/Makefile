@@ -42,7 +42,7 @@ $(TARGET): $(SRC) game.h ja_glyphs.h
 
 clean:
 	rm -f sweetspot sweetspot.exe sweetspot_sale sweetspot_sale.exe ai_vs_ai
-	rm -rf web/out web/mobile web/mobile_demo build
+	rm -rf web/out web/mobile web/mobile_demo web/demo build
 
 # AI 同士の試合でバランスを確認する（画面なし。raylib のヘッダだけ使う）
 RAYLIB_INC ?= /usr/local/include
@@ -83,6 +83,15 @@ mobile: $(SRC) game.h ja_glyphs.h web/shell_mobile.html
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
 	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
 
+# ブラウザの体験版（itch.io などに置く）：make web-demo。開いた端末で操作を切り替える（指で触る画面ならスマホ版、マウスなら PC 版の操作）。
+#   体験版の制限と勝利の証明コードは make web と同じ（鍵は web/demo_secret.txt）。画面はスマホ版と同じ shell_mobile.html。web/demo/ にできる
+web-demo: $(SRC) game.h ja_glyphs.h web/shell_mobile.html web/demo_secret.txt
+	mkdir -p web/demo
+	sh tools/stage_web_sounds.sh
+	emcc -std=gnu99 -O2 -Wall $(VERFLAGS) -DSALE_BUILD -DWEB_AUTO -DDEMO_BUILD -DDEMO_SECRET=\"$(shell cat web/demo_secret.txt 2>/dev/null)\" -DPLATFORM_WEB -I$(WEB_RAYLIB) $(SRC) $(WEB_RAYLIB)/libraylib.a -o web/demo/index.html \
+	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
+	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/player.blend
+
 # スマホ版の体験版（ブラウザ）：make mobile-demo。スマホ版に体験版の制限（タイブレークの試合 DEMO_MATCHES 回）と勝利の証明コードを入れる。web/mobile_demo/ にできる
 #   勝利の証明コードの鍵は make web と同じ web/demo_secret.txt（なくすとコードを確かめられないので保管する）
 mobile-demo: $(SRC) game.h ja_glyphs.h web/shell_mobile.html web/demo_secret.txt
@@ -92,4 +101,4 @@ mobile-demo: $(SRC) game.h ja_glyphs.h web/shell_mobile.html web/demo_secret.txt
 	    -sUSE_GLFW=3 -sASYNCIFY -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=167772160 -sSTACK_SIZE=1048576 -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=HEAPF32,FS \
 	    --shell-file web/shell_mobile.html --preload-file build/web_sounds@sounds --preload-file fonts --preload-file models --exclude-file models/players
 
-.PHONY: dist clean sim web mobile mobile-demo
+.PHONY: dist clean sim web mobile mobile-demo web-demo

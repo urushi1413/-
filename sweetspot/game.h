@@ -1110,9 +1110,20 @@ void TouchButtonRect(int b, Vector2 *c, float *r);
 #ifdef MOBILE_BUILD
 #define MOBILE_ONLY 1
 #define MOBILE_AUTORUN 0   // スマホ版：スティックを触っていないとき、球の所へ自動で走るか（0 = 走らない。左手のスティックで動く）
+#elif defined(WEB_AUTO)
+// ブラウザの体験版（make web-demo）：開いた端末で切り替える。指で触る画面（スマホ・タブレット）ならスマホ版、マウスなら PC 版の操作（main.c で決める）
+extern int gMobileUI;
+#define MOBILE_ONLY gMobileUI
+#define MOBILE_AUTORUN 0
 #else
 #define MOBILE_ONLY 0
 #define MOBILE_AUTORUN 0
+#endif
+// 画面の大きさの決め方：スマホ版と体験版は、高さ 720 のまま横幅をページの縦横の比に合わせ、ページの方で縮めて出す（shell_mobile.html）
+#if defined(MOBILE_BUILD) || defined(WEB_AUTO)
+#define WEB_FIT720 1
+#else
+#define WEB_FIT720 0
 #endif
 // 体験版（make web）：勝利の証明コード（demo.c）
 void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);

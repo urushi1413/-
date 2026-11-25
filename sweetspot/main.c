@@ -667,9 +667,15 @@ static float AiServePrep(Opponent *ai, int serveNo)
     return wait;
 }
 
+#ifdef WEB_AUTO
+int gMobileUI = 0;   // ブラウザの体験版：指で触る画面なら 1（スマホ版の操作）
+#endif
 int main(void)
 {
-    SetConfigFlags(FLAG_MSAA_4X_HINT | (MOBILE_ONLY ? 0 : FLAG_WINDOW_RESIZABLE));   // スマホ版は 1280×720 のまま（ページの方で縮めて出す）
+#ifdef WEB_AUTO
+    gMobileUI = EM_ASM_INT({ try { return (window.matchMedia && matchMedia('(pointer: coarse)').matches) ? 1 : 0; } catch (e) { return 0; } });
+#endif
+    SetConfigFlags(FLAG_MSAA_4X_HINT | (WEB_FIT720 ? 0 : FLAG_WINDOW_RESIZABLE));   // スマホ版は 1280×720 のまま（ページの方で縮めて出す）
     InitWindow(1280, 720, "SWEET SPOT");
     SfxInit();
     UiFontInit();   // 日本語フォント
@@ -934,10 +940,16 @@ int main(void)
 #ifdef __EMSCRIPTEN__
         {   // ブラウザ版：ページの大きさが変わったら、ゲームの画面も合わせる
             int iw = EM_ASM_INT({ return window.innerWidth; }), ih = EM_ASM_INT({ return window.innerHeight; });
-            if (!MOBILE_ONLY && iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
-            if (MOBILE_ONLY && iw > 0 && ih > 0) {   // スマホ版：高さは 720 のまま、横幅をページの縦横の比に合わせる（横長のスマホ・ブラウザの横長の枠で左右に帯が出ないように。1280〜2560）
-                int mw = (int)fminf(fmaxf(roundf(720.0f * (float)iw / (float)ih), 1280.0f), 2560.0f);
-                if (mw != GetScreenWidth() || GetScreenHeight() != 720) SetWindowSize(mw, 720);
+            if (!WEB_FIT720 && iw > 0 && ih > 0 && (iw != GetScreenWidth() || ih != GetScreenHeight())) SetWindowSize(iw, ih);
+            if (WEB_FIT720 && iw > 0 && ih > 0) {   // スマホ版：高さは 720 のまま、横幅をページの縦横の比に合わせる（横長のスマホ・ブラウザの横長の枠で左右に帯が出ないように。高さの 16/9〜32/9 倍）
+                //   体験版を PC で開いたとき：画面の細かさ（devicePixelRatio）に合わせて高さ 1080 まで細かく描く（720 のまま引き伸ばすと、全画面でぼやけた）。スマホはメモリと文字の大きさのため 720 のまま
+                int mh = 720;
+                if (!MOBILE_ONLY) {
+                    double dpr = EM_ASM_DOUBLE({ return window.devicePixelRatio || 1; });
+                    mh = (int)fminf(fmaxf(roundf((float)(ih * dpr)), 720.0f), 1080.0f);
+                }
+                int mw = (int)fminf(fmaxf(roundf((float)mh * (float)iw / (float)ih), mh * 16.0f / 9.0f), mh * 32.0f / 9.0f);
+                if (mw != GetScreenWidth() || mh != GetScreenHeight()) SetWindowSize(mw, mh);
             }
         }
 #endif

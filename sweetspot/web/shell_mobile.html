@@ -14,7 +14,7 @@
      キャンバスの中身の大きさにしてしまい（1280×720 で描いた左下だけが映る）、画面が切れていた。
      横幅はゲームがページの縦横の比に合わせて変える（高さ 720 のまま 1280〜2560）。見た目の横幅（--cw）もそれに合わせる */
   #wrap { position: fixed; inset: 0; overflow: hidden; }
-  canvas { display: block; position: absolute; left: 50%; top: 50%; width: var(--cw, 1280px) !important; height: 720px !important;
+  canvas { display: block; position: absolute; left: 50%; top: 50%; width: var(--cw, 1280px) !important; height: var(--ch, 720px) !important;
            transform: translate(-50%, -50%) scale(var(--fit, 1)); outline: none; touch-action: none; }
   #status { position: fixed; left: 0; right: 0; top: 45%; text-align: center; font-size: 18px; pointer-events: none; }
   #rotate { display: none; position: fixed; inset: 0; background: #0d1f1a; z-index: 10; align-items: center; justify-content: center;
@@ -38,12 +38,16 @@
   function fit() {
     // ゲームの横幅は 1280〜2560。ゲームが動き出す前のキャンバスは初めの値（横 300）なので、1280 より小さければ 1280 とみなす
     //   （300 のまま見た目に入れると、窓を作るとき GLFW がそれを描く大きさにしてしまい、16:9 ちょうどの枠（itch.io など）で細い帯になっていた）
-    var cw = Math.max(canvas.width || 0, 1280);
-    canvas.style.setProperty('--cw', cw + 'px');
-    canvas.style.setProperty('--fit', Math.min(window.innerWidth / cw, window.innerHeight / 720));
+    var cw = Math.max(canvas.width || 0, 1280), ch = Math.max(canvas.height || 0, 720);   // 体験版を PC で開くと高さ 1080 まで細かく描く
+    canvas.style.setProperty('--cw', cw + 'px'); canvas.style.setProperty('--ch', ch + 'px');
+    canvas.style.setProperty('--fit', Math.min(window.innerWidth / cw, window.innerHeight / ch));
   }
   fit(); window.addEventListener('resize', fit); window.addEventListener('orientationchange', fit);
   (function loop() { fit(); requestAnimationFrame(loop); })();   // ゲームが横幅を変えたら、すぐ見た目も合わせる
+  // PC（体験版を PC で開いたとき）：スペース・矢印キーなどでページが動かないように
+  window.addEventListener('keydown', function (e) {
+    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab', 'F1', 'F2'].indexOf(e.key) >= 0) e.preventDefault();
+  });
   var statusEl = document.getElementById('status');
   // メニューはタップをクリックとしてゲームに渡す（試合中の打つボタンは、ゲームが指の位置を直接読む）
   function sendMouse(type, t) {
