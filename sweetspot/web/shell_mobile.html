@@ -85,6 +85,8 @@
   fsShow();
   // 音：iPhone は、画面に触れた時でないと音（AudioContext）を始められない。音のライブラリ（miniaudio）は最初の 1 回しか
   //   試さず、そのとき失敗すると（読み込み中に触った・ほかのアプリに音を取られた後など）ずっと鳴らなかった。触るたびに、止まっていれば動かし直す
+  // iPhone の Safari（iOS 17 から）：ゲームの音を「動画と同じ扱い」にして、本体の消音スイッチがオンでも鳴らす（前は消音で鳴らなかった）
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
   var silentBuf = null;
   function unlockAudio() {
     var m = window.miniaudio; if (!m || !m.devices) return;
