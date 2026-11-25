@@ -1032,6 +1032,7 @@ bool IsSliceShot(ShotType t);
 Vector3 AimFromHold(ShotType t, float playerZ, float aimX, float hold, PlayStyle style);
 float ServeDepthFromTime(float t);
 void DisableIme(void *hwnd);   // platform_ime.c（Windows で日本語入力を切る）
+int SystemLangIsJapanese(void); // platform_ime.c：パソコン・ブラウザの言語が日本語か（初めての起動の言語）
 
 // ---- プレイヤー（自分。将来は 2 人目も） ----
 // 入力の種類（溜めを始めた入力を覚えて、その入力が離されたら振る）

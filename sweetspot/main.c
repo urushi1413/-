@@ -896,6 +896,7 @@ int main(void)
                        camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel, gModelOutline };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
+        if (!loaded) gLang = SystemLangIsJapanese() ? LANG_JA : LANG_EN;   // 初めての起動は、パソコン・ブラウザの言語に合わせる（前は日本語に決め打ちで、海外の人に読めない画面を出していた）
         if (firstRun && !MOBILE_ONLY) menuSel = 1;   // タイトルで「はじめての人へ」を選んだ状態にする
         if (loaded) {
             setsToWin = DEMO_ONLY ? 0 : Clamp(s.sets, 0, 4); gWomen = s.women != 0;   // 体験版はタイブレークだけ
