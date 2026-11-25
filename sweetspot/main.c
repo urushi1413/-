@@ -1294,7 +1294,7 @@ int main(void)
                 }
                 else if (it == MI_SUG_YES || it == MI_SUG_NO) {   // 提案のページ：はい／いいえ
                     bool yes = it == MI_SUG_YES;
-                    if (suggestKind == 1 && yes) style = STYLE_REAL;
+                    if (suggestKind == 1 && yes) { style = STYLE_REAL; if (DEMO_ONLY && ai.level < 1) ai.level = 1; }   // 体験版：チャレンジの条件にそろえる
                     if (suggestKind == 2 && yes) style = STYLE_CASUAL;
                     menuPage = 0; menuSel = 0;
                     if (suggestKind == 3 && !yes) { mode = MODE_MATCH; app = APP_TITLE; SaveSettings(); }   // 初めての試合はやめてタイトルへ
@@ -1374,9 +1374,10 @@ int main(void)
                 DrawText(sub, leftPanel ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
                 if (menuPage == 6) {   // 提案の説明（2 行）
                     const char *l1 = "", *l2 = "";
-                    if (suggestKind == 1) { l1 = TR("You won with assist ON. Try REAL (no assist)?", "補助ありで勝ちました。補助なし（リアル）に挑戦しますか？");
-                                            l2 = DEMO_ONLY ? TR("Win on REAL vs NORMAL to get the full game free!", "リアルで「ふつう」に勝つと製品版が無料！")
-                                                           : TR("Same opponent and settings, only the style changes.", "相手と設定はそのまま、難しさだけ変わります"); }
+                    if (suggestKind == 1 && DEMO_ONLY) { l1 = TR("Take the CHALLENGE?", "チャレンジに挑戦しますか？");
+                                            l2 = TR("Win on REAL vs AI NORMAL or PRO and get the full game free!", "難しさ「リアル」で AI「ふつう」以上に勝つと、製品版が無料！"); }
+                    else if (suggestKind == 1) { l1 = TR("You won with assist ON. Try REAL (no assist)?", "補助ありで勝ちました。補助なし（リアル）に挑戦しますか？");
+                                            l2 = TR("Same opponent and settings, only the style changes.", "相手と設定はそのまま、難しさだけ変わります"); }
                     else if (suggestKind == 2) { l1 = TextFormat(TR("Tough run - %d losses in a row.", "%d 連敗中です"), sugLosses);
                                                  l2 = TR("Assist ON: no side outs, +50cm reach, timing help. Switch?", "補助あり：横にアウトしない・届く範囲 +50cm・タイミングに余裕。切り替えますか？"); }
                     else if (suggestKind == 3) { l1 = TR("Nice! Ready for your first match?", "おつかれさま！ 初めての試合をしてみましょう");
@@ -1483,9 +1484,9 @@ int main(void)
                     case MI_AIM:     label = TR("Aim", "狙い方");             value = aimLanes ? TR("LANES (5 spots)", "5 か所から選ぶ") : TR("CURVE (free, never wide)", "曲線（自由、サイドアウトしない）"); break;
                     case MI_KEYS:    label = TR("Keys", "キー設定"); value = TR("CHANGE", "変える"); break;
                     case MI_START:   label = mode == MODE_MATCH ? TR("START MATCH", "試合を始める") : TR("START PRACTICE", "練習を始める"); break;
-                    case MI_SUG_YES: label = suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
+                    case MI_SUG_YES: label = (suggestKind == 1 && DEMO_ONLY) ? TR("Take the challenge (REAL, AI NORMAL+)", "チャレンジに挑戦（リアル・AI ふつう以上）") : suggestKind == 1 ? TR("Play next match on REAL", "リアルで次の試合") : suggestKind == 2 ? TR("Switch to assist ON", "補助ありにする") : TR("Start the match", "試合を始める"); break;
                     case MI_SUG_STATS: label = TR("See match stats first (Tab)", "先に試合のスタッツを見る（Tab）"); break;
-                    case MI_SUG_NO:  label = suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
+                    case MI_SUG_NO:  label = (suggestKind == 1 && DEMO_ONLY) ? TR("Not now (don't ask again)", "今はしない（もう聞かない）") : suggestKind == 1 ? TR("Keep assist (don't ask again)", "このまま（もう聞かない）") : suggestKind == 2 ? TR("Keep REAL (don't ask again)", "リアルのまま（もう聞かない）") : TR("Back to title", "タイトルへ"); break;
                     case MI_BODY:      label = TR("Player body", "選手の体");
                                        value = gBodyModel == 0 ? TR("SHAPES (code)", "図形（今まで）")
                                              : gBodyModel == 1 ? (PartsModelReady() ? TR("PARTS MODEL (Blender)", "パーツモデル（Blender）") : TR("MODEL NOT FOUND", "モデルが見つからない"))
@@ -1730,7 +1731,9 @@ int main(void)
         }
         else if (mode == MODE_MATCH && score.over && overNext && !tour.active && !battle) {
             // 提案：補助ありで（補助を使わずに）勝ったら、リアルを 1 回だけ勧める
-            if (!hintRealDone && style == STYLE_CASUAL && score.sets[0] > score.sets[1] && !matchAssisted) {
+            //   体験版：勝ち負けに関係なく、チャレンジの条件（リアル・AI ふつう以上）でなければ、1 回目の試合の後にチャレンジを勧める
+            bool demoNotChal = DEMO_ONLY && !(style == STYLE_REAL && ai.level >= 1);
+            if (!hintRealDone && (DEMO_ONLY ? demoNotChal : (style == STYLE_CASUAL && score.sets[0] > score.sets[1] && !matchAssisted))) {
                 hintRealDone = true; SaveSettings();
                 suggestKind = 1; suggested = true;
             }
