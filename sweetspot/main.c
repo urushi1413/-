@@ -6,8 +6,6 @@
 #include <emscripten.h>   // ブラウザ版：窓の大きさ、マウスの固定
 #endif
 
-// タイトルの右上の言語のボタン（クリック・タップで日本語と英語を切り替える）。英語の表示は日本語の字を持たないフォントなので、字は英字だけ
-static Rectangle LangButtonRect(void) { return (Rectangle){ (float)GetScreenWidth() - 176.0f, 14.0f, 160.0f, 40.0f }; }
 static const char *MODE_NAMES[MODE_COUNT] = { "MATCH", "RALLY", "RETURN", "SERVE" };   // 記録用（英語のまま）
 static const char *ModeName(int m)   // 表示用
 {
@@ -1040,6 +1038,7 @@ int main(void)
             int items[32], n = 0;
             if (menuPage == 0 && MOBILE_ONLY) {   // スマホ版：タイブレークの試合だけ。キーボードを使う項目はなし
                 items[n++] = MI_PLAY; if (app == APP_PAUSE) items[n++] = MI_PG_MATCH; items[n++] = MI_PG_SETTINGS;
+                if (app == APP_TITLE) items[n++] = MI_LANG;   // 言語はタイトルでも変えられる（設定の奥まで行かなくても）
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
             } else if (menuPage == 1 && MOBILE_ONLY) {
@@ -1058,6 +1057,7 @@ int main(void)
                 if (app == APP_TITLE && !DEMO_ONLY) items[n++] = MI_TOURNAMENT;   // 体験版はグランドスラムなし
                 if (app == APP_PAUSE) items[n++] = MI_PG_MATCH;   // タイトルでは「プレイ」から選手と試合へ
                 items[n++] = MI_PG_SETTINGS;
+                if (app == APP_TITLE) items[n++] = MI_LANG;   // 言語はタイトルでも変えられる（設定の奥まで行かなくても）
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
 #ifndef __EMSCRIPTEN__
@@ -1155,10 +1155,6 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
-            if (app == APP_TITLE && menuPage == 0 && !keyWaiting && IsMouseButtonPressed(MOUSE_BUTTON_LEFT) && CheckCollisionPointRec(mp, LangButtonRect())) {
-                gLang = gLang == LANG_JA ? LANG_EN : LANG_JA; SaveSettings();   // タイトルの言語のボタン（設定の奥まで行かなくても変えられる）
-                activate = false; change = 0;
-            }
             if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; selWant = MI_KEYS; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_TAB) && menuPage == 6 && suggestKind != 3) {   // 提案：Tab で試合のスタッツへ
@@ -1171,7 +1167,7 @@ int main(void)
                 menuPage = 2; selWant = MI_PG_RULES; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                     n = 0; activate = false; change = 0; }
                 else if (app == APP_PAUSE) { activate = true; menuSel = 0; }   // Esc でそのまま戻る
@@ -1301,7 +1297,7 @@ int main(void)
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
                 else if (it == MI_BACK) {
                     int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
-                    int m0[8], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
+                    int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
                 } else if (it == MI_TITLE) {
                     tour.active = false;   // 大会の途中なら、やめる
@@ -1599,16 +1595,6 @@ int main(void)
             if (menuPage == 5 && keyMsgT > 0.0f && keyMsg[0]) {   // キー設定の知らせ（枠の下の方）
                 int mw = MeasureText(keyMsg, 20);
                 DrawText(keyMsg, W / 2 - mw / 2, py + ph - 32, 20, ORANGE);
-            }
-            if (app == APP_TITLE && menuPage == 0) {   // 言語のボタン（右上）：今の言語を明るく
-                Rectangle lb = LangButtonRect();
-                bool hov = CheckCollisionPointRec(GetMousePosition(), lb);
-                DrawRectangleRec(lb, Fade(BLACK, hov ? 0.70f : 0.50f));
-                DrawRectangleLinesEx(lb, 2, Fade(RAYWHITE, hov ? 0.9f : 0.5f));
-                int lx = (int)lb.x + 22, ly = (int)lb.y + 9;
-                DrawText("EN", lx, ly, 22, gLang == LANG_EN ? YELLOW : Fade(LIGHTGRAY, 0.7f));
-                DrawText("|", lx + 46, ly, 22, Fade(LIGHTGRAY, 0.6f));
-                DrawText("JP", lx + 70, ly, 22, gLang == LANG_JA ? YELLOW : Fade(LIGHTGRAY, 0.7f));
             }
             if ((titleMain || menuPage == 0) && MOBILE_ONLY) {
                 DrawText(MOBILE_AUTORUN ? TR("Tap to choose. In a match you run to the ball automatically: press a button to swing, slide your finger to aim.", "タップで選ぶ。試合では球の所へ自動で走る。ボタンを押して離すと打つ、押したまま指を動かすと狙い") : TR("Tap to choose. Left half of the screen: move. Press a button to swing, slide your finger to aim.", "タップで選ぶ。画面の左半分で動く。ボタンを押して離すと打つ、押したまま指を動かすと狙い"),
