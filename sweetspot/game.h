@@ -1144,7 +1144,7 @@ extern int gMobileUI;
 #endif
 // 体験版（make web）：勝利の証明コード（demo.c）
 void DemoMakeCode(char *out, int outSize, int aiLevel, int style, int opp, int gamesYou, int gamesOpp, int ptsYou, int ptsOpp);
-#define DEMO_MATCHES 2   // 体験版で遊べる試合（1 セット）の数
+#define DEMO_MATCHES 0   // 体験版で遊べる試合の数（0 = 何回でも。回数はプライベートウィンドウで戻せてしまうので、制限をやめた）
 int  DemoMatchesUsed(void);
 void DemoCountMatch(void);
 void DemoSaveCode(const char *code);   // 取った勝利の証明コードを残す（ブラウザの保存場所）

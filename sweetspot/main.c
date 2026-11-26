@@ -1386,7 +1386,8 @@ int main(void)
                                         CareerWon(), CareerPlayed() - CareerWon(), gCareer.bestServeKmh, CareerTitles()), px + 4, ty0 + (firstRun ? 26 : 0), 18, (Color){ 200, 220, 255, 255 });
                 if (DEMO_ONLY) {
                     int left = DEMO_MATCHES - DemoMatchesUsed(); if (left < 0) left = 0;
-                    DrawText(left > 0 ? TextFormat(TR("DEMO  -  Tiebreak matches: %d left.", "体験版  -  タイブレークの試合はあと %d 回"), left)
+                    DrawText(DEMO_MATCHES == 0 ? TR("DEMO  -  Tiebreak matches. Grand Slam & full matches in the full game.", "体験版  -  タイブレークの試合。グランドスラムなどは製品版で")
+                             : left > 0 ? TextFormat(TR("DEMO  -  Tiebreak matches: %d left.", "体験版  -  タイブレークの試合はあと %d 回"), left)
                                       : TR("DEMO  -  No matches left. Get the full game for more!", "体験版  -  試合はここまで。続きは製品版で"),
                              px + 4, 232, 20, (Color){ 120, 220, 255, 255 });
                     const char *dc = DemoLastCode();
@@ -1824,7 +1825,7 @@ int main(void)
         bot.level = ai.level;
         if (restart && DEMO_ONLY) {
             demoCounted = false;
-            if (mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。タイトルに戻るだけ（体験版は試合だけ）
+            if (DEMO_MATCHES > 0 && mode == MODE_MATCH && DemoMatchesUsed() >= DEMO_MATCHES) {   // 体験版の試合はここまで。タイトルに戻るだけ（体験版は試合だけ）
                 mode = MODE_MATCH; battle = false; app = APP_TITLE; menuSel = 0;
                 mouseLocked = false; EnableCursor();
             }
