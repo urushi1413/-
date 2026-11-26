@@ -27,6 +27,64 @@ int gLang = LANG_JA;   // 表示の言語（初めは日本語）
 int   gYouPersona = 0;
 char  gPlayerName[16] = "PLAYER";
 char  gOppName[24] = "AI";
+// ---- 自分の選手（選手作成）----
+CustomPlayer gCustom = { { 5, 5, 5, 5, 5, 5 }, 0, CP_TYPE_BASE, false, false };   // 身長 0 = 標準（男子 185、女子 175）
+Persona gCustomPersona;
+static float CpX(int i) { return ((float)gCustom.lv[i] - 5.0f) / 5.0f; }   // 1〜10 を -0.8〜+1 に（5 が今までの「癖なし」）
+void CustomRebuild(void)
+{
+    Persona p = PERSONAS[0];
+    p.serveAdd = 12.0f * CpX(0);                       // サーブ：速さと安定
+    p.serveSkillAdd = 0.06f * CpX(0);
+    p.aggrAdd = 0.15f * CpX(1);                        // 強打（自分が打つ球の速さは YouPowerMul）
+    p.speedAdd = 0.45f * CpX(2);                       // 足と守備
+    p.reactionAdd = -0.03f * CpX(2);
+    p.errMul = 1.0f - 0.22f * CpX(3);                  // 安定：ぶれの大きさ
+    p.timingMul = 1.0f - 0.15f * CpX(3);
+    p.volleySkill = Clamp(0.5f * CpX(4), 0.0f, 0.6f);          // ネット（5 で今までと同じ 0）
+    p.netRushMul = 1.0f + 0.5f * CpX(4);
+    p.clutch = Clamp(PERSONAS[0].clutch + 0.4f * CpX(5), 0.0f, 1.0f);   // 勝負強さ
+    switch (gCustom.type) {
+        case CP_TYPE_TOP:   p.spinMul = 1.25f; break;
+        case CP_TYPE_SLICE: p.sliceEdge = 0.7f; p.backSlice = 0.6f; break;
+        case CP_TYPE_RISE:  p.risingPref = 0.7f; break;
+        case CP_TYPE_NET:   p.serveVolley = 0.5f; p.netRushMul += 0.5f; p.volleySkill = Clamp(p.volleySkill + 0.1f, 0.0f, 0.9f); break;
+        default: break;
+    }
+    p.lefty = gCustom.lefty; p.oneHanded = gCustom.oneHanded;
+    gCustomPersona = p;
+}
+int CustomPointsUsed(void) { int s = 0; for (int i = 0; i < CP_STATS; i++) s += gCustom.lv[i]; return s; }
+float YouPowerMul(void) { return gYouPersona ? 1.0f : 1.0f + 0.08f * CpX(1); }
+const Persona *YouPersonaP(void) { return gYouPersona ? &PERSONAS[gYouPersona % PERSONA_COUNT] : &gCustomPersona; }
+static const char *CUSTOM_FILE = "sweetspot_player.txt";
+void CustomLoad(void)
+{
+    StoreRestore(CUSTOM_FILE);
+    FILE *f = fopen(CUSTOM_FILE, "r");
+    if (f) {
+        char key[32]; int v;
+        while (fscanf(f, " %31[^=]=%d", key, &v) == 2) {
+            if (!strncmp(key, "lv", 2) && key[2] >= '0' && key[2] < '0' + CP_STATS) gCustom.lv[key[2] - '0'] = Clamp(v, CP_LV_MIN, CP_LV_MAX);
+            else if (!strcmp(key, "height")) gCustom.heightCm = v;
+            else if (!strcmp(key, "type")) gCustom.type = ((v % CP_TYPE_COUNT) + CP_TYPE_COUNT) % CP_TYPE_COUNT;
+            else if (!strcmp(key, "lefty")) gCustom.lefty = v != 0;
+            else if (!strcmp(key, "one_handed")) gCustom.oneHanded = v != 0;
+        }
+        fclose(f);
+    }
+    if (CustomPointsUsed() > CP_POINTS) for (int i = 0; i < CP_STATS; i++) gCustom.lv[i] = 5;   // 壊れた値は元に戻す
+    CustomRebuild();
+}
+void CustomSave(void)
+{
+    FILE *f = fopen(CUSTOM_FILE, "w");
+    if (!f) return;
+    for (int i = 0; i < CP_STATS; i++) fprintf(f, "lv%d=%d\n", i, gCustom.lv[i]);
+    fprintf(f, "height=%d\ntype=%d\nlefty=%d\none_handed=%d\n", gCustom.heightCm, gCustom.type, gCustom.lefty ? 1 : 0, gCustom.oneHanded ? 1 : 0);
+    fclose(f);
+    StorePersist(CUSTOM_FILE);
+}
 const char *YouName(void) { return gYouPersona ? PERSONAS[gYouPersona].shortName : (gPlayerName[0] ? gPlayerName : "PLAYER"); }
 float gYouRage = 0.0f;
 float gServeAdd = 0.0f, gServeErrMul = 1.0f, gServeSpeedK = 1.0f;
@@ -38,7 +96,7 @@ void RestoreHumanContact(void)
 }
 void ApplyHumanTraits(void)
 {
-    const Persona *pp = &PERSONAS[gYouPersona % PERSONA_COUNT];
+    const Persona *pp = YouPersonaP();
     gLefty = pp->lefty; gSpinMul = pp->spinMul; gSliceEdge = pp->sliceEdge;
     gRiseSkill = fmaxf(pp->risingPref, 0.0f);
     const Mental *mm = &MENTAL[gYouPersona % PERSONA_COUNT];
@@ -53,7 +111,7 @@ void ApplyHumanTraits(void)
 }
 float PlayerRunSpeed(void)
 {
-    const Persona *pp = &PERSONAS[gYouPersona % PERSONA_COUNT];
+    const Persona *pp = YouPersonaP();
     return (PLAYER_SPEED + pp->speedAdd + pp->surfSpeed[gSurface] + RAGE_SPEED * gYouRage) * (1.0f - HEIGHT_SPEED_PER_CM * HeightDelta(gYouPersona));   // 燃えていると少し速い
 }
 float HumanServeHeightK(void) { return 1.0f + HeightDelta(gYouPersona) / 185.0f; }
@@ -66,7 +124,7 @@ int TourPersonaIndex(bool women, int p) { for (int i = 0; i < TourPersonaCount(w
 float HeightDelta(int persona) { return persona < 0 ? 0.0f : PersonaHeight(persona) - (gWomen ? 175.0f : 185.0f); }
 float PersonaHeight(int persona)
 {
-    if (persona <= 0) return gWomen ? 175.0f : 185.0f;
+    if (persona <= 0) return (persona == 0 && gCustom.heightCm > 0) ? (float)gCustom.heightCm : (gWomen ? 175.0f : 185.0f);   // 0 = 自分の選手（身長を決めていれば）
     return PERSONA_HEIGHT[persona % PERSONA_COUNT];
 }   // 上がり際の球の跳ね上がりを面で抑える上手さ（0〜1）
 bool  gRuleNetTouch = true;   // ルール（設定 → ルール）

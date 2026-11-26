@@ -313,7 +313,7 @@ static const char *ControlsLine(void)
 static const char *PersonaBlurb(int p)
 {
     static const char *EN[PERSONA_COUNT] = {
-        "No special traits. A solid all-round player.",
+        "Your own player. Set the abilities and style in \"Create your player\".",
         PN("Elegant all-court genius. One-handed backhand, great slice and volleys. Loves grass.", "All-court player. One-handed backhand, good slice and volleys. Likes fast courts."),
         PN("The best defender and returner. Rubber-band sliding, ice cold on big points.", "Strong defender and returner. Slides well and stays calm on big points."),
         PN("Left-handed. Huge topspin forehand. King of clay, never gives up. Total emotional control: never smashes a racket.", "Left-handed. Heavy topspin forehand. Strong on clay and never gives up. Keeps his emotions in check: never smashes a racket."),
@@ -332,7 +332,7 @@ static const char *PersonaBlurb(int p)
         PN("Slice backhand and volleys. Varied and clever. Loves grass.", "Slice backhand and volleys. Varied and clever. Likes fast courts."),
     };
     static const char *JA[PERSONA_COUNT] = {
-        "癖のない、バランスのいい選手。",
+        "自分で作った選手。「自分の選手を作る」で能力と型を決められる。",
         PN("優雅なオールラウンダー。片手バック、キレのあるスライスとボレー。芝が得意。", "オールラウンダー。片手バック、スライスとボレーがうまい。速いコートが得意。"),
         PN("守備とリターンが一番。よく滑って拾い、大事なポイントに一番強い。", "守備とリターンがうまい。よく滑って拾い、大事なポイントで落ち着いている。"),
         PN("左利き。強烈なトップスピンのフォア。クレーの王者で、最後まであきらめない。感情をコントロールでき、ラケットを壊さない。", "左利き。回転の強いフォア。クレーに強く、最後まであきらめない。感情をコントロールでき、ラケットを壊さない。"),
@@ -379,7 +379,7 @@ static void PersonaRadar(int p, float out[RADAR_N])
         ready = true;
     }
     float v[RADAR_N]; RAW(p, v);
-    for (int a = 0; a < RADAR_N; a++) out[a] = p == 0 ? 6.0f : 3.0f + 7.0f * (hi[a] > lo[a] ? (v[a] - lo[a]) / (hi[a] - lo[a]) : 0.5f);   // 癖なしは真ん中
+    for (int a = 0; a < RADAR_N; a++) out[a] = p == 0 ? (float)gCustom.lv[a] : 3.0f + 7.0f * (hi[a] > lo[a] ? (v[a] - lo[a]) / (hi[a] - lo[a]) : 0.5f);   // 0 は自分の選手（作った能力）
     #undef RAW
 }
 static void DrawRadar(float cx, float cy, float r, const float val[RADAR_N], Color col)
@@ -926,6 +926,7 @@ int main(void)
         AtmosNewMatch();
     }
     CareerLoad();   // 記録（通算成績・自己ベスト）
+    CustomLoad();   // 自分の選手（選手作成）
     if (MOBILE_ONLY) {   // スマホ版：タイブレークの試合、説明の行なし。難しさは初めての起動だけかんたん（前は毎回かんたんに戻していて、選んだリアルが次の起動で消えていた）
         setsToWin = 0; mode = MODE_MATCH; hudLevel = 1;
         if (firstRun) style = STYLE_CASUAL;
@@ -1042,7 +1043,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_RECORDS, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_RECORDS, MI_CP_EDIT, MI_CP_HEIGHT, MI_CP_HAND, MI_CP_BH, MI_CP_TYPE, MI_CP_LV0, MI_CP_LV5 = MI_CP_LV0 + CP_STATS - 1, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -1060,10 +1061,14 @@ int main(void)
                 if (app == APP_PAUSE) { items[n++] = MI_RESTART; items[n++] = MI_TITLE; }
                 if (app == APP_TITLE) items[n++] = MI_CREDITS;
             } else if (menuPage == 1 && MOBILE_ONLY) {
-                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
+                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; if (gYouPersona == 0 && !youRandom) items[n++] = MI_CP_EDIT; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
                 items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_RECORDS; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_BODY; if (gBodyModel == 1) items[n++] = MI_OUTLINE; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+            } else if (menuPage == 8) {   // 自分の選手を作る
+                if (!MOBILE_ONLY) items[n++] = MI_NAME;
+                for (int a = 0; a < CP_STATS; a++) items[n++] = MI_CP_LV0 + a;
+                items[n++] = MI_CP_HEIGHT; items[n++] = MI_CP_HAND; items[n++] = MI_CP_BH; items[n++] = MI_CP_TYPE; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
                 if (suggestKind != 3) items[n++] = MI_SUG_STATS;   // 試合の後の提案：スタッツを見てから決められる
@@ -1084,7 +1089,7 @@ int main(void)
 #endif
             } else if (menuPage == 1) {
                 if (!DEMO_ONLY) items[n++] = MI_MODE;   // 体験版は試合だけ（モード・試合の長さは選べない）
-                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
+                items[n++] = MI_TOUR; items[n++] = MI_PLAYER; if (gYouPersona == 0 && !youRandom) items[n++] = MI_CP_EDIT; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; if (mode == MODE_MATCH && !DEMO_ONLY) items[n++] = MI_SETS; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;   // 練習では試合の長さは出さない
             } else if (menuPage == 4) {
                 items[n++] = MI_BACK;
@@ -1174,17 +1179,23 @@ int main(void)
                     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) { menuSel = i; change = -1; }
                 }
             }
-            if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
+            // Esc：1 回押すと 1 ページだけ戻る（同じ Esc が続くフレームでも押されたままに見えることがあり、ページを飛ばしてタイトルまで戻っていた）
+            static double lastMenuEsc = -1.0;
+            bool escMenu = IsKeyPressed(KEY_ESCAPE) && GetTime() - lastMenuEsc > 0.25;
+            if (escMenu) lastMenuEsc = GetTime();
+            if (escMenu && !nameEditing && menuPage == 5) {   // キー設定から設定へ戻る
                 menuPage = 2; selWant = MI_KEYS; n = 0; activate = false; change = 0;
             } else if (IsKeyPressed(KEY_TAB) && menuPage == 6 && suggestKind != 3) {   // 提案：Tab で試合のスタッツへ
                 for (int q = 0; q < n; q++) if (items[q] == MI_SUG_STATS) menuSel = q;
                 activate = true; change = 0;
-            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 6) {   // 提案：Esc は「いいえ」と同じ
+            } else if (escMenu && !nameEditing && menuPage == 6) {   // 提案：Esc は「いいえ」と同じ
                 for (int q = 0; q < n; q++) if (items[q] == MI_SUG_NO) menuSel = q;
                 activate = true; change = 0;
-            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && menuPage == 7) {   // ルールから設定へ戻る
+            } else if (escMenu && !nameEditing && menuPage == 8) {   // 自分の選手から選手と試合へ戻る
+                menuPage = 1; selWant = MI_CP_EDIT; n = 0; activate = false; change = 0;
+            } else if (escMenu && !nameEditing && menuPage == 7) {   // ルールから設定へ戻る
                 menuPage = 2; selWant = MI_PG_RULES; n = 0; activate = false; change = 0;
-            } else if (IsKeyPressed(KEY_ESCAPE) && !nameEditing && !keyWaiting) {
+            } else if (escMenu && !nameEditing && !keyWaiting) {
                 if (menuPage != 0) { int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;   // 前のページへ
                     int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE && DEMO_ONLY) m0[k0++] = MI_FULLGAME; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
@@ -1193,8 +1204,13 @@ int main(void)
             }
             if (nameEditing) { change = 0; activate = false; }
             int it = n > 0 ? items[menuSel] : MI_BACK;
-            bool action = it == MI_PLAY || it == MI_FULLGAME || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it == MI_SUG_STATS || it >= MI_KEY0;
+            bool action = it == MI_PLAY || it == MI_FULLGAME || it == MI_CP_EDIT || (it == MI_TOURNAMENT && menuPage == 0) || it == MI_SLAM_GO || it == MI_CREDITS || it == MI_RESTART || it == MI_TITLE || it == MI_QUIT || it == MI_PG_MATCH || it == MI_PG_SETTINGS || it == MI_BACK || it == MI_NAME || it == MI_KEYS || it == MI_KEYRESET || it == MI_TUTORIAL || it == MI_START || it == MI_PG_RULES || it == MI_SUG_YES || it == MI_SUG_NO || it == MI_SUG_STATS || it >= MI_KEY0;
             if (activate && !action) { change = +1; activate = false; }
+            if (change != 0 && n > 0 && it >= MI_CP_LV0 && it <= MI_CP_LV5) {   // 能力：1〜10。点数の合計は CP_POINTS まで（足りなければ上げられない）
+                int a = it - MI_CP_LV0, v = gCustom.lv[a] + change;
+                if (v >= CP_LV_MIN && v <= CP_LV_MAX && (change < 0 || CustomPointsUsed() < CP_POINTS)) { gCustom.lv[a] = v; CustomRebuild(); CustomSave(); }
+                change = 0;
+            }
             if (change != 0 && n > 0) {
                 switch (it) {
                     case MI_PLAY:   if (app != APP_TITLE || MOBILE_ONLY || DEMO_ONLY) break;   // タイトル：←→でモード（試合・バトル・練習）。Enter で選手と試合へ   // タイトル：←→でモード（試合・バトル・練習）。スマホ版はタイブレークの試合だけ
@@ -1217,6 +1233,14 @@ int main(void)
                         forceRestart = true;
                     } break;
                     case MI_HUD:    hudLevel = (hudLevel + 4 + change) % 4; break;
+                    case MI_CP_HEIGHT: {   // 身長：標準（0）か、男子 165〜205・女子 155〜195 cm
+                        int lo = gWomen ? 155 : 165, hi = gWomen ? 195 : 205, h = gCustom.heightCm ? gCustom.heightCm : (gWomen ? 175 : 185);
+                        h = h + change; if (h > hi) h = lo; if (h < lo) h = hi;
+                        gCustom.heightCm = h; CustomRebuild(); CustomSave();
+                    } break;
+                    case MI_CP_HAND:  gCustom.lefty = !gCustom.lefty; CustomRebuild(); CustomSave(); break;
+                    case MI_CP_BH:    gCustom.oneHanded = !gCustom.oneHanded; CustomRebuild(); CustomSave(); break;
+                    case MI_CP_TYPE:  gCustom.type = (gCustom.type + CP_TYPE_COUNT + change) % CP_TYPE_COUNT; CustomRebuild(); CustomSave(); break;
                     case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
                     case MI_BODY:   gBodyModel = (gBodyModel + 3 + change) % 3; break;
                     case MI_OUTLINE: gModelOutline = !gModelOutline; break;
@@ -1263,7 +1287,7 @@ int main(void)
             }
             if (activate && n > 0) {
                 if (it == MI_PLAY && app == APP_TITLE) {   // タイトルの「プレイ」：選手と試合を決めて、「試合を始める」で始める
-                    menuPage = 1; menuSel = (MOBILE_ONLY || DEMO_ONLY) ? 8 : (mode == MODE_MATCH ? 10 : 9);   // 「試合を始める」を選んだ状態で開く
+                    menuPage = 1; menuSel = 0; selWant = MI_START;   // 「試合を始める」を選んだ状態で開く
                 } else if (it == MI_TUTORIAL) {   // はじめての人への練習：ラリー練習で動く・打つ・狙う、サーブ練習でサーブ
                     tut = 0; tutT = 0.0f; tutL = tutR = false; tutLastShot = -1;
                     mode = MODE_RALLY; battle = false; targetChal = false; assistLevel = 2;
@@ -1312,6 +1336,7 @@ int main(void)
                     suggestKind = 0;
                 }
                 else if (it == MI_BACK && menuPage == 7) { menuPage = 2; selWant = MI_PG_RULES; }
+                else if (it == MI_BACK && menuPage == 8) { menuPage = 1; selWant = MI_CP_EDIT; }
                 else if (it == MI_PG_MATCH) { menuPage = 1; menuSel = 0; }
                 else if (it == MI_PG_SETTINGS) { menuPage = 2; menuSel = 0; }
                 else if (it == MI_CREDITS) { menuPage = 4; menuSel = 0; }
@@ -1319,6 +1344,8 @@ int main(void)
                     int back = menuPage == 1 ? MI_PG_MATCH : menuPage == 3 ? MI_TOURNAMENT : menuPage == 4 ? MI_CREDITS : MI_PG_SETTINGS; menuPage = 0; menuSel = 0;
                     int m0[10], k0 = 0; m0[k0++] = MI_PLAY; if (app == APP_TITLE) m0[k0++] = MI_TUTORIAL; if (app == APP_TITLE && !DEMO_ONLY) m0[k0++] = MI_TOURNAMENT; if (app == APP_PAUSE) m0[k0++] = MI_PG_MATCH; m0[k0++] = MI_PG_SETTINGS; if (app == APP_TITLE) m0[k0++] = MI_LANG; if (app == APP_TITLE && DEMO_ONLY) m0[k0++] = MI_FULLGAME; if (app == APP_TITLE) m0[k0++] = MI_CREDITS;
                     for (int q = 0; q < k0; q++) if (m0[q] == back) menuSel = q;
+                } else if (it == MI_CP_EDIT) {   // 自分の選手を作る
+                    menuPage = 8; menuSel = 0;
                 } else if (it == MI_FULLGAME) {
                     OpenFullGamePage();
                 } else if (it == MI_TITLE) {
@@ -1371,10 +1398,11 @@ int main(void)
                 if (!leftPanel) { DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.75f)); DrawRectangleLines(px, py, pw, ph, Fade(RAYWHITE, 0.4f)); }
                 else DrawRectangle(px, py, pw, ph, Fade(BLACK, 0.55f));
                 const char *title = menuPage == 1 ? TR("PLAYERS & MATCH", "選手と試合") : menuPage == 2 ? TR("SETTINGS", "設定") : menuPage == 3 ? TR("GRAND SLAM", "グランドスラム")
-                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : menuPage == 7 ? TR("RULES", "ルール") : menuPage == 6 ? TR("ONE SUGGESTION", "ひとつ提案") : TR("PAUSED", "一時停止");
+                                  : menuPage == 4 ? TR("CREDITS", "クレジット") : menuPage == 5 ? TR("KEYS", "キー設定") : menuPage == 7 ? TR("RULES", "ルール") : menuPage == 8 ? TR("YOUR PLAYER", "自分の選手") : menuPage == 6 ? TR("ONE SUGGESTION", "ひとつ提案") : TR("PAUSED", "一時停止");
                 int tx = leftPanel ? px + 24 : W / 2 - MeasureText(title, 46) / 2;
                 DrawText(title, tx, py + 22, 46, YELLOW);
                 const char *sub = menuPage == 0 ? TR("Esc: resume", "Esc：戻る") : menuPage == 6 ? TR("Esc: no", "Esc：いいえ") : TR("Esc: back", "Esc：戻る");
+                if (menuPage == 8) sub = TextFormat(TR("Esc: back     Points left: %d (lower one to raise another)", "Esc：戻る     残りの点数：%d（ほかを下げると上げられる）"), CP_POINTS - CustomPointsUsed());
                 if (menuPage == 5) sub = keyCap >= 0 ? TR("Press a key  (Esc: cancel)", "割り当てるキーを押す（Esc：やめる）") : TR("Enter / click: change key   Esc: back", "Enter / クリック：キーを変える   Esc：戻る");
                 DrawText(sub, leftPanel ? px + 26 : W / 2 - MeasureText(sub, 18) / 2, py + 72, 18, LIGHTGRAY);
                 if (menuPage == 6) {   // 提案の説明（2 行）
@@ -1441,7 +1469,16 @@ int main(void)
                     else DrawRectangle(px + 20, ry, pw - 40, rowH - 4, Fade(YELLOW, 0.18f));
                 }
                 const char *label = "", *value = "";
-                if (items[i] >= MI_KEY0) {   // キー設定の 1 行：操作の名前と、今のキー
+                if (items[i] >= MI_CP_LV0 && items[i] <= MI_CP_LV5) {   // 自分の選手の能力：名前と、■の並び
+                    static const char *EN[CP_STATS] = { "Serve", "Power", "Speed & defense", "Consistency", "Net play", "Clutch" };
+                    static const char *JA[CP_STATS] = { "サーブ", "強打", "足と守備", "安定", "ネット", "勝負強さ" };
+                    int a = items[i] - MI_CP_LV0;
+                    label = gLang == LANG_JA ? JA[a] : EN[a];
+                    static char bar[CP_STATS][64]; int k = 0;
+                    for (int q = 1; q <= CP_LV_MAX; q++) { const char *c = q <= gCustom.lv[a] ? "#" : "-"; bar[a][k++] = c[0]; }
+                    bar[a][k] = 0;
+                    value = TextFormat("%s  %d", bar[a], gCustom.lv[a]);
+                } else if (items[i] >= MI_KEY0) {   // キー設定の 1 行：操作の名前と、今のキー
                     int a = items[i] - MI_KEY0;
                     Color lc2 = sel ? YELLOW : RAYWHITE;
                     DrawText(ActionName(a), px + 40, ry + (rowH - 4 - fs) / 2, fs, lc2);
@@ -1466,7 +1503,7 @@ int main(void)
                     case MI_MODE:    label = TR("Mode", "モード");            value = (battle && mode == MODE_MATCH) ? TR("BATTLE", "バトル") : targetChal ? TR("TARGET 60s", "的あて（60 秒）") : ModeName(mode); break;
                     case MI_SETS:    label = TR("Match length", "試合の長さ");    value = setsToWin == 0 ? TR("TIEBREAK (first to 7)", "タイブレーク（7 点先取）") : setsToWin == 4 ? TR("SHORT SET (first to 4 games)", "ショートセット（4 ゲーム先取）") : setsToWin == 1 ? TR("1 SET", "1 セット") : (setsToWin == 2 ? TR("BEST OF 3", "3 セットマッチ") : TR("BEST OF 5", "5 セットマッチ")); break;
                     case MI_TOUR:    label = TR("Tour", "ツアー");            value = gWomen ? TR("WOMEN", "女子") : TR("MEN", "男子"); break;
-                    case MI_PLAYER:  label = TR("Play as", "使う選手");         value = youRandom ? TR("RANDOM", "ランダム") : gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (no traits)", "%s（癖なし）"), gPlayerName); break;
+                    case MI_PLAYER:  label = TR("Play as", "使う選手");         value = youRandom ? TR("RANDOM", "ランダム") : gYouPersona ? PERSONAS[gYouPersona].name : TextFormat(TR("%s (your player)", "%s（自分の選手）"), gPlayerName[0] ? gPlayerName : "PLAYER"); break;
                     case MI_OPP:     label = TR("Opponent", "相手");        value = oppRandom ? TR("RANDOM", "ランダム") : PERSONAS[ai.persona].name; break;
                     case MI_HUD:     label = TR("Screen info (F1)", "画面の表示（F1）"); value = HUD_NAMES[hudLevel]; break;
                     case MI_GUIDES:  label = TR("Guides (F2)", "ガイド（F2）");     value = GUIDE_NAMES[guideLevel]; break;
@@ -1501,6 +1538,13 @@ int main(void)
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
                     case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel == 2 ? TR("DETAILED (numbers)", "詳しく（数字）") : feedbackLevel == 1 ? TR("SIMPLE (gauge)", "かんたん（目盛り）") : TR("OFF", "なし"); break;
                     case MI_RECORDS:   label = TR("New record alerts", "記録の知らせ"); value = gRecordToast ? TR("ON", "あり") : TR("OFF", "なし"); break;
+                    case MI_CP_EDIT:   label = TR("Create your player", "自分の選手を作る"); value = TextFormat(TR("%d / %d points", "能力 %d / %d 点"), CustomPointsUsed(), CP_POINTS); break;
+                    case MI_CP_HEIGHT: label = TR("Height", "身長"); value = gCustom.heightCm ? TextFormat("%d cm", gCustom.heightCm) : TextFormat(TR("STANDARD (%d cm)", "標準（%d cm）"), gWomen ? 175 : 185); break;
+                    case MI_CP_HAND:   label = TR("Plays", "利き手"); value = gCustom.lefty ? TR("LEFT", "左") : TR("RIGHT", "右"); break;
+                    case MI_CP_BH:     label = TR("Backhand", "バックハンド"); value = gCustom.oneHanded ? TR("ONE-HANDED", "片手") : TR("TWO-HANDED", "両手"); break;
+                    case MI_CP_TYPE: { static const char *EN[CP_TYPE_COUNT] = { "BASELINE", "HEAVY TOPSPIN", "SLICE", "ON THE RISE", "NET RUSHER" };
+                                       static const char *JA[CP_TYPE_COUNT] = { "ベースライン", "トップスピン", "スライス", "ライジング", "ネットに出る" };
+                                       label = TR("Style of play", "型"); value = gLang == LANG_JA ? JA[gCustom.type] : EN[gCustom.type]; } break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
                     case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
@@ -2576,9 +2620,9 @@ int main(void)
 
                     if (c.miss != MISS_NONE && c.miss != MISS_NO_BALL) SfxWhiff();
                     if (c.miss == MISS_NONE) {
-                        if (c.volley) c.quality += (1.0f - c.quality) * 0.25f * PERSONAS[gYouPersona].volleySkill;   // ボレーのうまい選手は当たりの悪さを少し取り戻す
+                        if (c.volley) c.quality += (1.0f - c.quality) * 0.25f * YouPersonaP()->volleySkill;   // ボレーのうまい選手は当たりの悪さを少し取り戻す
                         gHumanShot = true;
-                        ball = PlayerShot(&c, ball.pos, target, type, (HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge) * (1.0f + YOU_RAGE_POWER * gYouRage),   // 燃えていると少し強い
+                        ball = PlayerShot(&c, ball.pos, target, type, (HOLD_POWER_BASE + (HOLD_POWER_MAX - HOLD_POWER_BASE) * swingCharge) * (1.0f + YOU_RAGE_POWER * gYouRage) * YouPowerMul(),   // 燃えていると少し強い
                                           &P.lastKmh, &P.lastRpm, &P.lastAngle);
                         gHumanShot = false;
                         if (c.tweener) { snprintf(toast, sizeof(toast), "%s", TR("TWEENER!", "股抜き！")); toastT = 1.8f; crowdExcite = fmaxf(crowdExcite, 0.9f); TraceLog(LOG_INFO, "TWEENER by YOU q=%.2f", c.quality); }
@@ -3672,8 +3716,8 @@ int main(void)
 
             // プレイヤー（-z 向き）と AI（+z 向き）
             ApplyLook(&P.anim, gYouPersona ? gYouPersona : -1); ApplyLook(&bot.anim, gYouPersona ? gYouPersona : -1);   // 自分が使う選手の見た目
-            P.anim.lefty = bot.anim.lefty = PERSONAS[gYouPersona].lefty;
-            P.anim.oneHanded = bot.anim.oneHanded = PERSONAS[gYouPersona].oneHanded;
+            P.anim.lefty = bot.anim.lefty = YouPersonaP()->lefty;
+            P.anim.oneHanded = bot.anim.oneHanded = YouPersonaP()->oneHanded;
             Color youShirt = gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
             // サーブの構え（トスの前）：横向きに立ち、左手にボール
             P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY && P.anim.celebT <= 0.0f;   // ボールをついている間は構えない

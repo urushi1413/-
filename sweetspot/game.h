@@ -897,6 +897,21 @@ extern float gHeightDelta;          // 打っている選手の身長の差（cm
 extern bool  gHumanShot;       // 人間（自分）の打球を作っている間だけ true（横アウトの補正に使う）          // AI の打球を作っている間だけ、ぶれの倍率
 extern float gPointImportance; // 今のポイントの大事さ（0：普通、0.5：30-30・デュース・タイブレーク、1：ブレーク／セット／マッチポイント） // AI の打球を作っている間だけ、スライスのキレ（0〜1）   // AI の打球を作っている間だけ、トップスピンの回転量の倍率
 extern const Persona PERSONAS[PERSONA_COUNT];
+// 自分の選手（選手作成）：使う選手が 0（自分の選手）のとき、PERSONAS[0] の代わりにこれを使う（data.c）
+#define CP_STATS 6          // 能力：サーブ・強打・足と守備・安定・ネット・勝負強さ（能力のグラフと同じ並び）
+#define CP_LV_MIN 1
+#define CP_LV_MAX 10
+#define CP_POINTS 30        // 配れる点数の合計（全部 5 で 30）
+enum { CP_TYPE_BASE, CP_TYPE_TOP, CP_TYPE_SLICE, CP_TYPE_RISE, CP_TYPE_NET, CP_TYPE_COUNT };   // 型：ベースライン・トップスピン・スライス・ライジング・ネット
+typedef struct { int lv[CP_STATS]; int heightCm; int type; bool lefty, oneHanded; } CustomPlayer;
+extern CustomPlayer gCustom;
+extern Persona gCustomPersona;     // gCustom から作った癖（CustomRebuild）
+void CustomRebuild(void);
+void CustomLoad(void);
+void CustomSave(void);
+int  CustomPointsUsed(void);
+float YouPowerMul(void);           // 強打：自分の打球の速さの倍率
+const Persona *YouPersonaP(void);  // 自分の選手の癖（使う選手が 0 なら自分の選手）
 extern const float RAGE_SMASH[PERSONA_COUNT];
 // ポイント後のしぐさ：取ったとき（大事なポイント・長いラリー）と、落としたとき
 //   big：大事なポイント・長いラリー・ウィナー、set：セットを取った、match：試合に勝った、lose：落とした。0 はなし。毎回この中から選ぶ
