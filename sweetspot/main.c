@@ -61,9 +61,10 @@ static const Vector2 TARGETS[] = { { -3.0f, -10.2f }, { 3.0f, -10.2f }, { 0.0f, 
 static int NextTarget(int cur) { int t = GetRandomValue(0, N_TARGETS - 2); return t >= cur ? t + 1 : t; }   // 同じ所が 2 回続かない
 
 // 記録の「新記録！」の知らせ。前の記録が 0（初めての記録）なら出さない（最初の 1 球ごとに出るとうるさい）
+static bool gRecordToast = false;   // 設定「記録の知らせ」：新記録のたびに出す（初めは出さない。試合中の文字を減らす）
 static void NewRecordToast(char *toast, int n, float *toastT, float old, const char *what, const char *value)
 {
-    if (old <= 0.0f) return;
+    if (old <= 0.0f || !gRecordToast) return;
     snprintf(toast, n, TR("NEW RECORD!  %s  %s", "新記録！  %s  %s"), what, value); *toastT = 2.5f; SfxOoh(0.5f);
 }
 
@@ -213,14 +214,15 @@ static bool DefensiveVoice(const Contact *c, ShotType t, float distFromNet, floa
 }
 
 // 設定の保存（sweetspot_settings.txt）：メニューで変えた設定を次に起動したときも使う
-typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo, shake, bodyModel, modelOutline; } Settings;
+typedef struct { int sets, women, you, opp, level, style, court, assist, feed, lanes, cam, hud, guides; float sens, vol; int lang, tod, wx, look, slide, bounce, ruleNet, ruleBody, hintReal, feedback, tempo, shake, bodyModel, modelOutline, records; } Settings;
 static const char *SETTINGS_FILE = "sweetspot_settings.txt";
 static void SaveSettingsFile(const Settings *s)
 {
     FILE *f = fopen(SETTINGS_FILE, "w");
     if (!f) return;
     fprintf(f, "hint_real=%d\n", s->hintReal);
-    fprintf(f, "feedback=%d\n", s->feedback);
+    fprintf(f, "shot_feedback=%d\n", s->feedback);   // 0 なし・1 かんたん（目盛り）・2 詳しく（前の "feedback" は 0 かんたん・1 詳しくで、読まない）
+    fprintf(f, "record_toast=%d\n", s->records);
     fprintf(f, "tempo=%d\n", s->tempo);
     fprintf(f, "hit_shake=%d\n", s->shake);
     fprintf(f, "body_model=%d\n", s->bodyModel);
@@ -268,7 +270,8 @@ static bool LoadSettingsFile(Settings *s)
         else if (!strcmp(key, "body_model")) s->bodyModel = iv;
         else if (!strcmp(key, "hit_shake")) s->shake = iv;
         else if (!strcmp(key, "tempo")) s->tempo = iv;
-        else if (!strcmp(key, "feedback")) s->feedback = iv;
+        else if (!strcmp(key, "shot_feedback")) s->feedback = iv;
+        else if (!strcmp(key, "record_toast")) s->records = iv;
         else if (!strcmp(key, "hint_real")) s->hintReal = iv;
         else if (!strcmp(key, "rule_net_touch")) s->ruleNet = iv;
         else if (!strcmp(key, "rule_body_shot")) s->ruleBody = iv;
@@ -864,7 +867,7 @@ int main(void)
     // 当たりの説明（かんたん）の目盛りに使う、直近 5 回の振り：タイミングのずれ（ms、プラス＝遅い）、体からの距離、質、その位置での最高の質、空振りの理由
     typedef struct { float off, side, q, bestQ; int miss; bool timed; } ShotNote;
     ShotNote notes[5] = { 0 }; int nNotes = 0, noteHead = 0;
-    int   feedbackLevel = 0;   // 当たりの説明：0 = かんたん（直すことを 1 つ、言葉で）、1 = 詳しく（数字）
+    int   feedbackLevel = 0;   // 当たりの説明：0 = なし（初め。試合中の文字を減らす）、1 = かんたん（左下の目盛りと一言）、2 = 詳しく（数字）
     float lastShotT = 99.0f;   // 最後に自分が打ってからの時間（すっきりでは、打ってから 3 秒だけ当たりの分析を出す）
     // ガイド（コートの上の印）：0 ALL 1 AIM ONLY（狙いの印だけ）2 OFF
     int guideLevel = 0;
@@ -890,10 +893,10 @@ int main(void)
     // 設定：前回の設定を読む（なければ今の初期値）
     KeysReset();
 #define SaveSettings() do { Settings s_ = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes, \
-                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel, gModelOutline }; SaveSettingsFile(&s_); } while (0)
+                                            camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel, gModelOutline, gRecordToast }; SaveSettingsFile(&s_); } while (0)
     {
         Settings s = { setsToWin, gWomen, gYouPersona, ai.persona, ai.level, (int)style, (int)gSurface, assistLevel, proFeed, aimLanes,
-                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel, gModelOutline };
+                       camMode, hudLevel, guideLevel, aimSens, SfxGetVolume(), gLang, gTimeSetting, gWeatherSetting, gLook, gSlideOn, gBounceRit, gRuleNetTouch, gRuleBodyShot, hintRealDone, feedbackLevel, gTempo, gImpact, gBodyModel, gModelOutline, gRecordToast };
         bool loaded = LoadSettingsFile(&s);
         firstRun = !loaded;   // 設定ファイルがない＝初めての起動
         if (!loaded) gLang = SystemLangIsJapanese() ? LANG_JA : LANG_EN;   // 初めての起動は、パソコン・ブラウザの言語に合わせる（前は日本語に決め打ちで、海外の人に読めない画面を出していた）
@@ -916,7 +919,8 @@ int main(void)
             gBodyModel = Clamp(s.bodyModel, 0, 2);
             gImpact = Clamp(s.shake, 0, 2);   // 前に保存した 1（あり）は「止まるだけ」として読む
             gTempo = Clamp(s.tempo, 0, 2);
-            feedbackLevel = Clamp(s.feedback, 0, 1);
+            feedbackLevel = Clamp(s.feedback, 0, 2);
+            gRecordToast = s.records != 0;
             hintRealDone = s.hintReal != 0;
         }
         AtmosNewMatch();
@@ -1038,7 +1042,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_RECORDS, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -1059,7 +1063,7 @@ int main(void)
                 items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_OPP; items[n++] = MI_AI;
                 items[n++] = MI_COURT; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_STYLE; items[n++] = MI_START; items[n++] = MI_BACK;
             } else if (menuPage == 2 && MOBILE_ONLY) {
-                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_BODY; if (gBodyModel == 1) items[n++] = MI_OUTLINE; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
+                items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_RECORDS; items[n++] = MI_SENS; items[n++] = MI_SOUND; items[n++] = MI_LOOK; items[n++] = MI_BODY; if (gBodyModel == 1) items[n++] = MI_OUTLINE; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_LANG; items[n++] = MI_PG_RULES; items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
                 if (suggestKind != 3) items[n++] = MI_SUG_STATS;   // 試合の後の提案：スタッツを見てから決められる
@@ -1091,7 +1095,7 @@ int main(void)
                 items[n++] = MI_TOURNAMENT; items[n++] = MI_TOUR; items[n++] = MI_PLAYER; items[n++] = MI_AI; items[n++] = MI_SETS;
                 items[n++] = MI_STYLE; items[n++] = MI_TIME; items[n++] = MI_WEATHER; items[n++] = MI_SLAM_GO; items[n++] = MI_BACK;
             } else {
-                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_TEMPO; items[n++] = MI_FEED; items[n++] = MI_SOUND;
+                items[n++] = MI_NAME; items[n++] = MI_ASSIST; items[n++] = MI_FEEDBACK; items[n++] = MI_RECORDS; items[n++] = MI_AIM; items[n++] = MI_SENS; items[n++] = MI_KEYS; items[n++] = MI_PG_RULES; items[n++] = MI_SLIDE; items[n++] = MI_BOUNCE; items[n++] = MI_TEMPO; items[n++] = MI_FEED; items[n++] = MI_SOUND;
                 items[n++] = MI_LOOK; items[n++] = MI_BODY; if (gBodyModel == 1) items[n++] = MI_OUTLINE; items[n++] = MI_SHAKE; items[n++] = MI_HUD; items[n++] = MI_GUIDES; items[n++] = MI_LANG; items[n++] = MI_BACK;
             }
             if (selWant >= 0) { for (int q = 0; q < n; q++) if (items[q] == selWant) menuSel = q; selWant = -1; }   // 前のページへ戻ったとき、開いた項目を選ぶ
@@ -1218,7 +1222,8 @@ int main(void)
                     case MI_OUTLINE: gModelOutline = !gModelOutline; break;
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
                     case MI_BOUNCE: gBounceRit = !gBounceRit; break;
-                    case MI_FEEDBACK:  feedbackLevel = 1 - feedbackLevel; break;
+                    case MI_FEEDBACK:  feedbackLevel = (feedbackLevel + 3 + change) % 3; break;
+                    case MI_RECORDS:   gRecordToast = !gRecordToast; break;
                     case MI_TEMPO:     gTempo = (gTempo + 3 + change) % 3; break;
                     case MI_SHAKE:     gImpact = (gImpact + 3 + change) % 3; break;
                     case MI_RULE_NET:  gRuleNetTouch = !gRuleNetTouch; break;
@@ -1494,7 +1499,8 @@ int main(void)
                     case MI_OUTLINE:   label = TR("Model outline", "モデルの輪郭線"); value = gModelOutline ? TR("ON", "あり") : TR("OFF", "なし"); break;
                     case MI_SHAKE:     label = TR("Hit impact", "芯の手応え"); value = gImpact == 0 ? TR("OFF", "なし") : gImpact == 1 ? TR("PAUSE ONLY", "一瞬止まるだけ") : TR("PAUSE + SHAKE", "止まる＋画面が揺れる"); break;
                     case MI_TEMPO:     label = TR("Pace between points", "ポイント間のテンポ"); value = gTempo == 0 ? TR("FAST", "速い") : gTempo == 1 ? TR("NORMAL", "ふつう") : TR("TV", "中継"); break;
-                    case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel ? TR("DETAILED", "詳しく") : TR("SIMPLE", "かんたん"); break;
+                    case MI_FEEDBACK:  label = TR("Shot feedback", "当たりの説明"); value = feedbackLevel == 2 ? TR("DETAILED (numbers)", "詳しく（数字）") : feedbackLevel == 1 ? TR("SIMPLE (gauge)", "かんたん（目盛り）") : TR("OFF", "なし"); break;
+                    case MI_RECORDS:   label = TR("New record alerts", "記録の知らせ"); value = gRecordToast ? TR("ON", "あり") : TR("OFF", "なし"); break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
                     case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
@@ -4007,12 +4013,12 @@ int main(void)
             if (P.lastServeKmh > 0.0f || serveMsg[0]) {
                 if (P.lastServeKmh > 0.0f) {
                     HudText(TextFormat("%s  %.0f km/h", ServeNameUI(P.lastServeType), P.lastServeKmh), 20, y, 18, SERVES[P.lastServeType].color); y += 22;
-                    if (feedbackLevel == 1) { HudText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
+                    if (feedbackLevel == 2) { HudText(TextFormat(TR("Contact height %.2f m (ideal %.2f+)  quality %.0f%%", "打点の高さ %.2f m（理想 %.2f 以上）  質 %.0f%%"), P.lastServeH, SERVE_IDEAL_H * HumanServeHeightK(), P.lastServeQ * 100.0f),
                              20, y, 18, QualityColor(P.lastServeQ)); y += 22; }
                 } else {
                     HudText(ServeNameUI(P.lastServeType), 20, y, 18, SERVES[P.lastServeType].color); y += 44;
                 }
-                if (ball.netClearance > -50.0f && feedbackLevel == 1)
+                if (ball.netClearance > -50.0f && feedbackLevel == 2)
                     HudText(TextFormat("Net clearance %+.2f m", ball.netClearance), 20, y, 18, RAYWHITE);
                 y += 22;
                 Color mc = (serveMsg[0] == 'I' || serveMsg[0] == 'A') ? GREEN : (serveMsg[0] == 'L' ? YELLOW : RED);
@@ -4025,7 +4031,7 @@ int main(void)
                 HudText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
                 HudText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
             }
-        } else if (P.hasLast && feedbackLevel == 0) {   // 当たりの説明（かんたん）は、左下の目盛り（下）で出す
+        } else if (P.hasLast && feedbackLevel <= 1) {   // 当たりの説明：なし、またはかんたん（左下の目盛り（下）で出す）
         } else if (P.hasLast) {
             const Contact *c = &P.lastContact;
             if (c->miss != MISS_NONE) {
@@ -4073,7 +4079,7 @@ int main(void)
         }   // 左上のパネル
         // 当たりの説明（かんたん）：左下に、文字を読まなくてもわかる目盛り。タイミング（早い⇔遅い）と距離（近い⇔遠い）に、
         //   今の 1 球を大きな印、その前の 4 球を小さな点で。言葉は直近 5 球の傾向から 1 つ（傾向がなければ今の 1 球）。次に振るまで出しておく（3 秒で少し薄く）
-        bool gaugeOn = feedbackLevel == 0 && P.hasLast && nNotes > 0 && !showServeInfo && mode != MODE_SERVE && !botControls && hudLevel <= 1 && !summaryUp && tut < 0;
+        bool gaugeOn = feedbackLevel == 1 && P.hasLast && nNotes > 0 && !showServeInfo && mode != MODE_SERVE && !botControls && hudLevel <= 1 && !summaryUp && tut < 0;
         if (gaugeOn) {
             const Contact *c = &P.lastContact;
             int H = GetScreenHeight(), bw = 520, bh = 132, bx = 16, by = H - (hudLevel == 0 ? 110 : 56) - bh;
