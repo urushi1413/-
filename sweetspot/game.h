@@ -1106,6 +1106,7 @@ enum { TB_TOP, TB_SLICE, TB_FLAT, TB_LOB, TB_DROP, TOUCH_BTN_COUNT, TB_PAUSE = T
 void ReadTouch(PlayerInput *in, float aimSens);
 bool TouchStickActive(void);
 bool TouchPauseTapped(void);
+bool TouchUnderSwipe(void);   // スライスのボタンを下へ払って離した（スマホのアンダーサーブ）
 void DrawTouchControls(bool serving, bool pauseOnly);
 void TouchButtonRect(int b, Vector2 *c, float *r);
 #ifdef MOBILE_BUILD

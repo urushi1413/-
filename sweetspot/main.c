@@ -2129,7 +2129,52 @@ int main(void)
                     P.aimX = Clamp(P.aimX, x0 + 0.2f, x1 - 0.2f);
                     P.aimDepth = Clamp(P.aimDepth, -SERVICE_Z + 0.2f, -3.0f);
                 }
-                for (int s = 0; s < SERVE_COUNT; s++) {
+            }
+            // アンダーサーブ：Ctrl（ドロップのキー）を押しながらサーブ。スマホはスライスのボタンを押したまま下へ払って離す（トスは取りやめ）。
+            //   下からすくって短く落とす。相手がベースラインのずっと後ろにいると効く（AI のアンダーサーブと同じ球）
+            bool underSwipe = MOBILE_ONLY && TouchUnderSwipe();
+            bool underReq = (P.sv == SV_READY && in.serve >= 0 && in.shot == SHOT_DROP) || (underSwipe && P.sv == SV_TOSS);
+            if (underReq && quietT <= 0.0f && mode != MODE_SERVE) {
+                {
+                    if (P.anim.celebKind == RIT_BOUNCE) P.anim.celebT = 0.0f;
+                    SfxStopApplause();
+                    float x0, x1;
+                    ServiceBox(P.pos.x, -1, &x0, &x1);
+                    Vector3 contact = { P.pos.x + handS * 0.45f, 0.45f, P.pos.z - 0.30f };
+                    Vector3 target = { Clamp(P.aimX, x0 + 0.3f, x1 - 0.3f) + RandRange(-0.3f, 0.3f), 0.0f, -RandRange(1.6f, 2.6f) };
+                    float kmh = RandRange(55.0f, 70.0f);
+                    Vector3 spin = { -900.0f, gLefty ? -1200.0f : 1200.0f, 0.0f };   // 逆回転と横回転：弾んでから止まって横へ逃げる
+                    Vector3 dir; float pitch;
+                    SolveServe(contact, target, kmh / 3.6f, spin, &dir, &pitch);
+                    dir = Vector3RotateByAxisAngle(dir, (Vector3){ 0, 1, 0 }, RandNormal() * 1.0f * DEG2RAD);
+                    ball = MakeServeBall(contact, dir, kmh / 3.6f, pitch + RandNormal() * 0.4f * DEG2RAD, spin);
+                    ball.boxX0 = x0; ball.boxX1 = x1;
+                    ball.lastHitter = HITTER_PLAYER;
+                    ball.shotId = ++plog.shotSerial;
+                    P.lastServeType = SERVE_SLICE; P.lastServeKmh = kmh; P.lastServeQ = 0.8f; P.lastServeH = contact.y;
+                    P.lastContactPos = contact;
+                    P.anim.lastContact = (Contact){ .overhead = false, .forehand = true, .quality = 0.8f, .height = contact.y };
+                    P.anim.smash = false; P.anim.slice = true; P.anim.windup = 0.0f;
+                    P.anim.contactLocal = (Vector3){ contact.x - P.pos.x, contact.y, P.pos.z - contact.z };
+                    P.anim.swingT = 0.0f;
+                    speedBoardKmh = (int)roundf(kmh);
+                    SfxServe(0.6f, kmh, false, Vector3Distance(cam.position, contact));
+                    ai.anim.splitT = SPLIT_TIME; ai.anim.celebT = 0.0f;
+                    if (mode == MODE_MATCH) MLogShot(mlPoint, ++mlShot, false, "UNDERARM", kmh, 0.8f, false, false, false, false, P.pos, contact.y, ai.pos, Vector3Length(ai.vel));
+                    rallyHits = 1;
+                    P.lastAimTarget = target;
+                    P.aimX = 0.0f; P.aimSlide = 0.0f;
+                    plog.serves++;
+                    trailColor = SERVES[SERVE_SLICE].color; trailCount = 0;
+                    serveAce = false; serveMsg = "";
+                    snprintf(toast, sizeof(toast), "%s", TL("UNDERARM SERVE!", "アンダーサーブ！")); toastT = 1.6f;
+                    P.chargingServe = -1;
+                    P.sv = SV_FLIGHT;
+                    if (mode == MODE_MATCH) { phase = PH_PLAY; serveJudged = false; }
+                }
+            }
+            if (P.sv == SV_READY) {
+                for (int s = 0; s < SERVE_COUNT && P.sv == SV_READY; s++) {
                     if (in.serve != s || quietT > 0.0f) continue;
                     if (P.anim.celebKind == RIT_BOUNCE) P.anim.celebT = 0.0f;   // ボールつきの途中でも、押したらトスへ   // 主審が観客を静かにさせている間はトスを上げない
                     P.chargeSrc = in.source;
@@ -4025,11 +4070,12 @@ int main(void)
                 HudText(serveMsg, 20, y, 22, mc); y += 30;
             } else if (MOBILE_ONLY) {   // スマホ版のサーブの説明
                 HudText(TR("Press a button to toss, release at the top to hit.", "ボタンを押してトス、いちばん高い所で離して打つ"), 20, y, 18, RAYWHITE); y += 22;
-                HudText(TR("Kick = safe, Flat = fast. Slide your finger to aim.", "キック＝入りやすい、フラット＝速い。押したまま指を動かすと狙い"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("Kick = safe, Flat = fast, Under = underarm. Slide your finger to aim.", "キック＝入りやすい、フラット＝速い、アンダー＝下から。押したまま指で狙い"), 20, y, 18, RAYWHITE); y += 22;
             } else {
                 HudText(TR("A/D: position.  Mouse: left/right.  Later release = deeper", "A/D：立ち位置。マウス：左右。遅く離すほど深い"), 20, y, 18, RAYWHITE); y += 22;
                 HudText(TR("Hold L-click kick / R-click slice / Space+click flat", "左クリック キック / 右クリック スライス / Space＋クリック フラット"), 20, y, 18, RAYWHITE); y += 22;
                 HudText(TR("to toss, release to hit. Hold to let a bad toss drop.", "押してトス、離して打つ。悪いトスは押したままで見送る"), 20, y, 18, RAYWHITE); y += 22;
+                HudText(TR("Ctrl + serve: underarm serve", "Ctrl＋サーブ：アンダーサーブ"), 20, y, 18, RAYWHITE); y += 22;
             }
         } else if (P.hasLast && feedbackLevel <= 1) {   // 当たりの説明：なし、またはかんたん（左下の目盛り（下）で出す）
         } else if (P.hasLast) {

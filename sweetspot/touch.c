@@ -14,6 +14,7 @@ static bool gStickOn = false;
 static Vector2 gStickC = { 0 }, gStickP = { 0 };
 static bool gPressed[TOUCH_BTN_COUNT];  // 今押されているボタン（描くときに光らせる）
 static bool gPauseTap = false;
+static bool gUnderSwipe = false;   // スライスのボタンを押したまま下へ大きく動かして離した（サーブならアンダーサーブ）
 
 // ボタンの位置と大きさ（画面 1280×720 で）
 void TouchButtonRect(int b, Vector2 *c, float *r)
@@ -55,6 +56,7 @@ void ReadTouch(PlayerInput *in, float aimSens)
 {
     int n = GetTouchPointCount();
     bool seen[TT_MAX] = { 0 };
+    gUnderSwipe = false;   // 離したそのフレームだけ立てる（サーブ以外で払った分が、次のサーブに残らないように）
     for (int b = 0; b < TOUCH_BTN_COUNT; b++) gPressed[b] = false;
     for (int i = 0; i < n && i < 10; i++) {
         int id = GetTouchPointId(i);
@@ -91,7 +93,8 @@ void ReadTouch(PlayerInput *in, float aimSens)
     // 離れた指
     for (int j = gTTn - 1; j >= 0; j--) {
         if (seen[j]) continue;
-        if (gTT[j].btn >= 0) { int shot, serve; InputSource src; ButtonShot(gTT[j].btn, &shot, &serve, &src); in->released[src] = true; }
+        if (gTT[j].btn >= 0) { int shot, serve; InputSource src; ButtonShot(gTT[j].btn, &shot, &serve, &src); in->released[src] = true;
+                               if (gTT[j].btn == TB_SLICE && gTT[j].last.y - gTT[j].start.y > GetScreenHeight() * 0.10f) gUnderSwipe = true; }
         else { gStickOn = false; gStick = (Vector2){ 0 }; }
         gTT[j] = gTT[--gTTn];
     }
@@ -100,6 +103,7 @@ void ReadTouch(PlayerInput *in, float aimSens)
 
 bool TouchStickActive(void) { return gStickOn; }
 bool TouchPauseTapped(void) { bool t = gPauseTap; gPauseTap = false; return t; }
+bool TouchUnderSwipe(void) { bool t = gUnderSwipe; gUnderSwipe = false; return t; }
 
 // pauseOnly：一時停止のボタンだけ（試合の結果の表の間。打つボタンの文字が表にかからないように）
 void DrawTouchControls(bool serving, bool pauseOnly)
