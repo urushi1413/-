@@ -1030,7 +1030,7 @@ int main(void)
             if (!tour.champion) showDraw = false;
             BeginDrawing();
             if (tour.champion && !TourRevealActive() && !showDraw)
-                DrawCeremony(&tour, gYouPersona, gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 }, (float)GetTime());
+                DrawCeremony(&tour, gYouPersona, gYouPersona || CustomLookColor(CPL_SHIRT).a ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 }, (float)GetTime());
             else
                 TourDraw(&tour, GetScreenWidth(), GetScreenHeight(), (float)GetTime());
             EndDrawing();
@@ -1043,7 +1043,7 @@ int main(void)
         if (app != APP_PLAY) {
             SfxCrowd(false, 0.0f);   // メニューの間は観客の音を止める
             enum { MI_PLAY, MI_TOURNAMENT, MI_MODE, MI_SETS, MI_TOUR, MI_PLAYER, MI_OPP, MI_AI, MI_STYLE, MI_COURT, MI_ASSIST, MI_FEED, MI_SENS, MI_AIM, MI_SOUND, MI_CAMERA, MI_HUD, MI_GUIDES, MI_LANG, MI_RESTART, MI_TITLE, MI_QUIT,
-                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_RECORDS, MI_CP_EDIT, MI_CP_HEIGHT, MI_CP_HAND, MI_CP_BH, MI_CP_TYPE, MI_CP_LV0, MI_CP_LV5 = MI_CP_LV0 + CP_STATS - 1, MI_KEY0 };
+                   MI_PG_MATCH, MI_PG_SETTINGS, MI_BACK, MI_NAME, MI_TIME, MI_WEATHER, MI_SLAM_GO, MI_CREDITS, MI_KEYS, MI_KEYRESET, MI_LOOK, MI_TUTORIAL, MI_SLIDE, MI_START, MI_BOUNCE, MI_PG_RULES, MI_RULE_NET, MI_RULE_BODY, MI_SUG_YES, MI_SUG_NO, MI_SUG_STATS, MI_FEEDBACK, MI_TEMPO, MI_SHAKE, MI_BODY, MI_OUTLINE, MI_FULLGAME, MI_RECORDS, MI_CP_EDIT, MI_CP_HEIGHT, MI_CP_HAND, MI_CP_BH, MI_CP_TYPE, MI_CP_LOOK0, MI_CP_LOOK4 = MI_CP_LOOK0 + CPL_COUNT - 1, MI_CP_LV0, MI_CP_LV5 = MI_CP_LV0 + CP_STATS - 1, MI_KEY0 };
             static int keyCap = -1;   // キー設定：押されたキーを待っている操作（-1 = 待っていない）
             static bool quitAsk = false;   // 「ゲームを終了しますか？」を聞いている（タイトルに戻るつもりで押す人が多いので確認する）
             static char keyMsg[96] = ""; static float keyMsgT = 0.0f;
@@ -1068,7 +1068,9 @@ int main(void)
             } else if (menuPage == 8) {   // 自分の選手を作る
                 if (!MOBILE_ONLY) items[n++] = MI_NAME;
                 for (int a = 0; a < CP_STATS; a++) items[n++] = MI_CP_LV0 + a;
-                items[n++] = MI_CP_HEIGHT; items[n++] = MI_CP_HAND; items[n++] = MI_CP_BH; items[n++] = MI_CP_TYPE; items[n++] = MI_BACK;
+                items[n++] = MI_CP_HEIGHT; items[n++] = MI_CP_HAND; items[n++] = MI_CP_BH; items[n++] = MI_CP_TYPE;
+                for (int a = 0; a < CPL_COUNT; a++) items[n++] = MI_CP_LOOK0 + a;
+                items[n++] = MI_BACK;
             } else if (menuPage == 6) {   // ひとつ提案（はい／いいえ）
                 items[n++] = MI_SUG_YES; items[n++] = MI_SUG_NO;
                 if (suggestKind != 3) items[n++] = MI_SUG_STATS;   // 試合の後の提案：スタッツを見てから決められる
@@ -1242,6 +1244,10 @@ int main(void)
                     case MI_CP_BH:    gCustom.oneHanded = !gCustom.oneHanded; CustomRebuild(); CustomSave(); break;
                     case MI_CP_TYPE:  gCustom.type = (gCustom.type + CP_TYPE_COUNT + change) % CP_TYPE_COUNT; CustomRebuild(); CustomSave(); break;
                     case MI_LOOK:   gLook = (gLook + 3 + change) % 3; break;
+                    case MI_CP_LOOK0: case MI_CP_LOOK0 + 1: case MI_CP_LOOK0 + 2: case MI_CP_LOOK0 + 3: case MI_CP_LOOK4: {
+                        int k = it - MI_CP_LOOK0, cnt = CustomLookCount(k);
+                        gCustom.look[k] = (gCustom.look[k] + cnt + change) % cnt; CustomSave();
+                    } break;
                     case MI_BODY:   gBodyModel = (gBodyModel + 3 + change) % 3; break;
                     case MI_OUTLINE: gModelOutline = !gModelOutline; break;
                     case MI_SLIDE:  gSlideOn = !gSlideOn; break;
@@ -1360,7 +1366,7 @@ int main(void)
 
             BeginDrawing();
             // ---- 背景 ----
-            Color youShirtM = gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
+            Color youShirtM = gYouPersona || CustomLookColor(CPL_SHIRT).a ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
             Vector2 youScr = { 0 }, oppScr = { 0 };
             if (titleMain || menuPage == 1 || menuPage == 3) {
                 SurfaceType keepSurf = gSurface;
@@ -1546,6 +1552,9 @@ int main(void)
                     case MI_CP_TYPE: { static const char *EN[CP_TYPE_COUNT] = { "BASELINE", "HEAVY TOPSPIN", "SLICE", "ON THE RISE", "NET RUSHER" };
                                        static const char *JA[CP_TYPE_COUNT] = { "ベースライン", "トップスピン", "スライス", "ライジング", "ネットに出る" };
                                        label = TR("Style of play", "型"); value = gLang == LANG_JA ? JA[gCustom.type] : EN[gCustom.type]; } break;
+                    case MI_CP_LOOK0: case MI_CP_LOOK0 + 1: case MI_CP_LOOK0 + 2: case MI_CP_LOOK0 + 3: case MI_CP_LOOK4: {
+                        static const char *EN[CPL_COUNT] = { "Skin", "Hair color", "Shirt", "Shorts", "Shoes" }, *JA[CPL_COUNT] = { "肌", "髪の色", "シャツ", "ショーツ", "靴" };
+                        int k = items[i] - MI_CP_LOOK0; label = gLang == LANG_JA ? JA[k] : EN[k]; value = CustomLookName(k); } break;
                     case MI_PG_RULES:  label = TR("Rules", "ルール"); value = TR("NET TOUCH, BODY SHOT", "ネットタッチ・ボディショット"); break;
                     case MI_RULE_NET:  label = TR("Net touch", "ネットタッチ"); value = gRuleNetTouch ? TR("ON (lose the point)", "あり（失点）") : TR("OFF", "なし"); break;
                     case MI_RULE_BODY: label = TR("Body shot", "ボディショット"); value = gRuleBodyShot ? TR("ON (point to the hitter)", "あり（打った方のポイント）") : TR("OFF", "なし"); break;
@@ -3719,7 +3728,7 @@ int main(void)
             ApplyLook(&P.anim, gYouPersona ? gYouPersona : -1); ApplyLook(&bot.anim, gYouPersona ? gYouPersona : -1);   // 自分が使う選手の見た目
             P.anim.lefty = bot.anim.lefty = YouPersonaP()->lefty;
             P.anim.oneHanded = bot.anim.oneHanded = YouPersonaP()->oneHanded;
-            Color youShirt = gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
+            Color youShirt = gYouPersona || CustomLookColor(CPL_SHIRT).a ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 };
             // サーブの構え（トスの前）：横向きに立ち、左手にボール
             P.anim.serveStance = P.anim.holdBall = playerServing && P.sv == SV_READY && P.anim.celebT <= 0.0f;   // ボールをついている間は構えない
             bot.anim.serveStance = bot.anim.holdBall = false;
@@ -4574,7 +4583,7 @@ int main(void)
         EndDrawing();
         // リプレイ用に記録（試合中だけ。描いたままの姿勢で）
         if (mode == MODE_MATCH && app == APP_PLAY) {
-            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PersonaShirt(ai.persona), gYouPersona ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 } };
+            RFrame f = { simDt, ball.pos, ball.active || ball.bounces > 0, P.pos, ai.pos, botControls ? bot.anim : P.anim, ai.anim, PersonaShirt(ai.persona), gYouPersona || CustomLookColor(CPL_SHIRT).a ? PersonaShirt(gYouPersona) : (Color){ 240, 240, 245, 255 } };
             RecPush(&f);
         }
     }

@@ -56,6 +56,22 @@ void CustomRebuild(void)
 }
 int CustomPointsUsed(void) { int s = 0; for (int i = 0; i < CP_STATS; i++) s += gCustom.lv[i]; return s; }
 float YouPowerMul(void) { return gYouPersona ? 1.0f : 1.0f + 0.08f * CpX(1); }
+// 自分の選手の見た目（色）。0 番は標準
+static const struct { Color c; const char *en, *ja; } CP_LOOKS[CPL_COUNT][10] = {
+    { {{0},"STANDARD","標準"}, {{250,220,190,255},"FAIR","色白"}, {{236,196,158,255},"LIGHT","明るめ"}, {{210,160,120,255},"TAN","小麦色"},
+      {{170,120,85,255},"OLIVE","褐色"}, {{120,78,55,255},"BROWN","濃い褐色"}, {{80,52,38,255},"DARK","黒褐色"} },
+    { {{0},"STANDARD","標準"}, {{20,18,18,255},"BLACK","黒"}, {{70,45,30,255},"BROWN","茶"}, {{140,95,55,255},"LIGHT BROWN","明るい茶"},
+      {{220,190,120,255},"BLONDE","金"}, {{160,70,35,255},"RED","赤毛"}, {{200,200,205,255},"SILVER","銀"}, {{40,70,160,255},"BLUE","青"}, {{220,90,150,255},"PINK","ピンク"} },
+    { {{0},"STANDARD","標準"}, {{240,240,245,255},"WHITE","白"}, {{25,25,30,255},"BLACK","黒"}, {{35,60,140,255},"NAVY","紺"}, {{60,150,230,255},"SKY","水色"},
+      {{200,40,45,255},"RED","赤"}, {{250,200,40,255},"YELLOW","黄"}, {{50,150,80,255},"GREEN","緑"}, {{240,120,40,255},"ORANGE","オレンジ"}, {{140,70,180,255},"PURPLE","紫"} },
+    { {{0},"STANDARD","標準"}, {{245,245,248,255},"WHITE","白"}, {{25,25,30,255},"BLACK","黒"}, {{35,45,90,255},"NAVY","紺"}, {{130,130,140,255},"GREY","灰"},
+      {{200,40,45,255},"RED","赤"}, {{50,110,70,255},"GREEN","緑"}, {{90,140,220,255},"BLUE","青"} },
+    { {{0},"STANDARD","標準"}, {{25,25,30,255},"BLACK","黒"}, {{35,60,140,255},"NAVY","紺"}, {{200,40,45,255},"RED","赤"},
+      {{250,200,40,255},"YELLOW","黄"}, {{60,200,120,255},"NEON GREEN","蛍光緑"}, {{240,120,40,255},"ORANGE","オレンジ"} },
+};
+int CustomLookCount(int item) { int n = 1; while (n < 10 && CP_LOOKS[item][n].en) n++; return n; }
+Color CustomLookColor(int item) { int i = gCustom.look[item]; return (i > 0 && i < CustomLookCount(item)) ? CP_LOOKS[item][i].c : (Color){ 0 }; }
+const char *CustomLookName(int item) { int i = gCustom.look[item]; if (i < 0 || i >= CustomLookCount(item)) i = 0; return gLang == LANG_JA ? CP_LOOKS[item][i].ja : CP_LOOKS[item][i].en; }
 const Persona *YouPersonaP(void) { return gYouPersona ? &PERSONAS[gYouPersona % PERSONA_COUNT] : &gCustomPersona; }
 static const char *CUSTOM_FILE = "sweetspot_player.txt";
 void CustomLoad(void)
@@ -70,6 +86,7 @@ void CustomLoad(void)
             else if (!strcmp(key, "type")) gCustom.type = ((v % CP_TYPE_COUNT) + CP_TYPE_COUNT) % CP_TYPE_COUNT;
             else if (!strcmp(key, "lefty")) gCustom.lefty = v != 0;
             else if (!strcmp(key, "one_handed")) gCustom.oneHanded = v != 0;
+            else if (!strncmp(key, "look", 4) && key[4] >= '0' && key[4] < '0' + CPL_COUNT) gCustom.look[key[4] - '0'] = v >= 0 ? v : 0;
         }
         fclose(f);
     }
@@ -82,6 +99,7 @@ void CustomSave(void)
     if (!f) return;
     for (int i = 0; i < CP_STATS; i++) fprintf(f, "lv%d=%d\n", i, gCustom.lv[i]);
     fprintf(f, "height=%d\ntype=%d\nlefty=%d\none_handed=%d\n", gCustom.heightCm, gCustom.type, gCustom.lefty ? 1 : 0, gCustom.oneHanded ? 1 : 0);
+    for (int i = 0; i < CPL_COUNT; i++) fprintf(f, "look%d=%d\n", i, gCustom.look[i]);
     fclose(f);
     StorePersist(CUSTOM_FILE);
 }
@@ -154,6 +172,14 @@ const ShotSpec SHOTS[SHOT_COUNT] = {
 };
 
 // 選手の見た目：髪、ショーツ、ヘッドバンド（なしは a=0）、優雅さ
+static void ApplyCustomColors(SwingAnim *a)   // 自分の選手：選んだ色（標準ならそのまま）
+{
+    Color c;
+    if ((c = CustomLookColor(CPL_SKIN)).a) a->skin = c;
+    if ((c = CustomLookColor(CPL_HAIR)).a) a->hair = c;
+    if ((c = CustomLookColor(CPL_SHORTS)).a && !gAllWhite) a->shorts = c;
+    if ((c = CustomLookColor(CPL_SHOES)).a) a->shoe = c;
+}
 void ApplyLook(SwingAnim *a, int persona)
 {
     static const struct { Color hair, shorts, band; float grace; int fhStyle; } LOOK[PERSONA_COUNT] = {
@@ -187,16 +213,18 @@ void ApplyLook(SwingAnim *a, int persona)
     a->scale = PersonaHeight(persona) / 185.0f;
     a->lookId = persona;
     if (persona < 0) {   // 人間：紺のショーツ
-        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 };
+        a->hair = (Color){ 40, 30, 25, 255 }; a->shorts = (Color){ 35, 45, 90, 255 }; a->headband = (Color){ 0 }; a->grace = 0.3f; a->fhStyle = 0; a->female = gWomen; a->skin = (Color){ 0 }; a->shoe = (Color){ 0 };
         if (gAllWhite) a->shorts = (Color){ 245, 245, 248, 255 };
         a->hairStyle = gWomen ? HS_PONY : HS_SHORT; a->beard = 0.0f; a->hat = 0;
         a->eyeCol = (Color){ 95, 62, 38, 255 }; a->faceH = a->faceW = a->jaw = a->noseK = 1.0f;
         a->bShoulder = a->bBulk = a->bArm = a->bLeg = a->bWaist = 1.0f;
+        ApplyCustomColors(a);
         return;
     }
     persona %= PERSONA_COUNT;
     a->female = PERSONAS[persona].female || (persona == 0 && gWomen);
-    a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle; a->skin = SKIN[persona];
+    a->hair = LOOK[persona].hair; a->shorts = LOOK[persona].shorts; a->headband = LOOK[persona].band; a->grace = LOOK[persona].grace; a->fhStyle = LOOK[persona].fhStyle; a->skin = SKIN[persona]; a->shoe = (Color){ 0 };
+    if (persona == 0) ApplyCustomColors(a);
     {   // 髪型・ひげ・かぶりもの（選手ごと）
         static const struct { int hs; float beard; int hat; } HAIR[PERSONA_COUNT] = {
             { HS_SHORT, 0.0f, 0 },        // 癖なし
@@ -282,4 +310,4 @@ void ApplyLook(SwingAnim *a, int persona)
         if (a->headband.a) a->headband = (Color){ 250, 250, 250, 255 };
     }
 }
-Color PersonaShirt(int persona) { return gAllWhite ? (Color){ 248, 248, 250, 255 } : PERSONAS[persona].shirt; }
+Color PersonaShirt(int persona) { Color c; if (gAllWhite) return (Color){ 248, 248, 250, 255 }; if (persona == 0 && (c = CustomLookColor(CPL_SHIRT)).a) return c; return PERSONAS[persona].shirt; }

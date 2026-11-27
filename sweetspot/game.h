@@ -563,6 +563,7 @@ typedef struct {
     float   staggerK;      // よろめきの強さ（0〜1、見た目）
     float   staggerSide;   // よろめく向き（体から見て右 +1、左 -1）
     float   broken;        // ラケットの曲がり具合（0〜1）。次のポイントで新しいラケットに替える
+    Color   shoe;          // 靴の色（a == 0 なら白）
     int     lookId;        // 見た目の選手（ApplyLook の persona。-1 = 自分＝癖なし）。パーツモデルの色の表を選手ごとに選ぶ
 } SwingAnim;
 
@@ -903,7 +904,11 @@ extern const Persona PERSONAS[PERSONA_COUNT];
 #define CP_LV_MAX 10
 #define CP_POINTS 30        // 配れる点数の合計（全部 5 で 30）
 enum { CP_TYPE_BASE, CP_TYPE_TOP, CP_TYPE_SLICE, CP_TYPE_RISE, CP_TYPE_NET, CP_TYPE_COUNT };   // 型：ベースライン・トップスピン・スライス・ライジング・ネット
-typedef struct { int lv[CP_STATS]; int heightCm; int type; bool lefty, oneHanded; } CustomPlayer;
+enum { CPL_SKIN, CPL_HAIR, CPL_SHIRT, CPL_SHORTS, CPL_SHOES, CPL_COUNT };   // 見た目（色）の項目
+typedef struct { int lv[CP_STATS]; int heightCm; int type; bool lefty, oneHanded; int look[CPL_COUNT]; } CustomPlayer;
+int CustomLookCount(int item);
+Color CustomLookColor(int item);   // a == 0 なら標準
+const char *CustomLookName(int item);
 extern CustomPlayer gCustom;
 extern Persona gCustomPersona;     // gCustom から作った癖（CustomRebuild）
 void CustomRebuild(void);

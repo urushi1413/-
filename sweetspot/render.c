@@ -1497,7 +1497,7 @@ static void DrawFigureBody(Vector3 pos, bool facingNegZ, Color shirt, const Swin
     float bSh = a->bShoulder > 0.0f ? a->bShoulder : 1.0f, bBu = a->bBulk > 0.0f ? a->bBulk : 1.0f;
     float bAr = a->bArm > 0.0f ? a->bArm : 1.0f, bLg = a->bLeg > 0.0f ? a->bLeg : 1.0f, bWa = a->bWaist > 0.0f ? a->bWaist : 1.0f;
     Color shorts = a->shorts.a ? a->shorts : (Color){ 245, 245, 248, 255 };
-    Color shoe = { 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
+    Color shoe = a->shoe.a ? a->shoe : (Color){ 250, 250, 252, 255 }, sole = { 120, 120, 130, 255 }, sock = { 250, 250, 250, 255 };
     Color hair = a->hair.a ? a->hair : (Color){ 70, 50, 35, 255 };
     // 体をモデルで描く：図形は描かずに、関節の位置だけ集める。パーツモデルは頭（顔・髪）も、スキンの試作は首から下だけ
     bool partsM = gBodyModel == 1 && PartsModelReady();
