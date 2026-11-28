@@ -421,7 +421,7 @@ AI には効かない（AI の強さは 1/2/3 で別に選ぶ）。友達と遊�
 ## 売る版（make SALE=1）
 
 自分用の版（make）とは別に、売る・配るための版を作れる（sweetspot_sale）。実在の選手・大会と結びつく部分を架空のものにする：
-- 選手の名前（例 Rogerr Federerr → Julien Varenne、Rafa Nadar → Leon Duvall）。ai.c の PN("自分用", "売る版") で切り替える
+- 選手の名前（例 Rogerr Federerr → Reto Fassbind、Rafa Nadar → Ruben Noguera）。ai.c の PN("自分用", "売る版") で切り替える
 - 身長を表示しない。紹介文から本人を思わせる言葉（クレーの王者、独り言が多い、198cm など）を外す
 - 決まったルーティン（儀式・髪を耳にかける・ガットを直す）はなく、ボールをつくだけ。耳に手を当てる・ハートのしぐさは、ふつうの喜び方に
 - 大会名と場所を架空に（SOUTHERN OPEN / RED CLAY OPEN / GREEN LAWN CHAMPIONSHIPS / CITY LIGHTS OPEN、ハーバーシティ・オールドタウン・リバーサイド・メトロシティ）
