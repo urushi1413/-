@@ -1300,9 +1300,11 @@ int main(void)
                     forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
                 } else if (it == MI_START) {   // 選手と試合：この設定で始める（タイトルからでも、試合の途中からでも新しく）
+                    if (DEMO_ONLY || MOBILE_ONLY) { mode = MODE_MATCH; battle = false; targetChal = false; }   // モードを選べない版：「はじめての人へ」の練習のあとも試合に戻す
                     forceRestart = true; app = APP_PLAY; inputLockT = INPUT_LOCK;
                     if (!MOBILE_ONLY) { mouseLocked = true; DisableCursor(); skipMouseDelta = true; }
                 } else if (it == MI_PLAY || it == MI_RESTART) {
+                    if ((DEMO_ONLY || MOBILE_ONLY) && tut < 0) { mode = MODE_MATCH; battle = false; targetChal = false; }
                     if (app == APP_TITLE || it == MI_RESTART) forceRestart = true;
                     app = APP_PLAY; inputLockT = INPUT_LOCK;
                     mouseLocked = true; DisableCursor(); skipMouseDelta = true;
